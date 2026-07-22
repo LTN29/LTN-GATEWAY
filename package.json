@@ -1,12 +1,15 @@
 {
-  "name": "ltn-memory-gateway",
-  "version": "0.1.0",
+  "name": "ltn-gateway",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "OpenAI-compatible team memory gateway in front of 9Router",
+  "description": "OpenAI-compatible team memory gateway for LTN in front of 9Router",
   "scripts": {
     "start": "node src/server.mjs",
-    "check": "node --check src/server.mjs"
+    "check": "node --check src/server.mjs",
+    "test": "node --test",
+    "register-team": "node scripts/register-team.mjs",
+    "sync-all": "node scripts/sync-all.mjs"
   },
   "engines": {
     "node": ">=20"

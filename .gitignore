@@ -1,4 +1,10 @@
 .env
 config/teams.json
-*.log
+logs/*
+!logs/.gitkeep
+runtime/*
+!runtime/.gitkeep
+memory/*.tmp
+memory/*.bak
 .DS_Store
+npm-debug.log*

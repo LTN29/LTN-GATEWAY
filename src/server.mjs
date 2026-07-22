@@ -1,138 +1,32 @@
 import http from "node:http";
-import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { resolve, basename } from "node:path";
 import { Readable } from "node:stream";
+import { config, loadTeams } from "./config.mjs";
+import { authenticateTeam } from "./auth.mjs";
+import {
+  loadCompanyMemory,
+  loadTeamMemory,
+  injectMemory
+} from "./memory.mjs";
+import { upstreamFetch } from "./upstream.mjs";
+import { scheduleMemoryExtraction } from "./extractor.mjs";
+import {
+  assistantTextFromJson,
+  assistantTextFromSse
+} from "./response-parser.mjs";
+import {
+  sendJson,
+  openAiError,
+  readBody,
+  setCors,
+  handleOptions
+} from "./http.mjs";
+import {
+  getBearerToken,
+  jsonLog,
+  requestId as makeRequestId
+} from "./utils.mjs";
 
-const PORT = Number(process.env.PORT || 20129);
-const UPSTREAM_BASE_URL = String(
-  process.env.UPSTREAM_BASE_URL || "http://127.0.0.1:20128"
-).replace(/\/+$/, "");
-const TEAMS_FILE = resolve(process.env.TEAMS_FILE || "./config/teams.json");
-const MEMORY_DIR = resolve(process.env.MEMORY_DIR || "./memory");
-const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 2_000_000);
-const MAX_CONTEXT_CHARS = Number(process.env.MAX_CONTEXT_CHARS || 30_000);
-const CORS_ALLOW_ORIGIN = process.env.CORS_ALLOW_ORIGIN || "*";
-
-let teamsCache = { loadedAt: 0, byHash: new Map() };
-
-function log(event, data = {}) {
-  process.stdout.write(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    event,
-    ...data
-  }) + "\n");
-}
-
-function sendJson(res, statusCode, payload, extraHeaders = {}) {
-  const body = Buffer.from(JSON.stringify(payload));
-  res.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
-    "content-length": body.length,
-    "access-control-allow-origin": CORS_ALLOW_ORIGIN,
-    ...extraHeaders
-  });
-  res.end(body);
-}
-
-function openAiError(message, type = "gateway_error", code = null) {
-  return { error: { message, type, param: null, code } };
-}
-
-function sha256(value) {
-  return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function getBearerToken(req) {
-  const auth = req.headers.authorization || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
-}
-
-async function readRequestBody(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_BODY_BYTES) {
-      const error = new Error("Request body is too large");
-      error.statusCode = 413;
-      throw error;
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
-
-async function loadTeams() {
-  const raw = await readFile(TEAMS_FILE, "utf8");
-  const config = JSON.parse(raw);
-  if (!Array.isArray(config.teams) || config.teams.length === 0) {
-    throw new Error("config/teams.json must contain a non-empty teams array");
-  }
-
-  const byHash = new Map();
-  for (const item of config.teams) {
-    const code = String(item.code || "").trim().toUpperCase();
-    const keyHash = String(item.keyHash || "").trim().toLowerCase();
-    const memoryFile = basename(String(item.memoryFile || `${code}.md`));
-
-    if (!code || !/^[A-Z0-9_-]+$/.test(code)) {
-      throw new Error(`Invalid team code: ${item.code}`);
-    }
-    if (!/^[a-f0-9]{64}$/.test(keyHash)) {
-      throw new Error(`Invalid SHA-256 keyHash for team ${code}`);
-    }
-    if (byHash.has(keyHash)) {
-      throw new Error(`Duplicate keyHash configured for team ${code}`);
-    }
-    byHash.set(keyHash, { code, keyHash, memoryFile });
-  }
-
-  teamsCache = { loadedAt: Date.now(), byHash };
-  return byHash;
-}
-
-async function getTeamForToken(token) {
-  if (!teamsCache.byHash.size || Date.now() - teamsCache.loadedAt > 10_000) {
-    await loadTeams();
-  }
-  return teamsCache.byHash.get(sha256(token)) || null;
-}
-
-async function loadTeamMemory(team) {
-  const path = resolve(MEMORY_DIR, team.memoryFile);
-  if (!path.startsWith(MEMORY_DIR)) {
-    throw new Error("Invalid memory file path");
-  }
-  try {
-    const content = await readFile(path, "utf8");
-    return content.slice(0, MAX_CONTEXT_CHARS);
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      return `# ${team.code} TEAM CONTEXT\n\nChưa có ngữ cảnh được lưu.`;
-    }
-    throw error;
-  }
-}
-
-function injectMemory(messages, team, memory) {
-  return [{
-    role: "system",
-    content: [
-      `Bạn đang hỗ trợ team ${team.code} của công ty LTN.`,
-      "Dùng ngữ cảnh nội bộ bên dưới để trả lời nhất quán.",
-      "Không được tiết lộ API key, token, mật khẩu hoặc thông tin bí mật.",
-      "Nếu ngữ cảnh mâu thuẫn với yêu cầu mới nhất của người dùng, ưu tiên yêu cầu mới nhất.",
-      "",
-      "<team_context>",
-      memory,
-      "</team_context>"
-    ].join("\n")
-  }, ...messages];
-}
-
-function copyUpstreamHeaders(upstream, res) {
+function copyHeaders(upstream, res) {
   const blocked = new Set([
     "content-length",
     "connection",
@@ -140,30 +34,52 @@ function copyUpstreamHeaders(upstream, res) {
     "transfer-encoding",
     "content-encoding"
   ]);
+
   for (const [name, value] of upstream.headers.entries()) {
     if (!blocked.has(name.toLowerCase())) {
       res.setHeader(name, value);
     }
   }
-  res.setHeader("access-control-allow-origin", CORS_ALLOW_ORIGIN);
+
+  setCors(res);
 }
 
-async function proxyRequest({ req, res, path, bodyBuffer, team, requestId }) {
-  const startedAt = Date.now();
-  const upstream = await fetch(`${UPSTREAM_BASE_URL}${path}`, {
-    method: req.method,
-    headers: {
-      "authorization": req.headers.authorization,
-      "content-type": req.headers["content-type"] || "application/json",
-      "accept": req.headers.accept || "*/*",
-      "x-ltn-team": team.code,
-      "x-request-id": requestId
-    },
-    body: bodyBuffer?.length ? bodyBuffer : undefined,
-    redirect: "manual"
+async function pipeAndCapture(upstream, res) {
+  if (!upstream.body) {
+    res.end();
+    return Buffer.alloc(0);
+  }
+
+  const reader = upstream.body.getReader();
+  const captured = [];
+  let capturedBytes = 0;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    const chunk = Buffer.from(value);
+    res.write(chunk);
+
+    if (capturedBytes < config.maxCaptureBytes) {
+      const remaining = config.maxCaptureBytes - capturedBytes;
+      const part = chunk.length <= remaining ? chunk : chunk.subarray(0, remaining);
+      captured.push(part);
+      capturedBytes += part.length;
+    }
+  }
+
+  res.end();
+  return Buffer.concat(captured);
+}
+
+async function proxyModels(req, res, rawKey, team, id) {
+  const upstream = await upstreamFetch("/v1/models", {
+    rawKey,
+    requestId: id
   });
 
-  copyUpstreamHeaders(upstream, res);
+  copyHeaders(upstream, res);
   res.statusCode = upstream.status;
 
   if (!upstream.body) {
@@ -172,118 +88,216 @@ async function proxyRequest({ req, res, path, bodyBuffer, team, requestId }) {
     Readable.fromWeb(upstream.body).pipe(res);
   }
 
-  log("proxy_completed", {
-    requestId,
+  jsonLog("models_completed", {
+    requestId: id,
     team: team.code,
-    path,
-    upstreamStatus: upstream.status,
+    status: upstream.status
+  });
+}
+
+async function handleChat(req, res, rawKey, team, id) {
+  const raw = await readBody(req);
+  let payload;
+
+  try {
+    payload = JSON.parse(raw.toString("utf8"));
+  } catch {
+    sendJson(res, 400, openAiError("JSON không hợp lệ", "invalid_request_error"));
+    return;
+  }
+
+  if (!Array.isArray(payload.messages)) {
+    sendJson(
+      res,
+      400,
+      openAiError("messages phải là một mảng", "invalid_request_error")
+    );
+    return;
+  }
+
+  const originalMessages = structuredClone(payload.messages);
+  const [companyMemory, teamMemory] = await Promise.all([
+    loadCompanyMemory(),
+    loadTeamMemory(team)
+  ]);
+
+  payload.messages = injectMemory(
+    payload.messages,
+    team,
+    companyMemory,
+    teamMemory
+  );
+
+  jsonLog("chat_started", {
+    requestId: id,
+    team: team.code,
+    model: payload.model || null,
+    stream: Boolean(payload.stream)
+  });
+
+  const startedAt = Date.now();
+  const upstream = await upstreamFetch("/v1/chat/completions", {
+    method: "POST",
+    rawKey,
+    requestId: id,
+    accept: req.headers.accept || "*/*",
+    body: JSON.stringify(payload)
+  });
+
+  copyHeaders(upstream, res);
+  res.statusCode = upstream.status;
+
+  const captured = await pipeAndCapture(upstream, res);
+
+  let assistantText = "";
+  if (upstream.ok) {
+    try {
+      if (payload.stream) {
+        assistantText = assistantTextFromSse(captured.toString("utf8"));
+      } else {
+        assistantText = assistantTextFromJson(
+          JSON.parse(captured.toString("utf8"))
+        );
+      }
+    } catch {
+      assistantText = "";
+    }
+
+    scheduleMemoryExtraction({
+      team,
+      rawKey,
+      originalMessages,
+      assistantText,
+      requestId: id
+    });
+  }
+
+  jsonLog("chat_completed", {
+    requestId: id,
+    team: team.code,
+    status: upstream.status,
     latencyMs: Date.now() - startedAt
   });
 }
 
+function isAdmin(req) {
+  if (!config.adminToken) return false;
+  return getBearerToken(req.headers) === config.adminToken;
+}
+
 const server = http.createServer(async (req, res) => {
-  const requestId = req.headers["x-request-id"] || randomUUID();
-  res.setHeader("x-request-id", requestId);
+  const id = makeRequestId(req.headers["x-request-id"]);
+  res.setHeader("x-request-id", id);
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "access-control-allow-origin": CORS_ALLOW_ORIGIN,
-      "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "authorization,content-type,x-request-id",
-      "access-control-max-age": "86400"
-    });
-    res.end();
+    handleOptions(res);
     return;
   }
 
   if (req.method === "GET" && req.url === "/health") {
+    let teams = 0;
+    try {
+      teams = (await loadTeams()).byCode.size;
+    } catch {
+      teams = 0;
+    }
+
     sendJson(res, 200, {
       status: "ok",
-      service: "ltn-memory-gateway",
-      upstream: UPSTREAM_BASE_URL
+      service: "ltn-gateway",
+      version: "1.0.0",
+      teams,
+      memoryUpdateEnabled: config.memoryUpdateEnabled,
+      oneDriveMode: config.oneDrive.mode,
+      upstream: config.upstreamBaseUrl
+    });
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/internal/teams") {
+    if (!isAdmin(req)) {
+      sendJson(res, 401, openAiError("Không có quyền", "authentication_error"));
+      return;
+    }
+
+    const teams = await loadTeams({ force: true });
+    sendJson(res, 200, {
+      data: [...teams.byCode.values()].map((team) => ({
+        code: team.code,
+        displayName: team.displayName,
+        memoryFile: team.memoryFile,
+        enabled: team.enabled
+      }))
     });
     return;
   }
 
   const supported =
-    (req.method === "POST" && req.url === "/v1/chat/completions") ||
-    (req.method === "GET" && req.url === "/v1/models");
+    (req.method === "GET" && req.url === "/v1/models") ||
+    (req.method === "POST" && req.url === "/v1/chat/completions");
 
   if (!supported) {
-    sendJson(res, 404, openAiError("Route not found", "not_found_error"));
+    sendJson(res, 404, openAiError("Không tìm thấy route", "not_found_error"));
     return;
   }
 
   try {
-    const token = getBearerToken(req);
-    if (!token) {
-      sendJson(res, 401, openAiError("Missing Bearer API key", "authentication_error"));
+    const rawKey = getBearerToken(req.headers);
+
+    if (!rawKey) {
+      sendJson(
+        res,
+        401,
+        openAiError("Thiếu Bearer API key", "authentication_error")
+      );
       return;
     }
 
-    const team = await getTeamForToken(token);
+    const team = await authenticateTeam(rawKey);
+
     if (!team) {
-      sendJson(res, 401, openAiError("API key is not registered with a team", "authentication_error"));
+      sendJson(
+        res,
+        401,
+        openAiError(
+          "API key chưa được đăng ký với team",
+          "authentication_error"
+        )
+      );
       return;
     }
 
-    if (req.method === "GET" && req.url === "/v1/models") {
-      await proxyRequest({ req, res, path: "/v1/models", bodyBuffer: null, team, requestId });
+    if (req.method === "GET") {
+      await proxyModels(req, res, rawKey, team, id);
       return;
     }
 
-    const rawBody = await readRequestBody(req);
-    let payload;
-    try {
-      payload = JSON.parse(rawBody.toString("utf8"));
-    } catch {
-      sendJson(res, 400, openAiError("Invalid JSON body", "invalid_request_error"));
-      return;
-    }
-
-    if (!Array.isArray(payload.messages)) {
-      sendJson(res, 400, openAiError("messages must be an array", "invalid_request_error"));
-      return;
-    }
-
-    const memory = await loadTeamMemory(team);
-    payload.messages = injectMemory(payload.messages, team, memory);
-    const bodyBuffer = Buffer.from(JSON.stringify(payload));
-
-    log("chat_request", {
-      requestId,
-      team: team.code,
-      model: payload.model || null,
-      stream: Boolean(payload.stream)
-    });
-
-    await proxyRequest({
-      req,
-      res,
-      path: "/v1/chat/completions",
-      bodyBuffer,
-      team,
-      requestId
-    });
+    await handleChat(req, res, rawKey, team, id);
   } catch (error) {
-    log("request_failed", {
-      requestId,
+    jsonLog("request_failed", {
+      requestId: id,
       error: error?.message || String(error)
     });
 
     if (!res.headersSent) {
-      sendJson(res, error?.statusCode || 502, openAiError(error?.message || "Gateway request failed"));
+      sendJson(
+        res,
+        error?.statusCode || 502,
+        openAiError(error?.message || "Gateway xử lý thất bại")
+      );
     } else {
       res.destroy(error);
     }
   }
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  log("server_started", {
-    port: PORT,
-    upstream: UPSTREAM_BASE_URL,
-    teamsFile: TEAMS_FILE,
-    memoryDir: MEMORY_DIR
+server.listen(config.port, config.host, () => {
+  jsonLog("server_started", {
+    host: config.host,
+    port: config.port,
+    upstream: config.upstreamBaseUrl,
+    teamsFile: config.teamsFile,
+    memoryDir: config.memoryDir,
+    oneDriveMode: config.oneDrive.mode
   });
 });
