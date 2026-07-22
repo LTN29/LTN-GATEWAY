@@ -1,0 +1,4 @@
+.env
+config/teams.json
+*.log
+.DS_Store
