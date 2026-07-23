@@ -301,4 +301,3 @@ if ($Mode -eq "auto") {
 } else {
   Write-Host "  Sử dụng: codex-fast | codex | codex-power"
 }
-Write-Host "Admin có thể đổi model và thứ tự fallback trong 9Router Dashboard -> Combos mà không cần cài lại máy này."
