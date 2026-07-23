@@ -188,16 +188,44 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.equal(
       installer.body,
       await readFile(
+        new URL("../scripts/install-codex-bootstrap.ps1", import.meta.url),
+        "utf8"
+      )
+    );
+    assert.doesNotMatch(installer.body, /\[CmdletBinding\(\)\]/);
+    assert.doesNotMatch(installer.body, /^\s*param\s*\(/m);
+    assert.match(installer.body, /\/install\/codex-full\.ps1/);
+    assert.match(installer.body, /MaximumRedirection 0/);
+    assert.match(installer.body, /& \$tempInstaller/);
+    assert.match(installer.body, /finally/);
+
+    const fullInstaller = await rawGet(
+      gatewayPort,
+      "/install/codex-full.ps1"
+    );
+    assert.equal(fullInstaller.status, 200);
+    assert.equal(
+      fullInstaller.body,
+      await readFile(
         new URL("../scripts/install-codex-windows.ps1", import.meta.url),
         "utf8"
       )
     );
-    assert.match(installer.body, /\[CmdletBinding\(\)\]/);
-    assert.match(installer.body, /\/codex\/config/);
+    assert.match(fullInstaller.body, /\[CmdletBinding\(\)\]/);
+    assert.match(fullInstaller.body, /^\s*param\s*\(/m);
+    assert.match(fullInstaller.body, /\/codex\/config/);
+
     assert.doesNotMatch(installer.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
     assert.doesNotMatch(installer.body, /combo\/ltn-code-/);
     assert.doesNotMatch(installer.body, /MS_CLIENT_SECRET|Cloudflare token/i);
     assert.doesNotMatch(installer.body, /config[\\/]teams\.json/i);
+    assert.doesNotMatch(fullInstaller.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
+    assert.doesNotMatch(fullInstaller.body, /combo\/ltn-code-/);
+    assert.doesNotMatch(
+      fullInstaller.body,
+      /MS_CLIENT_SECRET|Cloudflare token/i
+    );
+    assert.doesNotMatch(fullInstaller.body, /config[\\/]teams\.json/i);
 
     assert.equal(
       (await rawGet(gatewayPort, "/install/other.ps1")).status,
@@ -205,6 +233,13 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(
       (await rawGet(gatewayPort, "/install/codex.ps1?file=other.ps1")).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(
+        gatewayPort,
+        "/install/codex-full.ps1?file=other.ps1"
+      )).status,
       404
     );
     assert.equal(

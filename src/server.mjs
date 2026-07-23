@@ -35,7 +35,10 @@ import {
   requestId as makeRequestId
 } from "./utils.mjs";
 
-const codexInstallerPath = fileURLToPath(
+const codexBootstrapPath = fileURLToPath(
+  new URL("../scripts/install-codex-bootstrap.ps1", import.meta.url)
+);
+const codexFullInstallerPath = fileURLToPath(
   new URL("../scripts/install-codex-windows.ps1", import.meta.url)
 );
 
@@ -117,8 +120,8 @@ async function proxyModels(req, res, rawKey, team, id) {
   });
 }
 
-async function serveCodexInstaller(res) {
-  const body = await readFile(codexInstallerPath);
+async function servePowerShellFile(res, path) {
+  const body = await readFile(path);
   res.writeHead(200, {
     "content-type": "text/plain; charset=utf-8",
     "content-length": body.length,
@@ -308,9 +311,27 @@ export function createGatewayServer() {
 
   if (req.method === "GET" && req.url === "/install/codex.ps1") {
     try {
-      await serveCodexInstaller(res);
+      await servePowerShellFile(res, codexBootstrapPath);
     } catch (error) {
       jsonLog("installer_download_failed", {
+        route: "bootstrap",
+        error: error?.message || String(error)
+      });
+      sendJson(
+        res,
+        500,
+        openAiError("Không thể tải Codex installer", "gateway_error")
+      );
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/install/codex-full.ps1") {
+    try {
+      await servePowerShellFile(res, codexFullInstallerPath);
+    } catch (error) {
+      jsonLog("installer_download_failed", {
+        route: "full",
         error: error?.message || String(error)
       });
       sendJson(

@@ -164,6 +164,10 @@ Máy nhân viên cài bằng URL public cố định của Gateway:
 irm https://ai.simi.vn/install/codex.ps1 | iex
 ```
 
+URL trên trả một bootstrap nhỏ. Bootstrap tải full installer từ route cố định
+`https://ai.simi.vn/install/codex-full.ps1`, chạy bằng call operator và luôn
+xóa file tạm sau khi hoàn tất hoặc gặp lỗi.
+
 Installer chỉ hỏi API key team và một trong hai chế độ:
 
 - **Auto đơn giản**: `codex` dùng `CODEX_COMBO_AUTO`.
