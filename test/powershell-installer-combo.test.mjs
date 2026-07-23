@@ -59,8 +59,12 @@ function runProcess(command, args, options) {
 }
 
 async function runInstallerWithCombo({
-  comboId = "SIMI-AI",
-  models = [{ id: "SIMI-AI", owned_by: "combo" }],
+  premiumCombo = "SIMI-AI",
+  freeCombo = "SIMI-FREE",
+  models = [
+    { id: "SIMI-AI", owned_by: "combo" },
+    { id: "SIMI-FREE", owned_by: "combo" }
+  ],
   mode = "auto"
 }) {
   const requests = [];
@@ -73,11 +77,15 @@ async function runInstallerWithCombo({
     if (req.url === "/v1/codex/config") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({
+        routing: {
+          mode: "limited_daily",
+          premiumLimit: 3,
+          usageScope: "client",
+          resetTimezone: "Asia/Ho_Chi_Minh"
+        },
         combos: {
-          auto: comboId,
-          fast: "SIMI-FAST",
-          default: "SIMI-DEFAULT",
-          power: "SIMI-POWER"
+          premium: premiumCombo,
+          free: freeCombo
         }
       }));
       return;
@@ -98,10 +106,19 @@ async function runInstallerWithCombo({
   const codexHome = join(root, "codex-home");
   await mkdir(codexHome, { recursive: true });
   const scriptPath = join(root, "install-codex-windows.test.ps1");
-  const testScript = installerSource.replace(
-    '[Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $TeamApiKey, "User")',
-    "$null = $TeamApiKey"
-  );
+  const testScript = installerSource
+    .replace(
+      '[Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $TeamApiKey, "User")',
+      "$null = $TeamApiKey"
+    )
+    .replace(
+      '[Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $clientId, "User")',
+      "$null = $clientId"
+    )
+    .replace(
+      '[Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "User")',
+      '$env:LTN_CLIENT_ID'
+    );
   await writeFile(scriptPath, testScript, "utf8");
 
   try {
@@ -127,11 +144,8 @@ async function runInstallerWithCombo({
       env: {
         ...process.env,
         CODEX_HOME: codexHome,
-        CODEX_COMBO_AUTO: "",
-        CODEX_COMBO_FAST: "",
-        CODEX_COMBO_DEFAULT: "",
-        CODEX_COMBO_POWER: "",
-        LTN_TEAM_API_KEY: ""
+        LTN_TEAM_API_KEY: "",
+        LTN_CLIENT_ID: ""
       }
     });
     if (result.signal === "SIGKILL") {
@@ -157,8 +171,11 @@ async function runInstallerWithCombo({
 
 test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models", async (t) => {
   const output = await runInstallerWithCombo({
-    comboId: " SIMI-AI ",
-    models: [{ id: "SIMI-AI", owned_by: "combo" }]
+    premiumCombo: " SIMI-AI ",
+    models: [
+      { id: "SIMI-AI", owned_by: "combo" },
+      { id: "SIMI-FREE", owned_by: "combo" }
+    ]
   });
   if (output.skipped) {
     t.skip(output.skipped);
@@ -172,6 +189,10 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     "Bearer team-test-key"
   );
   assert.match(output.config, /model = "SIMI-AI"/);
+  assert.match(
+    output.config,
+    /env_http_headers = \{ "X-LTN-Client-ID" = "LTN_CLIENT_ID" \}/
+  );
   assert.doesNotMatch(output.config, /combo\/SIMI-AI/);
   assert.doesNotMatch(
     `${output.result.stdout}\n${output.result.stderr}`,
@@ -181,7 +202,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
 
 test("Windows installer accepts model item without owned_by but warns", async (t) => {
   const output = await runInstallerWithCombo({
-    models: [{ id: "SIMI-AI" }]
+    models: [{ id: "SIMI-AI" }, { id: "SIMI-FREE" }]
   });
   if (output.skipped) {
     t.skip(output.skipped);
@@ -198,7 +219,10 @@ test("Windows installer accepts model item without owned_by but warns", async (t
 
 test("Windows installer fails closed when combo is missing or owned_by is not combo", async (t) => {
   const missing = await runInstallerWithCombo({
-    models: [{ id: "other-model", owned_by: "combo" }]
+    models: [
+      { id: "other-model", owned_by: "combo" },
+      { id: "SIMI-FREE", owned_by: "combo" }
+    ]
   });
   if (missing.skipped) {
     t.skip(missing.skipped);
@@ -208,7 +232,10 @@ test("Windows installer fails closed when combo is missing or owned_by is not co
   assert.match(missing.result.stderr, /Thiếu Combo trên 9Router: SIMI-AI/);
 
   const wrongOwner = await runInstallerWithCombo({
-    models: [{ id: "SIMI-AI", owned_by: "provider" }]
+    models: [
+      { id: "SIMI-AI", owned_by: "provider" },
+      { id: "SIMI-FREE", owned_by: "combo" }
+    ]
   });
   assert.notEqual(wrongOwner.result.status, 0);
   assert.match(wrongOwner.result.stderr, /owned_by không phải 'combo'/);
@@ -216,7 +243,8 @@ test("Windows installer fails closed when combo is missing or owned_by is not co
   const mixedOwners = await runInstallerWithCombo({
     models: [
       { id: "SIMI-AI", owned_by: "combo" },
-      { id: "SIMI-AI", owned_by: "provider" }
+      { id: "SIMI-AI", owned_by: "provider" },
+      { id: "SIMI-FREE", owned_by: "combo" }
     ]
   });
   assert.notEqual(mixedOwners.result.status, 0);
@@ -234,8 +262,11 @@ test("Windows installer rejects empty, CR/LF and overlong combo IDs before /v1/m
 
   for (const item of cases) {
     const output = await runInstallerWithCombo({
-      comboId: item.comboId,
-      models: [{ id: item.comboId, owned_by: "combo" }]
+      premiumCombo: item.comboId,
+      models: [
+        { id: item.comboId, owned_by: "combo" },
+        { id: "SIMI-FREE", owned_by: "combo" }
+      ]
     });
     if (output.skipped) {
       t.skip(output.skipped);

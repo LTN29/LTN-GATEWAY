@@ -99,7 +99,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       res.end(JSON.stringify({
         data: [
           { id: "regular-model", owned_by: "provider" },
-          { id: "combo/ltn-code-auto", owned_by: "combo" }
+          { id: "SIMI-GPT", owned_by: "combo" },
+          { id: "SIMI-FREE", owned_by: "combo" }
         ]
       }));
       return;
@@ -167,10 +168,12 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
   process.env.ONEDRIVE_MODE = "local";
   process.env.ONEDRIVE_LOCAL_DIR = syncDir;
   process.env.MAX_CONTEXT_CHARS = "200";
-  process.env.CODEX_COMBO_AUTO = "combo/ltn-code-auto";
-  process.env.CODEX_COMBO_FAST = "combo/ltn-code-fast";
-  process.env.CODEX_COMBO_DEFAULT = "combo/ltn-code-default";
-  process.env.CODEX_COMBO_POWER = "combo/ltn-code-power";
+  process.env.CODEX_COMBO_PREMIUM = "SIMI-GPT";
+  process.env.CODEX_COMBO_FREE = "SIMI-FREE";
+  process.env.CODEX_DEFAULT_POLICY = "limited_daily";
+  process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "3";
+  process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
+  process.env.CODEX_USAGE_FILE = join(root, "codex-usage.json");
 
   const { createGatewayServer } = await import(
     `../src/server.mjs?integration=${Date.now()}`
@@ -264,7 +267,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     const missingAuth = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "combo/ltn-code-auto", input: "hello" })
+      body: JSON.stringify({ model: "client-gpt-model", input: "hello" })
     });
     assert.equal(missingAuth.status, 401);
 
@@ -274,7 +277,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
         authorization: "Bearer wrong-key",
         "content-type": "application/json"
       },
-      body: JSON.stringify({ model: "combo/ltn-code-auto", input: "hello" })
+      body: JSON.stringify({ model: "client-gpt-model", input: "hello" })
     });
     assert.equal(wrongKey.status, 401);
 
@@ -284,7 +287,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
         authorization: `Bearer ${disabledKey}`,
         "content-type": "application/json"
       },
-      body: JSON.stringify({ model: "combo/ltn-code-auto", input: "hello" })
+      body: JSON.stringify({ model: "client-gpt-model", input: "hello" })
     });
     assert.equal(disabled.status, 403);
 
@@ -292,11 +295,18 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       headers: { authorization: `Bearer ${validKey}` }
     });
     assert.equal(codexConfig.status, 200);
-    assert.deepEqual((await codexConfig.json()).combos, {
-      auto: "combo/ltn-code-auto",
-      fast: "combo/ltn-code-fast",
-      default: "combo/ltn-code-default",
-      power: "combo/ltn-code-power"
+    assert.deepEqual(await codexConfig.json(), {
+      team: "IT",
+      routing: {
+        mode: "limited_daily",
+        premiumLimit: 3,
+        usageScope: "client",
+        resetTimezone: "Asia/Ho_Chi_Minh"
+      },
+      combos: {
+        premium: "SIMI-GPT",
+        free: "SIMI-FREE"
+      }
     });
 
     const response = await fetch(`${baseUrl}/v1/responses`, {
@@ -304,10 +314,11 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       headers: {
         authorization: `Bearer ${validKey}`,
         "content-type": "application/json",
+        "x-ltn-client-id": "11111111-1111-4111-8111-111111111111",
         "x-request-id": "responses-integration"
       },
       body: JSON.stringify({
-        model: "combo/ltn-code-auto",
+        model: "client-gpt-model",
         instructions: "Keep client instruction",
         input: [{
           role: "user",
@@ -320,16 +331,17 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     });
 
     assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-ltn-route-tier"), "premium");
     const result = await response.json();
     assert.equal(result.object, "response");
-    assert.equal(result.model, "combo/ltn-code-auto");
+    assert.equal(result.model, "SIMI-GPT");
     assert.equal(
       result.output[0].content[0].text,
       "Assistant durable answer"
     );
 
     const routed = upstreamRequests.find((item) => item.url === "/v1/responses");
-    assert.equal(routed.body.model, "combo/ltn-code-auto");
+    assert.equal(routed.body.model, "SIMI-GPT");
     assert.match(routed.body.instructions, /Company fact/);
     assert.match(routed.body.instructions, /Team fact/);
     assert.match(routed.body.instructions, /Keep client instruction/);
@@ -363,10 +375,11 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
         authorization: `Bearer ${validKey}`,
         "content-type": "application/json",
         accept: "text/event-stream",
+        "x-ltn-client-id": "11111111-1111-4111-8111-111111111111",
         "x-request-id": "responses-stream-integration"
       },
       body: JSON.stringify({
-        model: "combo/ltn-code-auto",
+        model: "client-gpt-model",
         input: "stream this",
         stream: true
       })
@@ -406,10 +419,11 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       headers: {
         authorization: `Bearer ${validKey}`,
         "content-type": "application/json",
+        "x-ltn-client-id": "11111111-1111-4111-8111-111111111111",
         "x-request-id": "responses-extraction-failure"
       },
       body: JSON.stringify({
-        model: "combo/ltn-code-auto",
+        model: "client-gpt-model",
         input: "force extractor failure"
       })
     });

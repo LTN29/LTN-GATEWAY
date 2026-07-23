@@ -6,6 +6,25 @@ function bool(value, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).toLowerCase());
 }
 
+function number(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizePolicyMode(value, fallback = "inherit") {
+  const mode = String(value || fallback).trim().toLowerCase();
+  if (["premium_always", "limited_daily", "free_only", "inherit"].includes(mode)) {
+    return mode;
+  }
+  throw new Error(`aiPolicy.mode không hợp lệ: ${value}`);
+}
+
+function normalizeUsageScope(value, fallback = "client") {
+  const scope = String(value || fallback).trim().toLowerCase();
+  if (["client", "team"].includes(scope)) return scope;
+  throw new Error(`aiPolicy.usageScope không hợp lệ: ${value}`);
+}
+
 export const config = {
   port: Number(process.env.PORT || 20129),
   host: process.env.HOST || "0.0.0.0",
@@ -15,11 +34,39 @@ export const config = {
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 180000),
   memoryModel: process.env.MEMORY_MODEL || "mmf/mimo-auto",
   codexCombos: {
-    auto: process.env.CODEX_COMBO_AUTO || "",
-    fast: process.env.CODEX_COMBO_FAST || "",
-    default: process.env.CODEX_COMBO_DEFAULT || "",
-    power: process.env.CODEX_COMBO_POWER || ""
+    premium: process.env.CODEX_COMBO_PREMIUM || "",
+    free: process.env.CODEX_COMBO_FREE || ""
   },
+  codexDefaultPolicy: normalizePolicyMode(
+    process.env.CODEX_DEFAULT_POLICY || "limited_daily",
+    "limited_daily"
+  ),
+  codexDefaultPremiumLimit: number(
+    process.env.CODEX_DEFAULT_PREMIUM_LIMIT || 3,
+    3
+  ),
+  codexUsageTimezone: process.env.CODEX_USAGE_TIMEZONE || "Asia/Ho_Chi_Minh",
+  codexUsageFile: resolve(
+    process.env.CODEX_USAGE_FILE || "./data/codex-usage.json"
+  ),
+  codexUsageRetentionDays: number(
+    process.env.CODEX_USAGE_RETENTION_DAYS || 60,
+    60
+  ),
+  codexUsageReservationTtlMs: number(
+    process.env.CODEX_USAGE_RESERVATION_TTL_MS ||
+      Math.max(Number(process.env.UPSTREAM_TIMEOUT_MS || 180000) + 60_000, 300_000),
+    300_000
+  ),
+  codexUsageLockTimeoutMs: number(
+    process.env.CODEX_USAGE_LOCK_TIMEOUT_MS || 5000,
+    5000
+  ),
+  codexUsageLockStaleMs: number(
+    process.env.CODEX_USAGE_LOCK_STALE_MS || 120_000,
+    120_000
+  ),
+  codexRoutingEnabled: bool(process.env.CODEX_ROUTING_ENABLED, true),
   teamsFile: resolve(process.env.TEAMS_FILE || "./config/teams.json"),
   memoryDir: resolve(process.env.MEMORY_DIR || "./memory"),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),
@@ -85,7 +132,8 @@ export async function loadTeams({ force = false } = {}) {
       keyHash,
       memoryFile,
       displayName: String(item.displayName || code),
-      enabled
+      enabled,
+      aiPolicy: normalizeTeamAiPolicy(item.aiPolicy)
     };
 
     byHash.set(keyHash, team);
@@ -99,4 +147,33 @@ export async function loadTeams({ force = false } = {}) {
   };
 
   return teamsCache;
+}
+
+function normalizeTeamAiPolicy(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("aiPolicy phải là object");
+  }
+
+  const policy = {
+    mode: normalizePolicyMode(value.mode || "inherit"),
+    usageScope: normalizeUsageScope(value.usageScope || "client")
+  };
+
+  if (value.premiumLimit !== undefined && value.premiumLimit !== null && value.premiumLimit !== "") {
+    const premiumLimit = Number(value.premiumLimit);
+    if (!Number.isInteger(premiumLimit) || premiumLimit < 0 || premiumLimit > 10_000) {
+      throw new Error("aiPolicy.premiumLimit không hợp lệ");
+    }
+    policy.premiumLimit = premiumLimit;
+  }
+
+  if (value.premiumCombo !== undefined && value.premiumCombo !== null) {
+    policy.premiumCombo = String(value.premiumCombo).trim();
+  }
+  if (value.freeCombo !== undefined && value.freeCombo !== null) {
+    policy.freeCombo = String(value.freeCombo).trim();
+  }
+
+  return policy;
 }

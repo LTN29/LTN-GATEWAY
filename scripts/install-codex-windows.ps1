@@ -67,6 +67,29 @@ function Confirm-ComboIdSyntax {
   return $trimmed
 }
 
+function Confirm-ClientId {
+  param([AllowNull()][string]$ClientId)
+
+  if ([string]::IsNullOrWhiteSpace($ClientId)) { return $null }
+  $trimmed = $ClientId.Trim()
+  if ($trimmed.Length -gt 100 -or $trimmed -match '[\r\n]') { return $null }
+  if ($trimmed -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$') {
+    return $null
+  }
+  return $trimmed.ToLowerInvariant()
+}
+
+function Get-OrCreateClientId {
+  $clientId = Confirm-ClientId ([Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "User"))
+  if (-not $clientId) {
+    $clientId = Confirm-ClientId ([Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "Process"))
+  }
+  if (-not $clientId) {
+    $clientId = [guid]::NewGuid().ToString()
+  }
+  return $clientId
+}
+
 function Update-CodexConfig {
   param(
     [string]$ExistingContent,
@@ -151,16 +174,14 @@ if ($Uninstall) {
     }
   }
   [Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $null, "User")
+  [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $null, "User")
   Remove-Item Env:LTN_TEAM_API_KEY -ErrorAction SilentlyContinue
-  Write-Host "Đã gỡ cấu hình LTN Gateway, wrapper và LTN_TEAM_API_KEY. Codex CLI không bị gỡ."
+  Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
+  Write-Host "Đã gỡ cấu hình LTN Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
   return
 }
 
 $GatewayBaseUrl = $GatewayBaseUrl.TrimEnd("/")
-$comboAuto = Get-ConfiguredValue "CODEX_COMBO_AUTO" ""
-$comboFast = Get-ConfiguredValue "CODEX_COMBO_FAST" ""
-$comboDefault = Get-ConfiguredValue "CODEX_COMBO_DEFAULT" ""
-$comboPower = Get-ConfiguredValue "CODEX_COMBO_POWER" ""
 
 $gatewayUri = $null
 if (-not [Uri]::TryCreate($GatewayBaseUrl, [UriKind]::Absolute, [ref]$gatewayUri) -or
@@ -185,36 +206,30 @@ if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
   throw "API key của team không được để trống."
 }
 
-if ([string]::IsNullOrWhiteSpace($Mode)) {
-  Write-Host "Chọn chế độ:"
-  Write-Host "  1. Auto đơn giản"
-  Write-Host "  2. Fast / Default / Power"
-  $choice = Read-Host "Nhập 1 hoặc 2"
-  $Mode = if ($choice -eq "1") { "auto" } elseif ($choice -eq "2") { "profiles" } else { throw "Lựa chọn không hợp lệ." }
-}
-
 Write-Host "Đang xác minh Combo trên 9Router qua Gateway..."
 $headers = @{ Authorization = "Bearer $TeamApiKey" }
-if (-not $comboAuto -or -not $comboFast -or -not $comboDefault -or -not $comboPower) {
-  try {
-    $remoteConfig = Invoke-RestMethod -Method Get -Uri "$GatewayBaseUrl/codex/config" -Headers $headers
-    if (-not $comboAuto) { $comboAuto = [string]$remoteConfig.combos.auto }
-    if (-not $comboFast) { $comboFast = [string]$remoteConfig.combos.fast }
-    if (-not $comboDefault) { $comboDefault = [string]$remoteConfig.combos.default }
-    if (-not $comboPower) { $comboPower = [string]$remoteConfig.combos.power }
-  } catch {
-    throw "Gateway chưa cung cấp đủ cấu hình Codex Combo. Admin cần cấu hình CODEX_COMBO_AUTO/FAST/DEFAULT/POWER trên Mac mini. Chi tiết: $($_.Exception.Message)"
-  }
+try {
+  $remoteConfig = Invoke-RestMethod -Method Get -Uri "$GatewayBaseUrl/codex/config" -Headers $headers
+  $comboPremium = [string](Get-ObjectPropertyValue -Object $remoteConfig.combos -Name "premium")
+  $comboFree = [string](Get-ObjectPropertyValue -Object $remoteConfig.combos -Name "free")
+  $routingMode = [string](Get-ObjectPropertyValue -Object $remoteConfig.routing -Name "mode")
+} catch {
+  throw "Gateway chưa cung cấp đủ cấu hình Codex Premium/Free. Admin cần cấu hình CODEX_COMBO_PREMIUM/CODEX_COMBO_FREE hoặc aiPolicy của team. Chi tiết: $($_.Exception.Message)"
 }
 
-$requiredCombos = if ($Mode -eq "auto") {
-  $comboAuto = Confirm-ComboIdSyntax -ComboId $comboAuto -Name "CODEX_COMBO_AUTO"
-  @($comboAuto)
+$requiredCombos = if ($routingMode -eq "free_only") {
+  $comboFree = Confirm-ComboIdSyntax -ComboId $comboFree -Name "combos.free"
+  $defaultModel = $comboFree
+  @($comboFree)
+} elseif ($routingMode -eq "premium_always") {
+  $comboPremium = Confirm-ComboIdSyntax -ComboId $comboPremium -Name "combos.premium"
+  $defaultModel = $comboPremium
+  @($comboPremium)
 } else {
-  $comboFast = Confirm-ComboIdSyntax -ComboId $comboFast -Name "CODEX_COMBO_FAST"
-  $comboDefault = Confirm-ComboIdSyntax -ComboId $comboDefault -Name "CODEX_COMBO_DEFAULT"
-  $comboPower = Confirm-ComboIdSyntax -ComboId $comboPower -Name "CODEX_COMBO_POWER"
-  @($comboFast, $comboDefault, $comboPower)
+  $comboPremium = Confirm-ComboIdSyntax -ComboId $comboPremium -Name "combos.premium"
+  $comboFree = Confirm-ComboIdSyntax -ComboId $comboFree -Name "combos.free"
+  $defaultModel = $comboPremium
+  @($comboPremium, $comboFree) | Select-Object -Unique
 }
 
 try {
@@ -250,7 +265,6 @@ if (Test-Path $configPath) {
   Write-Host "Đã sao lưu config cũ: $backupPath"
 }
 
-$defaultModel = if ($Mode -eq "auto") { $comboAuto } else { $comboDefault }
 $escapedBaseUrl = Escape-TomlString $GatewayBaseUrl
 $escapedModel = Escape-TomlString $defaultModel
 $configContent = @"
@@ -264,40 +278,19 @@ name = "LTN Gateway"
 base_url = "$escapedBaseUrl"
 env_key = "LTN_TEAM_API_KEY"
 wire_api = "responses"
+env_http_headers = { "X-LTN-Client-ID" = "LTN_CLIENT_ID" }
 "@
 
 $updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent $configContent
 [IO.File]::WriteAllText($configPath, $updatedConfig, [Text.UTF8Encoding]::new($false))
 [Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $TeamApiKey, "User")
 $env:LTN_TEAM_API_KEY = $TeamApiKey
-
-if ($Mode -eq "profiles") {
-  $fastWrapper = @"
-@echo off
-codex --model "$comboFast" %*
-"@
-  $powerWrapper = @"
-@echo off
-codex --model "$comboPower" %*
-"@
-  [IO.File]::WriteAllText((Join-Path $binDir "codex-fast.cmd"), $fastWrapper, [Text.ASCIIEncoding]::new())
-  [IO.File]::WriteAllText((Join-Path $binDir "codex-power.cmd"), $powerWrapper, [Text.ASCIIEncoding]::new())
-
-  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-  $pathParts = @($userPath -split ";" | Where-Object { $_ })
-  if ($pathParts -notcontains $binDir) {
-    $newPath = (@($pathParts) + $binDir) -join ";"
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    $env:Path = "$env:Path;$binDir"
-  }
-}
+$clientId = Get-OrCreateClientId
+[Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $clientId, "User")
+$env:LTN_CLIENT_ID = $clientId
 
 Write-Host ""
 Write-Host "Cài đặt hoàn tất."
 Write-Host "  Gateway: $GatewayBaseUrl"
 Write-Host "  Model mặc định: $defaultModel"
-if ($Mode -eq "auto") {
-  Write-Host "  Sử dụng: codex"
-} else {
-  Write-Host "  Sử dụng: codex-fast | codex | codex-power"
-}
+Write-Host "  Sử dụng: codex"

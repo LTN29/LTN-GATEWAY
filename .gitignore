@@ -4,6 +4,9 @@ logs/*
 !logs/.gitkeep
 runtime/*
 !runtime/.gitkeep
+data/codex-usage*.json
+data/codex-usage*.json.*
+data/codex-usage*.lock
 memory/*.tmp
 memory/*.bak
 .DS_Store

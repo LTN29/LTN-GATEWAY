@@ -23,6 +23,10 @@ import {
   responsesSseCompleted
 } from "./response-parser.mjs";
 import {
+  codexConfigForTeam,
+  selectCodexRoute
+} from "./codex-routing.mjs";
+import {
   sendJson,
   openAiError,
   readBody,
@@ -135,6 +139,8 @@ async function proxyResponses(req, res, rawKey, team, id) {
   const signal = clientAbortSignal(req, res);
   const raw = await readBody(req);
   let payload;
+  let route = null;
+  let shouldReleaseRoute = false;
 
   try {
     payload = parseModelRequest(raw);
@@ -150,64 +156,90 @@ async function proxyResponses(req, res, rawKey, team, id) {
   const originalMessages = responseInputMessages(payload.input);
   const { systemContent } = await loadMemoryContext(team);
   const upstreamPayload = injectResponsesMemory(payload, systemContent);
+  route = await selectCodexRoute({
+    team,
+    headers: req.headers
+  });
+  shouldReleaseRoute = true;
+  upstreamPayload.model = route.selectedCombo;
 
-  // The model value is intentionally forwarded unchanged. In particular,
-  // combo/... is resolved exclusively by 9Router.
+  jsonLog("codex_route_selected", {
+    requestId: id,
+    team: team.code,
+    routeTier: route.routeTier,
+    requestNumber: route.requestNumber,
+    limit: route.limit,
+    selectedCombo: route.selectedCombo,
+    clientIdHashPrefix: route.clientIdHashPrefix
+  });
+
   jsonLog("responses_started", {
     requestId: id,
     team: team.code,
-    model: payload.model
+    model: route.selectedCombo
   });
 
   const startedAt = Date.now();
-  const upstream = await upstreamFetch("/v1/responses", {
-    method: "POST",
-    rawKey,
-    requestId: id,
-    accept: req.headers.accept || "*/*",
-    signal,
-    body: JSON.stringify(upstreamPayload)
-  });
+  try {
+    const upstream = await upstreamFetch("/v1/responses", {
+      method: "POST",
+      rawKey,
+      requestId: id,
+      accept: req.headers.accept || "*/*",
+      signal,
+      body: JSON.stringify(upstreamPayload)
+    });
 
-  copyHeaders(upstream, res);
-  res.statusCode = upstream.status;
-  const captured = await pipeAndCapture(upstream, res);
+    copyHeaders(upstream, res);
+    res.setHeader("X-LTN-Route-Tier", route.routeTier);
+    if (route.premiumRemaining !== null) {
+      res.setHeader("X-LTN-Premium-Remaining", String(route.premiumRemaining));
+    }
+    res.statusCode = upstream.status;
+    const captured = await pipeAndCapture(upstream, res);
 
-  if (upstream.ok) {
-    let assistantText = "";
-    let completed = false;
-    try {
-      if (payload.stream) {
-        const rawSse = captured.toString("utf8");
-        completed = responsesSseCompleted(rawSse);
-        assistantText = assistantTextFromSse(rawSse);
-      } else {
-        const responsePayload = JSON.parse(captured.toString("utf8"));
-        completed = responsesJsonSucceeded(responsePayload);
-        assistantText = assistantTextFromJson(responsePayload);
+    if (upstream.ok) {
+      let assistantText = "";
+      let completed = false;
+      try {
+        if (payload.stream) {
+          const rawSse = captured.toString("utf8");
+          completed = responsesSseCompleted(rawSse);
+          assistantText = assistantTextFromSse(rawSse);
+        } else {
+          const responsePayload = JSON.parse(captured.toString("utf8"));
+          completed = responsesJsonSucceeded(responsePayload);
+          assistantText = assistantTextFromJson(responsePayload);
+        }
+      } catch {
+        assistantText = "";
       }
-    } catch {
-      assistantText = "";
+
+      if (completed) {
+        await route.confirm();
+        shouldReleaseRoute = false;
+        scheduleMemoryExtraction({
+          team,
+          rawKey,
+          originalMessages,
+          assistantText,
+          requestId: id
+        });
+      }
     }
 
-    if (completed) {
-      scheduleMemoryExtraction({
-        team,
-        rawKey,
-        originalMessages,
-        assistantText,
-        requestId: id
-      });
+    jsonLog("responses_completed", {
+      requestId: id,
+      team: team.code,
+      model: route.selectedCombo,
+      status: upstream.status,
+      latencyMs: Date.now() - startedAt
+    });
+  } finally {
+    if (shouldReleaseRoute) {
+      await route.release();
     }
   }
-
-  jsonLog("responses_completed", {
-    requestId: id,
-    team: team.code,
-    model: payload.model,
-    status: upstream.status,
-    latencyMs: Date.now() - startedAt
-  });
 }
 
 async function handleChat(req, res, rawKey, team, id) {
@@ -428,7 +460,7 @@ export function createGatewayServer() {
     }
 
     if (req.method === "GET" && req.url === "/v1/codex/config") {
-      sendJson(res, 200, { combos: config.codexCombos });
+      sendJson(res, 200, codexConfigForTeam(team));
       return;
     }
 

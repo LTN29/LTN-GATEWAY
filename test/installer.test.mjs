@@ -18,6 +18,7 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   assert.match(script, /\/models/);
   assert.match(script, /owned_by/);
   assert.match(script, /env_key = "LTN_TEAM_API_KEY"/);
+  assert.match(script, /env_http_headers = \{ "X-LTN-Client-ID" = "LTN_CLIENT_ID" \}/);
   assert.doesNotMatch(script, /combo\/ltn-code-(?:auto|fast|default|power)/);
   assert.doesNotMatch(script, /\^combo\//);
   assert.doesNotMatch(script, /combo\/\$|combo\/\$\{|combo\/\$comboId/);
@@ -26,6 +27,7 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   )?.[1];
   assert.ok(configBlock);
   assert.doesNotMatch(configBlock, /TeamApiKey/);
+  assert.doesNotMatch(configBlock, /clientId|\$clientId/);
 });
 
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {
@@ -37,6 +39,12 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
     script,
     /SetEnvironmentVariable\("LTN_TEAM_API_KEY", \$null, "User"\)/
   );
+  assert.match(
+    script,
+    /SetEnvironmentVariable\("LTN_CLIENT_ID", \$null, "User"\)/
+  );
+  assert.match(script, /Get-OrCreateClientId/);
+  assert.match(script, /NewGuid\(\)/);
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
 });

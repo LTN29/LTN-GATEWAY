@@ -136,21 +136,36 @@ API key là key riêng của team đã đăng ký trong Gateway và đang hoạt
 
 ## Cài Codex CLI trên Windows
 
-9Router là nơi duy nhất quản lý model và fallback thông qua **Combos**. Gateway
-giữ nguyên Combo ID do Codex gửi và chuyển nguyên vẹn sang 9Router.
+9Router là nơi duy nhất quản lý model con và fallback thông qua **Combos**.
+Gateway chọn Combo Premium/Free theo policy của team, rồi chuyển nguyên Combo ID
+sang 9Router.
 
-Các Combo ID mặc định được cấu hình bằng biến môi trường:
+Policy mặc định toàn hệ thống được cấu hình bằng biến môi trường:
 
 ```env
-CODEX_COMBO_AUTO=
-CODEX_COMBO_FAST=
-CODEX_COMBO_DEFAULT=
-CODEX_COMBO_POWER=
+CODEX_COMBO_PREMIUM=
+CODEX_COMBO_FREE=
+CODEX_DEFAULT_POLICY=limited_daily
+CODEX_DEFAULT_PREMIUM_LIMIT=3
+CODEX_USAGE_TIMEZONE=Asia/Ho_Chi_Minh
 ```
 
-Admin điền các Combo ID thực tế trong `.env` trên Mac mini. Gateway vẫn khởi
-động nếu chưa có các biến này; installer chỉ yêu cầu những Combo cần cho chế độ
-được chọn và báo lỗi rõ ràng nếu còn thiếu.
+Mỗi team có thể override trong `config/teams.json` bằng `aiPolicy`:
+
+```json
+{
+  "aiPolicy": {
+    "mode": "premium_always|limited_daily|free_only|inherit",
+    "premiumLimit": 3,
+    "usageScope": "client|team",
+    "premiumCombo": "SIMI-GPT",
+    "freeCombo": "SIMI-FREE"
+  }
+}
+```
+
+Gateway vẫn khởi động nếu các biến Combo chưa có; khi route Codex cần dùng mà
+thiếu cấu hình, Gateway trả lỗi rõ ràng.
 
 Chạy installer local:
 
@@ -170,18 +185,15 @@ URL Windows `/install/codex.ps1` trả một bootstrap nhỏ. Bootstrap tải fu
 `https://ai.simi.vn/install/codex-full.ps1`, chạy bằng call operator và luôn
 xóa file tạm sau khi hoàn tất hoặc gặp lỗi.
 
-Installer chỉ hỏi API key team và một trong hai chế độ:
-
-- **Auto đơn giản**: `codex` dùng `CODEX_COMBO_AUTO`.
-- **Fast / Default / Power**: tạo `codex-fast`, cấu hình `codex` dùng Combo
-  Default, và tạo `codex-power`.
+Installer chỉ hỏi API key team. Installer tạo `LTN_CLIENT_ID` một lần, giữ lại
+khi repair, và ghi `env_http_headers` để Codex gửi `X-LTN-Client-ID` cho Gateway.
 
 Trước khi ghi cấu hình, installer gọi `GET /v1/models` bằng API key team và
 dừng với lỗi rõ ràng nếu thiếu Combo. Installer không tải hoặc cho nhân viên
 chọn danh sách model con.
 
-Installer lấy bốn Combo ID từ endpoint xác thực `GET /v1/codex/config`.
-Endpoint này đọc các biến `CODEX_COMBO_*` trên Gateway và không trả danh sách
+Installer lấy policy và Combo ID Premium/Free từ endpoint xác thực
+`GET /v1/codex/config`. Endpoint này không trả secret, key hash hoặc danh sách
 model con.
 
 Sau khi cài, admin chỉ thay đổi thành phần hoặc thứ tự fallback tại
