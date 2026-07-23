@@ -1,0 +1,67 @@
+{
+  "teams": [
+    {
+      "code": "WARRANTY",
+      "displayName": "Warranty",
+      "keyHash": "6475727fa3a753145e88a7d024d2014ea42a7553dff6d6c975aa4c8dd7e9ea96",
+      "memoryFile": "WARRANTY.md",
+      "enabled": true
+    },
+    {
+      "code": "INVENTORY",
+      "displayName": "Inventory",
+      "keyHash": "1f872907ddca975d50cf637f2b8231a37dadf0eaf70f296b83382aea5d025dc7",
+      "memoryFile": "INVENTORY.md",
+      "enabled": true
+    },
+    {
+      "code": "MOBILE",
+      "displayName": "Mobile App",
+      "keyHash": "sk-716ec13383f22484-djldx6-258b9fc5",
+      "memoryFile": "MOBILE.md",
+      "enabled": true
+    },
+    {
+      "code": "WEB",
+      "displayName": "Website",
+      "keyHash": "",
+      "memoryFile": "WEB.md",
+      "enabled": false
+    },
+    {
+      "code": "MARKETING",
+      "displayName": "Marketing",
+      "keyHash": "38d66e9811edb3349d1c5ac8362cbb5cd5f943d4beb7c3ef14f2c4b4335ac09a",
+      "memoryFile": "MARKETING.md",
+      "enabled": true
+    },
+    {
+      "code": "CSKH",
+      "displayName": "CSKH",
+      "keyHash": "b99fd54b6452858930f8fedd9e34a6f425fb110a873d8f71ee99ac51f8eb7dde",
+      "memoryFile": "CSKH.md",
+      "enabled": true
+    },
+    {
+      "code": "SALES",
+      "displayName": "Sales",
+      "keyHash": "1c19342e9058a9589161896f59b0fcb33ef4325c220f4f6b993da50c8633305d",
+      "memoryFile": "SALES.md",
+      "enabled": true
+    },
+    {
+      "code": "IT",
+      "displayName": "IT",
+      "keyHash": "5e189de630bed159ae72786de1858cf6c320070265825a41bb84f44af4ce0e4a",
+      "memoryFile": "IT.md",
+      "enabled": true
+    },
+    {
+      "code": "MANAGEMENT",
+      "displayName": "Management",
+      "keyHash": "67799dd742fbf539c9f3fba68d07b102d6fdb72a9aed7146fae8cf52eab3d81c",
+      "memoryFile": "MANAGEMENT.md",
+      "enabled": true
+    }
+  ]
+}
