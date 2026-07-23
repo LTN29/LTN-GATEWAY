@@ -14,6 +14,12 @@ export const config = {
   ).replace(/\/+$/, ""),
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 180000),
   memoryModel: process.env.MEMORY_MODEL || "mmf/mimo-auto",
+  codexCombos: {
+    auto: process.env.CODEX_COMBO_AUTO || "",
+    fast: process.env.CODEX_COMBO_FAST || "",
+    default: process.env.CODEX_COMBO_DEFAULT || "",
+    power: process.env.CODEX_COMBO_POWER || ""
+  },
   teamsFile: resolve(process.env.TEAMS_FILE || "./config/teams.json"),
   memoryDir: resolve(process.env.MEMORY_DIR || "./memory"),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),
@@ -61,7 +67,6 @@ export async function loadTeams({ force = false } = {}) {
     const memoryFile = basename(String(item.memoryFile || `${code}.md`));
     const enabled = item.enabled !== false;
 
-    if (!enabled) continue;
     if (!/^[A-Z0-9_-]{2,40}$/.test(code)) {
       throw new Error(`Team code không hợp lệ: ${item.code}`);
     }

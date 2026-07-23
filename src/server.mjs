@@ -1,17 +1,26 @@
 import http from "node:http";
 import { Readable } from "node:stream";
+import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { config, loadTeams } from "./config.mjs";
 import { authenticateTeam } from "./auth.mjs";
 import {
-  loadCompanyMemory,
-  loadTeamMemory,
+  loadMemoryContext,
   injectMemory
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
 import { scheduleMemoryExtraction } from "./extractor.mjs";
 import {
+  parseModelRequest,
+  injectResponsesMemory,
+  responseInputMessages
+} from "./model-routing.mjs";
+import {
   assistantTextFromJson,
-  assistantTextFromSse
+  assistantTextFromSse,
+  responsesJsonSucceeded,
+  responsesSseCompleted
 } from "./response-parser.mjs";
 import {
   sendJson,
@@ -25,6 +34,10 @@ import {
   jsonLog,
   requestId as makeRequestId
 } from "./utils.mjs";
+
+const codexInstallerPath = fileURLToPath(
+  new URL("../scripts/install-codex-windows.ps1", import.meta.url)
+);
 
 function copyHeaders(upstream, res) {
   const blocked = new Set([
@@ -42,6 +55,15 @@ function copyHeaders(upstream, res) {
   }
 
   setCors(res);
+}
+
+function clientAbortSignal(req, res) {
+  const controller = new AbortController();
+  req.once("aborted", () => controller.abort());
+  res.once("close", () => {
+    if (!res.writableFinished) controller.abort();
+  });
+  return controller.signal;
 }
 
 async function pipeAndCapture(upstream, res) {
@@ -95,7 +117,98 @@ async function proxyModels(req, res, rawKey, team, id) {
   });
 }
 
+async function serveCodexInstaller(res) {
+  const body = await readFile(codexInstallerPath);
+  res.writeHead(200, {
+    "content-type": "text/plain; charset=utf-8",
+    "content-length": body.length,
+    "cache-control": "public, max-age=60, must-revalidate",
+    "x-content-type-options": "nosniff"
+  });
+  res.end(body);
+}
+
+async function proxyResponses(req, res, rawKey, team, id) {
+  const signal = clientAbortSignal(req, res);
+  const raw = await readBody(req);
+  let payload;
+
+  try {
+    payload = parseModelRequest(raw);
+  } catch (error) {
+    sendJson(
+      res,
+      error.statusCode || 400,
+      openAiError(error.message, error.type || "invalid_request_error")
+    );
+    return;
+  }
+
+  const originalMessages = responseInputMessages(payload.input);
+  const { systemContent } = await loadMemoryContext(team);
+  const upstreamPayload = injectResponsesMemory(payload, systemContent);
+
+  // The model value is intentionally forwarded unchanged. In particular,
+  // combo/... is resolved exclusively by 9Router.
+  jsonLog("responses_started", {
+    requestId: id,
+    team: team.code,
+    model: payload.model
+  });
+
+  const startedAt = Date.now();
+  const upstream = await upstreamFetch("/v1/responses", {
+    method: "POST",
+    rawKey,
+    requestId: id,
+    accept: req.headers.accept || "*/*",
+    signal,
+    body: JSON.stringify(upstreamPayload)
+  });
+
+  copyHeaders(upstream, res);
+  res.statusCode = upstream.status;
+  const captured = await pipeAndCapture(upstream, res);
+
+  if (upstream.ok) {
+    let assistantText = "";
+    let completed = false;
+    try {
+      if (payload.stream) {
+        const rawSse = captured.toString("utf8");
+        completed = responsesSseCompleted(rawSse);
+        assistantText = assistantTextFromSse(rawSse);
+      } else {
+        const responsePayload = JSON.parse(captured.toString("utf8"));
+        completed = responsesJsonSucceeded(responsePayload);
+        assistantText = assistantTextFromJson(responsePayload);
+      }
+    } catch {
+      assistantText = "";
+    }
+
+    if (completed) {
+      scheduleMemoryExtraction({
+        team,
+        rawKey,
+        originalMessages,
+        assistantText,
+        requestId: id
+      });
+    }
+  }
+
+  jsonLog("responses_completed", {
+    requestId: id,
+    team: team.code,
+    model: payload.model,
+    status: upstream.status,
+    latencyMs: Date.now() - startedAt
+  });
+}
+
 async function handleChat(req, res, rawKey, team, id) {
+  const signal = clientAbortSignal(req, res);
   const raw = await readBody(req);
   let payload;
 
@@ -116,10 +229,7 @@ async function handleChat(req, res, rawKey, team, id) {
   }
 
   const originalMessages = structuredClone(payload.messages);
-  const [companyMemory, teamMemory] = await Promise.all([
-    loadCompanyMemory(),
-    loadTeamMemory(team)
-  ]);
+  const { companyMemory, teamMemory } = await loadMemoryContext(team);
 
   payload.messages = injectMemory(
     payload.messages,
@@ -141,6 +251,7 @@ async function handleChat(req, res, rawKey, team, id) {
     rawKey,
     requestId: id,
     accept: req.headers.accept || "*/*",
+    signal,
     body: JSON.stringify(payload)
   });
 
@@ -185,12 +296,29 @@ function isAdmin(req) {
   return getBearerToken(req.headers) === config.adminToken;
 }
 
-const server = http.createServer(async (req, res) => {
+export function createGatewayServer() {
+  return http.createServer(async (req, res) => {
   const id = makeRequestId(req.headers["x-request-id"]);
   res.setHeader("x-request-id", id);
 
   if (req.method === "OPTIONS") {
     handleOptions(res);
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/install/codex.ps1") {
+    try {
+      await serveCodexInstaller(res);
+    } catch (error) {
+      jsonLog("installer_download_failed", {
+        error: error?.message || String(error)
+      });
+      sendJson(
+        res,
+        500,
+        openAiError("Không thể tải Codex installer", "gateway_error")
+      );
+    }
     return;
   }
 
@@ -234,7 +362,9 @@ const server = http.createServer(async (req, res) => {
 
   const supported =
     (req.method === "GET" && req.url === "/v1/models") ||
-    (req.method === "POST" && req.url === "/v1/chat/completions");
+    (req.method === "GET" && req.url === "/v1/codex/config") ||
+    (req.method === "POST" && req.url === "/v1/chat/completions") ||
+    (req.method === "POST" && req.url === "/v1/responses");
 
   if (!supported) {
     sendJson(res, 404, openAiError("Không tìm thấy route", "not_found_error"));
@@ -267,8 +397,27 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (!team.enabled) {
+      sendJson(
+        res,
+        403,
+        openAiError("Team đã bị vô hiệu hóa", "permission_error")
+      );
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/v1/codex/config") {
+      sendJson(res, 200, { combos: config.codexCombos });
+      return;
+    }
+
     if (req.method === "GET") {
       await proxyModels(req, res, rawKey, team, id);
+      return;
+    }
+
+    if (req.url === "/v1/responses") {
+      await proxyResponses(req, res, rawKey, team, id);
       return;
     }
 
@@ -289,15 +438,26 @@ const server = http.createServer(async (req, res) => {
       res.destroy(error);
     }
   }
-});
-
-server.listen(config.port, config.host, () => {
-  jsonLog("server_started", {
-    host: config.host,
-    port: config.port,
-    upstream: config.upstreamBaseUrl,
-    teamsFile: config.teamsFile,
-    memoryDir: config.memoryDir,
-    oneDriveMode: config.oneDrive.mode
   });
-});
+}
+
+function isMainModule() {
+  return Boolean(
+    process.argv[1] &&
+    import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+  );
+}
+
+if (isMainModule()) {
+  const server = createGatewayServer();
+  server.listen(config.port, config.host, () => {
+    jsonLog("server_started", {
+      host: config.host,
+      port: config.port,
+      upstream: config.upstreamBaseUrl,
+      teamsFile: config.teamsFile,
+      memoryDir: config.memoryDir,
+      oneDriveMode: config.oneDrive.mode
+    });
+  });
+}

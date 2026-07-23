@@ -1,7 +1,7 @@
 import { mkdir, copyFile, writeFile, rename } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { config } from "./config.mjs";
-import { jsonLog } from "./utils.mjs";
+import { jsonLog, redactSecrets } from "./utils.mjs";
 
 let tokenCache = {
   accessToken: "",
@@ -116,7 +116,7 @@ export async function syncMemoryFile(filename, content) {
     jsonLog("onedrive_sync_failed", {
       filename,
       mode,
-      error: error?.message || String(error)
+      error: redactSecrets(error?.message || String(error))
     });
     throw error;
   }

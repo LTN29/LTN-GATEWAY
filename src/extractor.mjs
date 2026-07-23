@@ -89,7 +89,9 @@ export function scheduleMemoryExtraction({
       const text = await response.text();
 
       if (!response.ok) {
-        throw new Error(`Memory model lỗi ${response.status}: ${text.slice(0, 500)}`);
+        throw new Error(
+          `Memory model lỗi ${response.status}: ${redactSecrets(text.slice(0, 500))}`
+        );
       }
 
       const payload = JSON.parse(text);
@@ -112,7 +114,7 @@ export function scheduleMemoryExtraction({
       jsonLog("memory_update_failed", {
         requestId,
         team: team.code,
-        error: error?.message || String(error)
+        error: redactSecrets(error?.message || String(error))
       });
     }
   });

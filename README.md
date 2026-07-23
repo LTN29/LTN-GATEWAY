@@ -1,6 +1,10 @@
 # LTN Gateway
 
-Gateway OpenAI-compatible đặt trước 9Router, có bộ nhớ Markdown theo team và đồng bộ OneDrive.
+Gateway OpenAI-compatible đặt trước 9Router, có bộ nhớ Markdown theo team và
+đồng bộ SharePoint/OneDrive qua Microsoft Graph hoặc thư mục sync local.
+
+Đọc [bối cảnh dự án và môi trường production](docs/PROJECT_CONTEXT.md) trước
+khi sửa code hoặc chuẩn bị triển khai.
 
 ## Chức năng
 
@@ -8,6 +12,7 @@ Gateway OpenAI-compatible đặt trước 9Router, có bộ nhớ Markdown theo 
 - Tên key trong 9Router nên đặt `TEAM-{CODE}` để quản lý.
 - Đọc `COMPANY.md` và file Markdown của team trước mỗi request.
 - Proxy `/v1/models` và `/v1/chat/completions` sang 9Router.
+- Proxy `/v1/responses` cho Codex CLI với cùng pipeline COMPANY/TEAM memory.
 - Hỗ trợ `stream: true` và `stream: false`.
 - Sau mỗi câu trả lời, dùng model để rút ra kiến thức bền vững.
 - Chỉ cập nhật một file Markdown gọn cho mỗi team.
@@ -80,7 +85,7 @@ Gỡ service:
 ./scripts/uninstall-service.sh
 ```
 
-## OneDrive
+## SharePoint / OneDrive
 
 ### Cách 1: thư mục OneDrive trên Mac
 
@@ -128,6 +133,60 @@ https://ai.simi.vn/v1
 ```
 
 API key là key riêng của team đã đăng ký trong Gateway và đang hoạt động trong 9Router.
+
+## Cài Codex CLI trên Windows
+
+9Router là nơi duy nhất quản lý model và fallback thông qua **Combos**. Gateway
+giữ nguyên Combo ID do Codex gửi và chuyển nguyên vẹn sang 9Router.
+
+Các Combo ID mặc định được cấu hình bằng biến môi trường:
+
+```env
+CODEX_COMBO_AUTO=
+CODEX_COMBO_FAST=
+CODEX_COMBO_DEFAULT=
+CODEX_COMBO_POWER=
+```
+
+Admin điền các Combo ID thực tế trong `.env` trên Mac mini. Gateway vẫn khởi
+động nếu chưa có các biến này; installer chỉ yêu cầu những Combo cần cho chế độ
+được chọn và báo lỗi rõ ràng nếu còn thiếu.
+
+Chạy installer local:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1
+```
+
+Máy nhân viên cài bằng URL public cố định của Gateway:
+
+```powershell
+irm https://ai.simi.vn/install/codex.ps1 | iex
+```
+
+Installer chỉ hỏi API key team và một trong hai chế độ:
+
+- **Auto đơn giản**: `codex` dùng `CODEX_COMBO_AUTO`.
+- **Fast / Default / Power**: tạo `codex-fast`, cấu hình `codex` dùng Combo
+  Default, và tạo `codex-power`.
+
+Trước khi ghi cấu hình, installer gọi `GET /v1/models` bằng API key team và
+dừng với lỗi rõ ràng nếu thiếu Combo. Installer không tải hoặc cho nhân viên
+chọn danh sách model con.
+
+Installer lấy bốn Combo ID từ endpoint xác thực `GET /v1/codex/config`.
+Endpoint này đọc các biến `CODEX_COMBO_*` trên Gateway và không trả danh sách
+model con.
+
+Sau khi cài, admin chỉ thay đổi thành phần hoặc thứ tự fallback tại
+**9Router Dashboard → Combos**. Máy nhân viên luôn giữ nguyên Combo ID.
+
+Repair hoặc rotate API key: chạy lại installer; block cấu hình được cập nhật
+thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
+```
 
 ## Bảo mật
 

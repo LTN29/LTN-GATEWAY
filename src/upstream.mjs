@@ -5,10 +5,14 @@ export async function upstreamFetch(path, {
   rawKey,
   body,
   accept = "*/*",
-  requestId
+  requestId,
+  signal
 } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.upstreamTimeoutMs);
+  const combinedSignal = signal
+    ? AbortSignal.any([controller.signal, signal])
+    : controller.signal;
 
   try {
     return await fetch(`${config.upstreamBaseUrl}${path}`, {
@@ -20,7 +24,7 @@ export async function upstreamFetch(path, {
         "x-request-id": requestId
       },
       body,
-      signal: controller.signal,
+      signal: combinedSignal,
       redirect: "manual"
     });
   } finally {
