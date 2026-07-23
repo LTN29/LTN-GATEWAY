@@ -160,11 +160,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1
 
 Máy nhân viên cài bằng URL public cố định của Gateway:
 
-```powershell
-irm https://ai.simi.vn/install/codex.ps1 | iex
-```
+| Hệ điều hành | Lệnh cài |
+| --- | --- |
+| Windows | `irm https://ai.simi.vn/install/codex.ps1 \| iex` |
+| macOS | `curl -fsSL https://ai.simi.vn/install/codex.sh \| bash` |
+| Ubuntu/Linux | `curl -fsSL https://ai.simi.vn/install/codex.sh \| bash` |
 
-URL trên trả một bootstrap nhỏ. Bootstrap tải full installer từ route cố định
+URL Windows `/install/codex.ps1` trả một bootstrap nhỏ. Bootstrap tải full installer từ route cố định
 `https://ai.simi.vn/install/codex-full.ps1`, chạy bằng call operator và luôn
 xóa file tạm sau khi hoàn tất hoặc gặp lỗi.
 

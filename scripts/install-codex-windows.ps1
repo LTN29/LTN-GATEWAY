@@ -27,6 +27,46 @@ function Escape-TomlString {
   return $Value.Replace('\', '\\').Replace('"', '\"')
 }
 
+function Get-ObjectPropertyValue {
+  param(
+    [object]$Object,
+    [string]$Name
+  )
+
+  if ($null -eq $Object) { return $null }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) { return $null }
+  return $property.Value
+}
+
+function Confirm-ComboIdSyntax {
+  param(
+    [AllowNull()]
+    [string]$ComboId,
+    [string]$Name
+  )
+
+  if ([string]::IsNullOrWhiteSpace($ComboId)) {
+    throw "Thiếu Combo ID cho '$Name'. Admin cần cấu hình biến CODEX_COMBO_* tương ứng trên Gateway."
+  }
+
+  $trimmed = $ComboId.Trim()
+  if ([string]::IsNullOrWhiteSpace($trimmed)) {
+    throw "Thiếu Combo ID cho '$Name'. Admin cần cấu hình biến CODEX_COMBO_* tương ứng trên Gateway."
+  }
+  if ($trimmed.Length -gt 200) {
+    throw "Combo ID cho '$Name' quá dài. Độ dài tối đa là 200 ký tự."
+  }
+  if ($trimmed -match '[\r\n]') {
+    throw "Combo ID cho '$Name' không được chứa CR hoặc LF."
+  }
+  if ($trimmed -match '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]') {
+    throw "Combo ID cho '$Name' không được chứa ký tự điều khiển."
+  }
+
+  return $trimmed
+}
+
 function Update-CodexConfig {
   param(
     [string]$ExistingContent,
@@ -71,15 +111,23 @@ function Test-ComboIds {
 
   $missing = [System.Collections.Generic.List[string]]::new()
   foreach ($comboId in $RequiredIds) {
-    $matches = @($Models | Where-Object { $_.id -eq $comboId })
+    $matches = @($Models | Where-Object {
+      (Get-ObjectPropertyValue -Object $_ -Name "id") -eq $comboId
+    })
     if ($matches.Count -eq 0) {
       $missing.Add($comboId)
       continue
     }
 
-    $ownedByValues = @($matches | ForEach-Object { $_.owned_by } | Where-Object { $_ })
-    if ($ownedByValues.Count -gt 0 -and -not ($ownedByValues -contains "combo")) {
+    $ownedByValues = @($matches | ForEach-Object {
+      Get-ObjectPropertyValue -Object $_ -Name "owned_by"
+    } | Where-Object { $_ })
+    $invalidOwnedByValues = @($ownedByValues | Where-Object { $_ -ne "combo" })
+    if ($invalidOwnedByValues.Count -gt 0) {
       throw "Model '$comboId' tồn tại nhưng owned_by không phải 'combo'. Hãy kiểm tra lại trên 9Router Dashboard -> Combos."
+    }
+    if ($ownedByValues.Count -eq 0) {
+      Write-Warning "Model '$comboId' tồn tại trong GET /v1/models nhưng không có owned_by. Tạm chấp nhận vì 9Router đã trả về đúng ID."
     }
   }
 
@@ -160,17 +208,13 @@ if (-not $comboAuto -or -not $comboFast -or -not $comboDefault -or -not $comboPo
 }
 
 $requiredCombos = if ($Mode -eq "auto") {
+  $comboAuto = Confirm-ComboIdSyntax -ComboId $comboAuto -Name "CODEX_COMBO_AUTO"
   @($comboAuto)
 } else {
+  $comboFast = Confirm-ComboIdSyntax -ComboId $comboFast -Name "CODEX_COMBO_FAST"
+  $comboDefault = Confirm-ComboIdSyntax -ComboId $comboDefault -Name "CODEX_COMBO_DEFAULT"
+  $comboPower = Confirm-ComboIdSyntax -ComboId $comboPower -Name "CODEX_COMBO_POWER"
   @($comboFast, $comboDefault, $comboPower)
-}
-foreach ($comboId in $requiredCombos) {
-  if ([string]::IsNullOrWhiteSpace($comboId)) {
-    throw "Thiếu Combo ID cho chế độ '$Mode'. Admin cần cấu hình biến CODEX_COMBO_* tương ứng trên Gateway."
-  }
-  if ($comboId -notmatch '^combo/[A-Za-z0-9._/-]+$') {
-    throw "Combo ID không hợp lệ: '$comboId'. Giá trị phải bắt đầu bằng combo/."
-  }
 }
 
 try {
@@ -180,7 +224,7 @@ try {
 }
 
 $models = @($modelResponse.data)
-$missing = Test-ComboIds -Models $models -RequiredIds $requiredCombos
+$missing = @(Test-ComboIds -Models $models -RequiredIds $requiredCombos)
 if ($missing.Count -gt 0) {
   throw "Thiếu Combo trên 9Router: $($missing -join ', '). Hãy tạo tại 9Router Dashboard -> Combos rồi chạy lại installer."
 }

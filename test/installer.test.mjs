@@ -19,6 +19,8 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   assert.match(script, /owned_by/);
   assert.match(script, /env_key = "LTN_TEAM_API_KEY"/);
   assert.doesNotMatch(script, /combo\/ltn-code-(?:auto|fast|default|power)/);
+  assert.doesNotMatch(script, /\^combo\//);
+  assert.doesNotMatch(script, /combo\/\$|combo\/\$\{|combo\/\$comboId/);
   const configBlock = script.match(
     /\$configContent = @"([\s\S]*?)"@/
   )?.[1];
@@ -37,6 +39,27 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   );
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
+});
+
+test("Windows installer validates Combo ID syntax without assuming a combo prefix", async () => {
+  const script = await readFile(installerUrl, "utf8");
+
+  assert.match(script, /function Confirm-ComboIdSyntax/);
+  assert.match(script, /\$ComboId\.Trim\(\)/);
+  assert.match(script, /Length -gt 200/);
+  assert.match(script, /\[\\r\\n\]/);
+  assert.match(script, /\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F/);
+  assert.doesNotMatch(script, /notmatch '\^combo\//);
+
+  for (const validId of [
+    "SIMI-AI",
+    "simi-ai",
+    "combo/simi-ai",
+    "company.default",
+    "LTN_CODE_POWER"
+  ]) {
+    assert.equal(validId.trim(), validId);
+  }
 });
 
 test("public bootstrap is pipeline-safe and cleans its fixed HTTPS download", async () => {
