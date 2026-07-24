@@ -44,4 +44,4 @@ if [ "${EFFECTIVE_URL}" != "${INSTALLER_URL}" ]; then
   exit 1
 fi
 
-bash "${TEMP_INSTALLER}"
+bash "${TEMP_INSTALLER}" "$@"

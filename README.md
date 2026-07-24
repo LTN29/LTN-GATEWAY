@@ -216,16 +216,13 @@ thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
 ```
 
-Trên macOS/Ubuntu/Linux, chạy installer rồi chọn menu `Repair`, `Status` hoặc `Uninstall`.
-Nếu muốn gọi trực tiếp flag:
+Trên macOS/Ubuntu/Linux, lệnh public mặc định chạy install/update ngay, không hiện menu.
+Các thao tác quản trị dùng flag qua `bash -s --`:
 
 ```bash
-tmp="$(mktemp)"
-curl -fsSL https://ai.simi.vn/install/codex-full.sh -o "$tmp"
-bash "$tmp" --status
-bash "$tmp" --repair
-bash "$tmp" --uninstall
-rm -f "$tmp"
+curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --status
+curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --repair
+curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --uninstall
 ```
 
 File cấu hình Codex nằm ở `~/.codex/config.toml`. Installer chỉ thay block giữa:

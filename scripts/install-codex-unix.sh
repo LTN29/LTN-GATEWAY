@@ -16,7 +16,7 @@ AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
 REMOTE_MODELS_FILE=""
-MODE="${1:-}"
+MODE="${1:---install}"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -90,7 +90,10 @@ get_or_create_client_id() {
 
 read_team_key() {
   if [ -z "${TEAM_API_KEY}" ]; then
-    IFS= read -r -s -p 'API key cua team: ' TEAM_API_KEY
+    if [ ! -r /dev/tty ]; then
+      die "Khong tim thay terminal de nhap API key. Hay chay lai trong terminal tuong tac."
+    fi
+    IFS= read -r -s -p 'API key cua team: ' TEAM_API_KEY < /dev/tty
     printf '\n'
   fi
   [ -n "${TEAM_API_KEY}" ] || die "API key cua team khong duoc de trong."
@@ -438,28 +441,9 @@ uninstall_ltn() {
   echo "Đã gỡ cấu hình LTN Codex. Không gỡ Codex CLI."
 }
 
-menu() {
-  echo "Chọn chế độ:"
-  echo "  1. Install/Update"
-  echo "  2. Repair"
-  echo "  3. Status"
-  echo "  4. Uninstall"
-  printf 'Nhập 1-4: '
-  local choice
-  IFS= read -r choice
-  case "${choice}" in
-    1) MODE="--install" ;;
-    2) MODE="--repair" ;;
-    3) MODE="--status" ;;
-    4) MODE="--uninstall" ;;
-    *) die "Lựa chọn không hợp lệ." ;;
-  esac
-}
-
 main() {
   detect_os
   case "${MODE}" in
-    "") menu ;;
     --install|--repair|--status|--uninstall) ;;
     *) die "Flag không hợp lệ. Dùng --install, --repair, --status hoặc --uninstall." ;;
   esac

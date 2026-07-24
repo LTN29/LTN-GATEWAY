@@ -26,7 +26,7 @@ test("Unix bootstrap is safe for curl pipe bash", async () => {
   assert.match(script, /--proto-redir '=https'/);
   assert.match(script, /%{url_effective}/);
   assert.match(script, /if \[ "\$\{EFFECTIVE_URL\}" != "\$\{INSTALLER_URL\}" \]/);
-  assert.match(script, /bash "\$\{TEMP_INSTALLER\}"/);
+  assert.match(script, /bash "\$\{TEMP_INSTALLER\}" "\$@"/);
   assert.doesNotMatch(script, /^\s*param\s*\(/m);
   assert.doesNotMatch(script, /\[CmdletBinding\(\)\]/);
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);
@@ -42,7 +42,10 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /Darwin\) OS_NAME="macos"/);
   assert.match(script, /Linux\) OS_NAME="linux"/);
   assert.match(script, /https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
+  assert.match(script, /MODE="\$\{1:---install\}"/);
   assert.match(script, /read -r -s -p 'API key cua team: '/);
+  assert.match(script, /< \/dev\/tty/);
+  assert.doesNotMatch(script, /Chọn chế độ|Nhap 1-4|Nhập 1-4/);
   assert.match(script, /if curl --config "\$\{curl_config\}" --output "\$\{output\}" "\$\{url\}"; then/);
   assert.match(script, /status=\$\?/);
   assert.match(script, /\/codex\/config/);

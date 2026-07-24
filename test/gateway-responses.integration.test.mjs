@@ -237,7 +237,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(unixInstaller.body, /https:\/\/ai\.simi\.vn\/install\/codex-full\.sh/);
     assert.match(unixInstaller.body, /url_effective/);
     assert.match(unixInstaller.body, /trap cleanup EXIT HUP INT TERM/);
-    assert.match(unixInstaller.body, /bash "\$\{TEMP_INSTALLER\}"/);
+    assert.match(unixInstaller.body, /bash "\$\{TEMP_INSTALLER\}" "\$@"/);
 
     const unixFullInstaller = await rawGet(
       gatewayPort,
