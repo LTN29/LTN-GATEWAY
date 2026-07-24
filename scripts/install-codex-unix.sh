@@ -17,6 +17,12 @@ TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
 REMOTE_MODELS_FILE=""
 MODE="${1:-}"
+CODEX_CMD_PATH=""
+CODEX_INSTALL_KIND="missing"
+CODEX_VERSION=""
+CODEX_HEALTH_STATUS="unknown"
+CODEX_HEALTH_REASON=""
+CODEX_HEALTH_OUTPUT=""
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -33,12 +39,36 @@ die() {
   exit 1
 }
 
+die_code() {
+  local code="$1"
+  shift
+  echo "$*" >&2
+  exit "${code}"
+}
+
 detect_os() {
   case "$(uname -s)" in
     Darwin) OS_NAME="macos" ;;
     Linux) OS_NAME="linux" ;;
-    *) die "Installer chỉ hỗ trợ macOS hoặc Linux." ;;
+    *) die_code 10 "Installer chi ho tro macOS hoac Linux." ;;
   esac
+}
+
+detect_arch() {
+  case "$(uname -m)" in
+    arm64|aarch64|x86_64|amd64) return 0 ;;
+    *) die_code 10 "Kien truc CPU khong duoc ho tro: $(uname -m)" ;;
+  esac
+}
+
+require_basic_dependencies() {
+  local missing=""
+  for cmd in curl mktemp grep sed awk chmod mv rm mkdir tr; do
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+      missing="${missing} ${cmd}"
+    fi
+  done
+  [ -z "${missing}" ] || die_code 11 "Thieu dependency:${missing}"
 }
 
 ensure_dirs() {
@@ -210,14 +240,202 @@ validate_combo_syntax() {
   esac
 }
 
+redact_diagnostic() {
+  printf '%s' "$1" | sed -E 's/(Bearer )[A-Za-z0-9._~+\/=-]+/\1[REDACTED]/g; s/sk-[A-Za-z0-9_-]{12,}/[REDACTED_API_KEY]/g'
+}
+
+resolve_codex_command() {
+  local link_target=""
+  CODEX_CMD_PATH="$(command -v codex 2>/dev/null || true)"
+  if [ -z "${CODEX_CMD_PATH}" ]; then
+    CODEX_INSTALL_KIND="missing"
+    return 1
+  fi
+  if [ -L "${CODEX_CMD_PATH}" ]; then
+    link_target="$(readlink "${CODEX_CMD_PATH}" 2>/dev/null || true)"
+  fi
+
+  case "${CODEX_CMD_PATH}" in
+    "${HOME}/.local/bin/codex"|\
+    "${CODEX_HOME}/bin/codex")
+      CODEX_INSTALL_KIND="standalone"
+      ;;
+    *node_modules*|*/npm/*|*/.npm/*)
+      CODEX_INSTALL_KIND="npm"
+      ;;
+    /opt/homebrew/*|/usr/local/*)
+      if printf '%s' "${link_target}" | grep -q 'node_modules/@openai/codex'; then
+        CODEX_INSTALL_KIND="npm"
+      elif [ -L "${CODEX_CMD_PATH}" ]; then
+        CODEX_INSTALL_KIND="standalone"
+      else
+        CODEX_INSTALL_KIND="unknown"
+      fi
+      ;;
+    *)
+      CODEX_INSTALL_KIND="unknown"
+      ;;
+  esac
+  return 0
+}
+
+run_codex_version_check() {
+  local command_path="$1"
+  local output_file status
+  output_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-version.XXXXXX")"
+
+  if command -v perl >/dev/null 2>&1; then
+    perl -e 'alarm shift; exec @ARGV' 8 "${command_path}" --version > "${output_file}" 2>&1
+    status=$?
+  else
+    "${command_path}" --version > "${output_file}" 2>&1
+    status=$?
+  fi
+
+  CODEX_HEALTH_OUTPUT="$(redact_diagnostic "$(cat "${output_file}" 2>/dev/null || true)")"
+  rm -f "${output_file}"
+  return "${status}"
+}
+
+diagnose_codex_cli() {
+  CODEX_VERSION=""
+  CODEX_HEALTH_STATUS="unhealthy"
+  CODEX_HEALTH_REASON=""
+  CODEX_HEALTH_OUTPUT=""
+
+  if ! resolve_codex_command; then
+    CODEX_HEALTH_REASON="missing_command"
+    return 1
+  fi
+
+  if [ -L "${CODEX_CMD_PATH}" ] && [ ! -e "${CODEX_CMD_PATH}" ]; then
+    CODEX_HEALTH_REASON="broken_symlink"
+    return 1
+  fi
+
+  if [ ! -e "${CODEX_CMD_PATH}" ]; then
+    CODEX_HEALTH_REASON="missing_file"
+    return 1
+  fi
+
+  if [ ! -x "${CODEX_CMD_PATH}" ]; then
+    CODEX_HEALTH_REASON="not_executable"
+    return 1
+  fi
+
+  if run_codex_version_check "${CODEX_CMD_PATH}"; then
+    CODEX_VERSION="$(printf '%s' "${CODEX_HEALTH_OUTPUT}" | head -n 1 | tr -d '\r')"
+    if [ -n "${CODEX_VERSION}" ]; then
+      CODEX_HEALTH_STATUS="healthy"
+      CODEX_HEALTH_REASON="ok"
+      return 0
+    fi
+    CODEX_HEALTH_REASON="empty_version"
+    return 1
+  fi
+
+  case "${CODEX_HEALTH_OUTPUT}" in
+    *ENOENT*|*'no such file'*|*'No such file'*) CODEX_HEALTH_REASON="vendor_missing" ;;
+    *Killed*|*'Killed: 9'*) CODEX_HEALTH_REASON="killed_9" ;;
+    *) CODEX_HEALTH_REASON="version_failed" ;;
+  esac
+  return 1
+}
+
+cleanup_broken_npm_codex() {
+  local npm_root npm_prefix
+  [ "${CODEX_INSTALL_KIND}" = "npm" ] || return 0
+  command -v npm >/dev/null 2>&1 || return 0
+
+  npm_root="$(npm root -g 2>/dev/null || true)"
+  npm_prefix="$(npm prefix -g 2>/dev/null || true)"
+  if [ -n "${npm_root}" ] && [ -d "${npm_root}/@openai/codex" ]; then
+    echo "[3/6] Go ban Codex npm bi hong..."
+    npm uninstall -g @openai/codex >/dev/null
+  fi
+
+  if [ -n "${CODEX_CMD_PATH}" ] &&
+     [ -L "${CODEX_CMD_PATH}" ] &&
+     [ ! -e "${CODEX_CMD_PATH}" ] &&
+     [ "$(basename "${CODEX_CMD_PATH}")" = "codex" ] &&
+     [ -n "${npm_prefix}" ]; then
+    case "${CODEX_CMD_PATH}" in
+      "${npm_prefix}/bin/codex"|\
+      "${npm_prefix}/codex"|\
+      /opt/homebrew/bin/codex|\
+      /usr/local/bin/codex)
+        rm -f "${CODEX_CMD_PATH}"
+        ;;
+    esac
+  fi
+}
+
+install_codex_cli_official() {
+  echo "[4/6] Cai Codex CLI chinh thuc..."
+  if ! command -v curl >/dev/null 2>&1; then
+    die_code 11 "Thieu curl de cai Codex CLI."
+  fi
+  if ! curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh; then
+    die_code 20 "Khong the cai Codex CLI bang installer chinh thuc."
+  fi
+  if [ -x "${HOME}/.local/bin/codex" ]; then
+    export PATH="${HOME}/.local/bin:${PATH}"
+  fi
+  if [ -x "${CODEX_HOME}/bin/codex" ]; then
+    export PATH="${CODEX_HOME}/bin:${PATH}"
+  fi
+}
+
+repair_codex_cli_once() {
+  echo "[2/6] Phat hien Codex CLI bi loi: ${CODEX_HEALTH_REASON}"
+  case "${CODEX_HEALTH_REASON}" in
+    missing_command|broken_symlink|missing_file|not_executable|vendor_missing|killed_9|version_failed|empty_version)
+      cleanup_broken_npm_codex
+      install_codex_cli_official
+      ;;
+    *)
+      install_codex_cli_official
+      ;;
+  esac
+}
+
+ensure_codex_cli_healthy() {
+  echo "[1/6] Kiem tra Codex CLI..."
+  if diagnose_codex_cli; then
+    echo "Codex CLI: OK"
+    echo "Codex version: ${CODEX_VERSION}"
+    return 0
+  fi
+
+  repair_codex_cli_once
+
+  echo "[5/6] Xac minh Codex CLI..."
+  if diagnose_codex_cli; then
+    echo "Codex CLI: OK"
+    echo "Codex version: ${CODEX_VERSION}"
+    return 0
+  fi
+
+  echo "Khong the khoi phuc Codex CLI." >&2
+  echo "Ly do: ${CODEX_HEALTH_REASON}" >&2
+  if [ -n "${CODEX_HEALTH_OUTPUT}" ]; then
+    echo "Chan doan: ${CODEX_HEALTH_OUTPUT}" >&2
+  fi
+  echo "LTN Gateway chua duoc cau hinh. Khong co API key nao duoc thay doi." >&2
+  echo "Neu macOS van chan ban Codex chinh thuc, vui long lien he IT. Installer khong tat Gatekeeper va khong bo qua canh bao malware." >&2
+  exit 21
+}
+
 fetch_and_validate_gateway() {
   local config_file models_file routing_mode premium_combo free_combo result
   config_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-config.XXXXXX")"
   models_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-models.XXXXXX")"
   REMOTE_CONFIG_FILE="${config_file}"
   REMOTE_MODELS_FILE="${models_file}"
-  curl_with_auth "${GATEWAY_BASE_URL%/}/codex/config" "${config_file}"
-  curl_with_auth "${GATEWAY_BASE_URL%/}/models" "${models_file}"
+  curl_with_auth "${GATEWAY_BASE_URL%/}/codex/config" "${config_file}" ||
+    die_code 30 "Gateway khong truy cap duoc hoac API key khong hop le khi goi /v1/codex/config."
+  curl_with_auth "${GATEWAY_BASE_URL%/}/models" "${models_file}" ||
+    die_code 30 "Gateway khong truy cap duoc hoac API key khong hop le khi goi /v1/models."
 
   routing_mode="$(json_value "${config_file}" "routing.mode")"
   premium_combo="$(json_value "${config_file}" "combos.premium")"
@@ -259,18 +477,18 @@ ${free_combo}"
   REMOTE_MODELS_FILE=""
 }
 
-install_codex_if_missing() {
-  if command -v codex >/dev/null 2>&1; then
-    codex --version >/dev/null 2>&1 || true
-    return
+gateway_health_status() {
+  local health_url
+  health_url="${GATEWAY_BASE_URL%/}"
+  case "${health_url}" in
+    */v1) health_url="${health_url%/v1}/health" ;;
+    *) health_url="${health_url}/health" ;;
+  esac
+  if curl --fail --silent --show-error --max-time 5 "${health_url}" >/dev/null 2>&1; then
+    echo "Gateway reachable: yes"
+  else
+    echo "Gateway reachable: no"
   fi
-  if ! command -v curl >/dev/null 2>&1; then
-    die "Thiếu curl để cài Codex CLI."
-  fi
-  curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
-  export PATH="${HOME}/.codex/bin:${HOME}/.local/bin:/usr/local/bin:/opt/homebrew/bin:${PATH}"
-  command -v codex >/dev/null 2>&1 || die "Không tìm thấy codex sau khi cài. Hãy mở terminal mới hoặc thêm ~/.codex/bin vào PATH."
-  codex --version >/dev/null
 }
 
 write_macos_helper() {
@@ -404,12 +622,16 @@ remove_managed_config() {
 install_or_repair() {
   local client_id
   ensure_dirs
+  detect_arch
+  require_basic_dependencies
+  ensure_codex_cli_healthy
+  echo "[6/6] Cau hinh LTN Gateway..."
   read_team_key
   fetch_and_validate_gateway
-  install_codex_if_missing
   client_id="$(get_or_create_client_id)"
   store_credential
   merge_config "${client_id}"
+  diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."
   echo "Gateway: ${GATEWAY_BASE_URL%/}"
@@ -424,10 +646,21 @@ status() {
   local client_id redacted
   ensure_dirs
   echo "OS: ${OS_NAME}"
-  if command -v codex >/dev/null 2>&1; then
-    echo "Codex: $(codex --version 2>/dev/null || echo installed)"
+  detect_arch
+  echo "Architecture: $(uname -m)"
+  if diagnose_codex_cli; then
+    echo "Codex command: ${CODEX_CMD_PATH}"
+    echo "Codex install type: ${CODEX_INSTALL_KIND}"
+    echo "Codex healthy: yes"
+    echo "Codex version: ${CODEX_VERSION}"
   else
-    echo "Codex: chưa tìm thấy"
+    echo "Codex command: ${CODEX_CMD_PATH:-not found}"
+    echo "Codex install type: ${CODEX_INSTALL_KIND}"
+    echo "Codex healthy: no"
+    echo "Codex reason: ${CODEX_HEALTH_REASON}"
+    if [ -n "${CODEX_HEALTH_OUTPUT}" ]; then
+      echo "Codex diagnostic: ${CODEX_HEALTH_OUTPUT}"
+    fi
   fi
   [ -f "${CONFIG_PATH}" ] && echo "config.toml: có" || echo "config.toml: chưa có"
   if [ -f "${CONFIG_PATH}" ] && grep -q 'model_providers.ltn_gateway' "${CONFIG_PATH}"; then
@@ -451,6 +684,7 @@ status() {
   else
     echo "Credential: chưa có hoặc không đọc được"
   fi
+  gateway_health_status
 }
 
 uninstall_ltn() {
@@ -484,4 +718,6 @@ main() {
   esac
 }
 
-main
+if [ "${LTN_CODEX_SOURCE_ONLY:-0}" != "1" ]; then
+  main
+fi

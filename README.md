@@ -189,7 +189,19 @@ URL macOS/Linux `/install/codex.sh` cũng trả một bootstrap nhỏ. Bootstrap
 từ route cố định `https://ai.simi.vn/install/codex-full.sh`, chỉ chấp nhận HTTPS,
 không đi theo redirect sang domain khác, chạy bằng `bash` từ file tạm và luôn xóa file tạm.
 
-Installer chỉ hỏi API key team. Trên Windows, key được lưu trong Windows Credential Manager.
+Trên macOS/Linux, installer tự kiểm tra Codex CLI trước khi hỏi API key. Nếu phát hiện
+`codex` bị hỏng do bản npm cũ, symlink gãy, vendor binary mất, `ENOENT` hoặc `Killed: 9`,
+installer sẽ gỡ đúng package npm `@openai/codex` khi xác định được nguồn, rồi cài lại
+bằng standalone installer chính thức từ `https://chatgpt.com/codex/install.sh`.
+Installer chỉ cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
+
+Installer không tắt bảo vệ macOS, không chạy `xattr` để bỏ quarantine, không tắt
+Gatekeeper và không hướng dẫn bỏ qua cảnh báo malware. Nếu bản Codex chính thức vẫn bị
+macOS chặn, installer dừng và yêu cầu liên hệ IT.
+
+Trên macOS/Linux, installer chỉ hỏi API key team sau khi Codex CLI khỏe. Trên Windows,
+installer hỏi key trong chế độ `Install/Update` hoặc `Repair` và lưu vào biến môi trường
+User `LTN_TEAM_API_KEY`.
 Trên macOS, key được lưu trong Keychain và Codex đọc qua helper
 `~/.codex/bin/ltn-codex-token`. Trên Ubuntu/Linux, installer ưu tiên Secret Service
 qua `secret-tool`; nếu máy không có Secret Service khả dụng thì lưu key vào
@@ -216,26 +228,32 @@ thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
 ```
 
-Trên macOS/Ubuntu/Linux, lệnh public hiện menu thao tác chuyên nghiệp:
+Lệnh public trên Windows/macOS/Ubuntu/Linux đều hiện menu thao tác chuyên nghiệp:
 
 ```text
-Chon che do:
+Chọn chế độ:
   1. Install/Update
   2. Repair
   3. Status
   4. Uninstall
-Nhap 1-4:
+Nhập 1-4:
 ```
 
 Chỉ `Install/Update` và `Repair` mới hỏi API key team. `Status` chỉ kiểm tra trạng thái.
 `Uninstall` xóa block LTN trong `~/.codex/config.toml`, helper token và client ID; không gỡ Codex CLI.
 
-Nếu muốn gọi trực tiếp không qua menu, dùng flag qua `bash -s --`:
+Nếu muốn gọi trực tiếp không qua menu trên macOS/Ubuntu/Linux, dùng flag qua `bash -s --`:
 
 ```bash
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --status
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --repair
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --uninstall
+```
+
+Trên Windows, lệnh public khuyến nghị vẫn là:
+
+```powershell
+irm https://ai.simi.vn/install/codex.ps1 | iex
 ```
 
 File cấu hình Codex nằm ở `~/.codex/config.toml`. Installer chỉ thay block giữa:

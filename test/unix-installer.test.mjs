@@ -54,6 +54,22 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /4\. Uninstall/);
   assert.match(script, /IFS= read -r choice < \/dev\/tty/);
   assert.match(script, /if \[ -z "\$\{MODE\}" \]; then/);
+  assert.match(script, /diagnose_codex_cli\(\)/);
+  assert.match(script, /repair_codex_cli_once\(\)/);
+  assert.match(script, /install_codex_cli_official\(\)/);
+  assert.match(script, /ensure_codex_cli_healthy\(\)/);
+  assert.match(script, /CODEX_NON_INTERACTIVE=1 sh/);
+  assert.match(script, /npm uninstall -g @openai\/codex/);
+  assert.match(script, /readlink "\$\{CODEX_CMD_PATH\}"/);
+  assert.match(script, /node_modules\/@openai\/codex/);
+  assert.match(script, /vendor_missing/);
+  assert.match(script, /killed_9/);
+  assert.match(script, /broken_symlink/);
+  assert.match(script, /version_failed/);
+  assert.match(script, /exit 21/);
+  assert.match(script, /LTN_CODEX_SOURCE_ONLY/);
+  assert.doesNotMatch(script, /codex --version >\/dev\/null 2>&1 \|\| true/);
+  assert.doesNotMatch(script, /rm -rf "\$\{HOME\}\/\.codex|rm -rf ~\/\.codex|spctl --master-disable|xattr -d/);
   assert.match(script, /if curl --config "\$\{curl_config\}" --output "\$\{output\}" "\$\{url\}"; then/);
   assert.match(script, /status=\$\?/);
   assert.match(script, /\/codex\/config/);
@@ -78,6 +94,33 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);
   assert.doesNotMatch(script, /MS_CLIENT_SECRET|Cloudflare token/i);
   assert.doesNotMatch(script, /config[\\/]teams\.json/i);
+});
+
+test("Unix installer verifies Codex before asking for API key or writing config", async () => {
+  const script = await readScript(fullInstallerPath);
+  const installFlow = script.match(/install_or_repair\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+
+  assert.match(installFlow, /ensure_codex_cli_healthy/);
+  assert.match(installFlow, /read_team_key/);
+  assert.match(installFlow, /fetch_and_validate_gateway/);
+  assert.match(installFlow, /store_credential/);
+  assert.match(installFlow, /merge_config/);
+  assert.ok(
+    installFlow.indexOf("ensure_codex_cli_healthy") <
+      installFlow.indexOf("read_team_key")
+  );
+  assert.ok(
+    installFlow.indexOf("read_team_key") <
+      installFlow.indexOf("merge_config")
+  );
+});
+
+test("Unix installer status does not auto repair or ask for API key", async () => {
+  const script = await readScript(fullInstallerPath);
+  const statusFunction = script.match(/^status\(\) \{[\s\S]*?\n\}/m)?.[0] || "";
+
+  assert.match(statusFunction, /diagnose_codex_cli/);
+  assert.doesNotMatch(statusFunction, /ensure_codex_cli_healthy|repair_codex_cli_once|install_codex_cli_official|read_team_key|store_credential|merge_config/);
 });
 
 test("Unix installer config merge removes only the LTN managed block and avoids duplicates", async () => {

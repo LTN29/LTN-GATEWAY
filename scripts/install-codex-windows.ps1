@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
   [string]$GatewayBaseUrl = $(if ($env:LTN_GATEWAY_BASE_URL) { $env:LTN_GATEWAY_BASE_URL } else { "https://ai.simi.vn/v1" }),
-  [ValidateSet("auto", "profiles")]
+  [ValidateSet("install", "repair", "status", "uninstall", "auto", "profiles")]
   [string]$Mode,
   [string]$TeamApiKey,
   [switch]$SkipCodexInstall,
@@ -157,18 +157,132 @@ function Test-ComboIds {
   return $missing.ToArray()
 }
 
-$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
-$configPath = Join-Path $codexHome "config.toml"
-$binDir = Join-Path $codexHome "bin"
+function Read-InstallerMode {
+  while ($true) {
+    Write-Host "Chọn chế độ:"
+    Write-Host "  1. Install/Update"
+    Write-Host "  2. Repair"
+    Write-Host "  3. Status"
+    Write-Host "  4. Uninstall"
+    $choice = (Read-Host "Nhập 1-4").Trim()
+    switch ($choice) {
+      "1" { return "install" }
+      "2" { return "repair" }
+      "3" { return "status" }
+      "4" { return "uninstall" }
+      default { Write-Host "Lựa chọn không hợp lệ. Vui lòng nhập 1, 2, 3 hoặc 4." }
+    }
+  }
+}
 
-if ($Uninstall) {
-  if (Test-Path $configPath) {
-    $existingConfig = [IO.File]::ReadAllText($configPath)
+function Get-CodexCommandStatus {
+  $command = Get-Command codex -ErrorAction SilentlyContinue
+  if (-not $command) {
+    return [pscustomobject]@{
+      Found = $false
+      Path = $null
+      Healthy = $false
+      Version = $null
+      Reason = "Không tìm thấy lệnh codex trong PATH."
+    }
+  }
+
+  try {
+    $output = & $command.Source --version 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      return [pscustomobject]@{
+        Found = $true
+        Path = $command.Source
+        Healthy = $true
+        Version = (($output | Out-String).Trim())
+        Reason = $null
+      }
+    }
+
+    return [pscustomobject]@{
+      Found = $true
+      Path = $command.Source
+      Healthy = $false
+      Version = $null
+      Reason = "codex --version trả exit code $LASTEXITCODE."
+    }
+  } catch {
+    return [pscustomobject]@{
+      Found = $true
+      Path = $command.Source
+      Healthy = $false
+      Version = $null
+      Reason = $_.Exception.Message
+    }
+  }
+}
+
+function Test-GatewayHealth {
+  param([string]$BaseUrl)
+
+  try {
+    $healthUrl = $BaseUrl.TrimEnd("/") -replace "/v1$", "/health"
+    Invoke-RestMethod -Method Get -Uri $healthUrl -TimeoutSec 8 | Out-Null
+    return "OK ($healthUrl)"
+  } catch {
+    return "Không kiểm tra được ($($_.Exception.Message))"
+  }
+}
+
+function Show-InstallerStatus {
+  param(
+    [string]$ConfigPath,
+    [string]$BinDir,
+    [string]$GatewayBaseUrl
+  )
+
+  $codexStatus = Get-CodexCommandStatus
+  Write-Host "Trạng thái LTN Codex:"
+  if ($codexStatus.Found) {
+    Write-Host "  Codex CLI: $($codexStatus.Path)"
+    if ($codexStatus.Healthy) {
+      Write-Host "  Phiên bản: $($codexStatus.Version)"
+    } else {
+      Write-Host "  Codex CLI lỗi: $($codexStatus.Reason)"
+    }
+  } else {
+    Write-Host "  Codex CLI: chưa tìm thấy"
+  }
+
+  Write-Host "  Config: $ConfigPath"
+  if (Test-Path $ConfigPath) {
+    $configText = [IO.File]::ReadAllText($ConfigPath)
+    $hasLtnProvider = $configText -match '(?m)^\s*\[model_providers\.ltn_gateway\]\s*$'
+    $modelLine = [regex]::Match($configText, '(?m)^\s*model\s*=\s*"([^"]+)"\s*$')
+    Write-Host "  LTN Gateway config: $(if ($hasLtnProvider) { "có" } else { "chưa có" })"
+    if ($modelLine.Success) {
+      Write-Host "  Model mặc định: $($modelLine.Groups[1].Value)"
+    }
+  } else {
+    Write-Host "  LTN Gateway config: chưa có"
+  }
+
+  $keyConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User"))
+  $clientConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "User"))
+  Write-Host "  API key team: $(if ($keyConfigured) { "đã lưu" } else { "chưa lưu" })"
+  Write-Host "  Client ID: $(if ($clientConfigured) { "đã tạo" } else { "chưa tạo" })"
+  Write-Host "  Gateway health: $(Test-GatewayHealth -BaseUrl $GatewayBaseUrl)"
+  Write-Host "  Wrapper dir: $BinDir"
+}
+
+function Invoke-LtnUninstall {
+  param(
+    [string]$ConfigPath,
+    [string]$BinDir
+  )
+
+  if (Test-Path $ConfigPath) {
+    $existingConfig = [IO.File]::ReadAllText($ConfigPath)
     $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent ""
-    [IO.File]::WriteAllText($configPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
   foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd")) {
-    $wrapperPath = Join-Path $binDir $wrapper
+    $wrapperPath = Join-Path $BinDir $wrapper
     if (Test-Path $wrapperPath) {
       Remove-Item -LiteralPath $wrapperPath -Force
     }
@@ -178,10 +292,32 @@ if ($Uninstall) {
   Remove-Item Env:LTN_TEAM_API_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
   Write-Host "Đã gỡ cấu hình LTN Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
-  return
+}
+
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$configPath = Join-Path $codexHome "config.toml"
+$binDir = Join-Path $codexHome "bin"
+
+if ($Uninstall) {
+  $Mode = "uninstall"
+}
+if ([string]::IsNullOrWhiteSpace($Mode)) {
+  $Mode = Read-InstallerMode
+}
+if ($Mode -in @("auto", "profiles")) {
+  $Mode = "install"
 }
 
 $GatewayBaseUrl = $GatewayBaseUrl.TrimEnd("/")
+
+if ($Mode -eq "status") {
+  Show-InstallerStatus -ConfigPath $configPath -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl
+  return
+}
+if ($Mode -eq "uninstall") {
+  Invoke-LtnUninstall -ConfigPath $configPath -BinDir $binDir
+  return
+}
 
 $gatewayUri = $null
 if (-not [Uri]::TryCreate($GatewayBaseUrl, [UriKind]::Absolute, [ref]$gatewayUri) -or

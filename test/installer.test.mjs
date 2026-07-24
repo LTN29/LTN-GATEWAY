@@ -35,6 +35,17 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
 
   assert.match(script, /Update-CodexConfig/);
   assert.match(script, /\[switch\]\$Uninstall/);
+  assert.match(script, /function Read-InstallerMode/);
+  assert.match(script, /Chọn chế độ:/);
+  assert.match(script, /1\. Install\/Update/);
+  assert.match(script, /2\. Repair/);
+  assert.match(script, /3\. Status/);
+  assert.match(script, /4\. Uninstall/);
+  assert.match(script, /Nhập 1-4/);
+  assert.match(script, /function Show-InstallerStatus/);
+  assert.match(script, /function Invoke-LtnUninstall/);
+  assert.match(script, /\$Mode -eq "status"/);
+  assert.match(script, /\$Mode -eq "uninstall"/);
   assert.match(
     script,
     /SetEnvironmentVariable\("LTN_TEAM_API_KEY", \$null, "User"\)/
@@ -47,6 +58,20 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /NewGuid\(\)/);
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
+});
+
+test("Windows installer status and uninstall modes do not prompt for API key", async () => {
+  const script = await readFile(installerUrl, "utf8");
+  const promptIndex = script.indexOf('Read-Host "API key của team"');
+  const statusIndex = script.indexOf('$Mode -eq "status"');
+  const uninstallIndex = script.indexOf('$Mode -eq "uninstall"');
+
+  assert.ok(statusIndex > 0);
+  assert.ok(uninstallIndex > 0);
+  assert.ok(promptIndex > 0);
+  assert.ok(statusIndex < promptIndex);
+  assert.ok(uninstallIndex < promptIndex);
+  assert.match(script, /\$Mode -in @\("auto", "profiles"\)/);
 });
 
 test("Windows installer validates Combo ID syntax without assuming a combo prefix", async () => {
