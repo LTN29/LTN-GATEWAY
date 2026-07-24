@@ -242,7 +242,7 @@ install_codex_if_missing() {
   if ! command -v curl >/dev/null 2>&1; then
     die "Thiếu curl để cài Codex CLI."
   fi
-  curl -fsSL https://chatgpt.com/codex/install.sh | sh
+  curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
   export PATH="${HOME}/.codex/bin:${HOME}/.local/bin:/usr/local/bin:/opt/homebrew/bin:${PATH}"
   command -v codex >/dev/null 2>&1 || die "Không tìm thấy codex sau khi cài. Hãy mở terminal mới hoặc thêm ~/.codex/bin vào PATH."
   codex --version >/dev/null

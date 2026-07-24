@@ -41,7 +41,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /set -euo pipefail/);
   assert.match(script, /Darwin\) OS_NAME="macos"/);
   assert.match(script, /Linux\) OS_NAME="linux"/);
-  assert.match(script, /https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
+  assert.match(script, /https:\/\/chatgpt\.com\/codex\/install\.sh \| CODEX_NON_INTERACTIVE=1 sh/);
+  assert.doesNotMatch(script, /https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
   assert.match(script, /MODE="\$\{1:---install\}"/);
   assert.match(script, /read -r -s -p 'API key cua team: '/);
   assert.match(script, /< \/dev\/tty/);
