@@ -16,7 +16,7 @@ AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
 REMOTE_MODELS_FILE=""
-MODE="${1:---install}"
+MODE="${1:-}"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -97,6 +97,31 @@ read_team_key() {
     printf '\n'
   fi
   [ -n "${TEAM_API_KEY}" ] || die "API key cua team khong duoc de trong."
+}
+
+read_menu_choice() {
+  local choice
+  if [ ! -r /dev/tty ]; then
+    die "Khong tim thay terminal de chon che do. Hay dung --install, --repair, --status hoac --uninstall."
+  fi
+
+  {
+    echo "Chon che do:"
+    echo "  1. Install/Update"
+    echo "  2. Repair"
+    echo "  3. Status"
+    echo "  4. Uninstall"
+    printf "Nhap 1-4: "
+  } > /dev/tty
+
+  IFS= read -r choice < /dev/tty
+  case "${choice}" in
+    1) MODE="--install" ;;
+    2) MODE="--repair" ;;
+    3) MODE="--status" ;;
+    4) MODE="--uninstall" ;;
+    *) die "Lua chon khong hop le." ;;
+  esac
 }
 
 curl_with_auth() {
@@ -443,6 +468,10 @@ uninstall_ltn() {
 
 main() {
   detect_os
+  if [ -z "${MODE}" ]; then
+    read_menu_choice
+  fi
+
   case "${MODE}" in
     --install|--repair|--status|--uninstall) ;;
     *) die "Flag không hợp lệ. Dùng --install, --repair, --status hoặc --uninstall." ;;

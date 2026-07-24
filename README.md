@@ -216,8 +216,21 @@ thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
 ```
 
-Trên macOS/Ubuntu/Linux, lệnh public mặc định chạy install/update ngay, không hiện menu.
-Các thao tác quản trị dùng flag qua `bash -s --`:
+Trên macOS/Ubuntu/Linux, lệnh public hiện menu thao tác chuyên nghiệp:
+
+```text
+Chon che do:
+  1. Install/Update
+  2. Repair
+  3. Status
+  4. Uninstall
+Nhap 1-4:
+```
+
+Chỉ `Install/Update` và `Repair` mới hỏi API key team. `Status` chỉ kiểm tra trạng thái.
+`Uninstall` xóa block LTN trong `~/.codex/config.toml`, helper token và client ID; không gỡ Codex CLI.
+
+Nếu muốn gọi trực tiếp không qua menu, dùng flag qua `bash -s --`:
 
 ```bash
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --status
