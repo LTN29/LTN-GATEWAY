@@ -218,6 +218,49 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(fullInstaller.body, /^\s*param\s*\(/m);
     assert.match(fullInstaller.body, /\/codex\/config/);
 
+    const unixInstaller = await rawGet(gatewayPort, "/install/codex.sh");
+    assert.equal(unixInstaller.status, 200);
+    assert.match(
+      unixInstaller.headers["content-type"],
+      /^text\/x-shellscript; charset=utf-8$/
+    );
+    assert.match(unixInstaller.headers["cache-control"], /max-age=60/);
+    assert.match(unixInstaller.headers["cache-control"], /must-revalidate/);
+    assert.equal(unixInstaller.headers["x-content-type-options"], "nosniff");
+    assert.equal(
+      unixInstaller.body,
+      await readFile(
+        new URL("../scripts/install-codex-unix-bootstrap.sh", import.meta.url),
+        "utf8"
+      )
+    );
+    assert.match(unixInstaller.body, /https:\/\/ai\.simi\.vn\/install\/codex-full\.sh/);
+    assert.match(unixInstaller.body, /url_effective/);
+    assert.match(unixInstaller.body, /trap cleanup EXIT HUP INT TERM/);
+    assert.match(unixInstaller.body, /bash "\$\{TEMP_INSTALLER\}"/);
+
+    const unixFullInstaller = await rawGet(
+      gatewayPort,
+      "/install/codex-full.sh"
+    );
+    assert.equal(unixFullInstaller.status, 200);
+    assert.match(
+      unixFullInstaller.headers["content-type"],
+      /^text\/x-shellscript; charset=utf-8$/
+    );
+    assert.equal(
+      unixFullInstaller.body,
+      await readFile(
+        new URL("../scripts/install-codex-unix.sh", import.meta.url),
+        "utf8"
+      )
+    );
+    assert.match(unixFullInstaller.body, /uname -s/);
+    assert.match(unixFullInstaller.body, /Darwin/);
+    assert.match(unixFullInstaller.body, /Linux/);
+    assert.match(unixFullInstaller.body, /http_headers = \{ "X-LTN-Client-ID" = "\$\{client_id\}" \}/);
+    assert.match(unixFullInstaller.body, /model_providers\.ltn_gateway\.auth/);
+
     assert.doesNotMatch(installer.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
     assert.doesNotMatch(installer.body, /combo\/ltn-code-/);
     assert.doesNotMatch(installer.body, /MS_CLIENT_SECRET|Cloudflare token/i);
@@ -229,6 +272,17 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       /MS_CLIENT_SECRET|Cloudflare token/i
     );
     assert.doesNotMatch(fullInstaller.body, /config[\\/]teams\.json/i);
+    assert.doesNotMatch(unixInstaller.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
+    assert.doesNotMatch(unixInstaller.body, /SIMI-(?:GPT|FREE)/);
+    assert.doesNotMatch(unixInstaller.body, /MS_CLIENT_SECRET|Cloudflare token/i);
+    assert.doesNotMatch(unixInstaller.body, /config[\\/]teams\.json/i);
+    assert.doesNotMatch(unixFullInstaller.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
+    assert.doesNotMatch(unixFullInstaller.body, /SIMI-(?:GPT|FREE)/);
+    assert.doesNotMatch(
+      unixFullInstaller.body,
+      /MS_CLIENT_SECRET|Cloudflare token/i
+    );
+    assert.doesNotMatch(unixFullInstaller.body, /config[\\/]teams\.json/i);
 
     assert.equal(
       (await rawGet(gatewayPort, "/install/other.ps1")).status,
@@ -236,6 +290,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(
       (await rawGet(gatewayPort, "/install/codex.ps1?file=other.ps1")).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(gatewayPort, "/install/codex.sh?file=other.sh")).status,
       404
     );
     assert.equal(
@@ -248,7 +306,21 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.equal(
       (await rawGet(
         gatewayPort,
+        "/install/codex-full.sh?file=other.sh"
+      )).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(
+        gatewayPort,
         "/install/%2e%2e/scripts/install-codex-windows.ps1"
+      )).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(
+        gatewayPort,
+        "/install/%2e%2e/scripts/install-codex-unix.sh"
       )).status,
       404
     );

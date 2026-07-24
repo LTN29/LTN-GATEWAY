@@ -134,7 +134,7 @@ https://ai.simi.vn/v1
 
 API key là key riêng của team đã đăng ký trong Gateway và đang hoạt động trong 9Router.
 
-## Cài Codex CLI trên Windows
+## Cài Codex CLI cho nhân viên
 
 9Router là nơi duy nhất quản lý model con và fallback thông qua **Combos**.
 Gateway chọn Combo Premium/Free theo policy của team, rồi chuyển nguyên Combo ID
@@ -185,8 +185,18 @@ URL Windows `/install/codex.ps1` trả một bootstrap nhỏ. Bootstrap tải fu
 `https://ai.simi.vn/install/codex-full.ps1`, chạy bằng call operator và luôn
 xóa file tạm sau khi hoàn tất hoặc gặp lỗi.
 
-Installer chỉ hỏi API key team. Installer tạo `LTN_CLIENT_ID` một lần, giữ lại
-khi repair, và ghi `env_http_headers` để Codex gửi `X-LTN-Client-ID` cho Gateway.
+URL macOS/Linux `/install/codex.sh` cũng trả một bootstrap nhỏ. Bootstrap tải full installer
+từ route cố định `https://ai.simi.vn/install/codex-full.sh`, chỉ chấp nhận HTTPS,
+không đi theo redirect sang domain khác, chạy bằng `bash` từ file tạm và luôn xóa file tạm.
+
+Installer chỉ hỏi API key team. Trên Windows, key được lưu trong Windows Credential Manager.
+Trên macOS, key được lưu trong Keychain và Codex đọc qua helper
+`~/.codex/bin/ltn-codex-token`. Trên Ubuntu/Linux, installer ưu tiên Secret Service
+qua `secret-tool`; nếu máy không có Secret Service khả dụng thì lưu key vào
+`~/.codex/credentials/ltn-team-key` với quyền `600`.
+
+Installer tạo client ID một lần tại `~/.codex/ltn-client-id`, giữ lại khi repair, xóa khi
+uninstall, và ghi `http_headers` để Codex gửi `X-LTN-Client-ID` cho Gateway.
 
 Trước khi ghi cấu hình, installer gọi `GET /v1/models` bằng API key team và
 dừng với lỗi rõ ràng nếu thiếu Combo. Installer không tải hoặc cho nhân viên
@@ -205,6 +215,28 @@ thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
 ```
+
+Trên macOS/Ubuntu/Linux, chạy installer rồi chọn menu `Repair`, `Status` hoặc `Uninstall`.
+Nếu muốn gọi trực tiếp flag:
+
+```bash
+tmp="$(mktemp)"
+curl -fsSL https://ai.simi.vn/install/codex-full.sh -o "$tmp"
+bash "$tmp" --status
+bash "$tmp" --repair
+bash "$tmp" --uninstall
+rm -f "$tmp"
+```
+
+File cấu hình Codex nằm ở `~/.codex/config.toml`. Installer chỉ thay block giữa:
+
+```toml
+# BEGIN LTN CODEX MANAGED
+# END LTN CODEX MANAGED
+```
+
+Nếu dùng Codex Desktop trên macOS, sau khi cài hoặc repair hãy đóng hẳn app,
+mở lại, rồi tạo New chat để app đọc lại cấu hình mới.
 
 ## Bảo mật
 

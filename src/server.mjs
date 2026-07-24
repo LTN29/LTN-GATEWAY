@@ -45,6 +45,12 @@ const codexBootstrapPath = fileURLToPath(
 const codexFullInstallerPath = fileURLToPath(
   new URL("../scripts/install-codex-windows.ps1", import.meta.url)
 );
+const codexUnixBootstrapPath = fileURLToPath(
+  new URL("../scripts/install-codex-unix-bootstrap.sh", import.meta.url)
+);
+const codexUnixFullInstallerPath = fileURLToPath(
+  new URL("../scripts/install-codex-unix.sh", import.meta.url)
+);
 
 function copyHeaders(upstream, res) {
   const blocked = new Set([
@@ -124,10 +130,10 @@ async function proxyModels(req, res, rawKey, team, id) {
   });
 }
 
-async function servePowerShellFile(res, path) {
+async function serveInstallerFile(res, path, contentType = "text/plain; charset=utf-8") {
   const body = await readFile(path);
   res.writeHead(200, {
-    "content-type": "text/plain; charset=utf-8",
+    "content-type": contentType,
     "content-length": body.length,
     "cache-control": "public, max-age=60, must-revalidate",
     "x-content-type-options": "nosniff"
@@ -343,7 +349,7 @@ export function createGatewayServer() {
 
   if (req.method === "GET" && req.url === "/install/codex.ps1") {
     try {
-      await servePowerShellFile(res, codexBootstrapPath);
+      await serveInstallerFile(res, codexBootstrapPath);
     } catch (error) {
       jsonLog("installer_download_failed", {
         route: "bootstrap",
@@ -360,10 +366,52 @@ export function createGatewayServer() {
 
   if (req.method === "GET" && req.url === "/install/codex-full.ps1") {
     try {
-      await servePowerShellFile(res, codexFullInstallerPath);
+      await serveInstallerFile(res, codexFullInstallerPath);
     } catch (error) {
       jsonLog("installer_download_failed", {
         route: "full",
+        error: error?.message || String(error)
+      });
+      sendJson(
+        res,
+        500,
+        openAiError("Không thể tải Codex installer", "gateway_error")
+      );
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/install/codex.sh") {
+    try {
+      await serveInstallerFile(
+        res,
+        codexUnixBootstrapPath,
+        "text/x-shellscript; charset=utf-8"
+      );
+    } catch (error) {
+      jsonLog("installer_download_failed", {
+        route: "unix-bootstrap",
+        error: error?.message || String(error)
+      });
+      sendJson(
+        res,
+        500,
+        openAiError("Không thể tải Codex installer", "gateway_error")
+      );
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/install/codex-full.sh") {
+    try {
+      await serveInstallerFile(
+        res,
+        codexUnixFullInstallerPath,
+        "text/x-shellscript; charset=utf-8"
+      );
+    } catch (error) {
+      jsonLog("installer_download_failed", {
+        route: "unix-full",
         error: error?.message || String(error)
       });
       sendJson(
