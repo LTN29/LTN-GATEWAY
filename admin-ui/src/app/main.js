@@ -3,10 +3,48 @@ import "./styles.css";
 const state = {
   csrfToken: "",
   admin: null,
-  toast: "",
   oneTimeKey: null,
-  showCreateUserModal: false
+  cachedTeams: null
 };
+
+let progressInterval;
+function startProgress() {
+  let p = document.getElementById("nprogress");
+  if (!p) {
+    p = document.createElement("div");
+    p.id = "nprogress";
+    document.body.appendChild(p);
+  }
+  p.style.width = "0%";
+  p.style.opacity = "1";
+  let width = 0;
+  clearInterval(progressInterval);
+  progressInterval = setInterval(() => {
+    width += Math.random() * 15;
+    if (width > 90) width = 90;
+    p.style.width = width + "%";
+  }, 200);
+}
+
+function finishProgress() {
+  clearInterval(progressInterval);
+  let p = document.getElementById("nprogress");
+  if (p) {
+    p.style.width = "100%";
+    setTimeout(() => p.style.opacity = "0", 300);
+  }
+}
+
+function showToast(message, isError = false) {
+  const t = document.createElement("div");
+  t.className = `toast-floating ${isError ? "error" : ""}`;
+  t.textContent = message;
+  document.body.appendChild(t);
+  setTimeout(() => {
+    t.style.opacity = "0";
+    setTimeout(() => t.remove(), 300);
+  }, 3000);
+}
 
 const navItems = [
   { href: "/admin", label: "Tổng quan", permission: "dashboard" },
@@ -52,9 +90,21 @@ function qs(params) {
   return text ? `?${text}` : "";
 }
 
+const apiCache = new Map();
+
 async function api(path, init = {}) {
+  const method = init.method || "GET";
+  
+  if (method === "GET") {
+    const cached = apiCache.get(path);
+    const ttl = path === "/teams" ? 60000 : 3000;
+    if (cached && (Date.now() - cached.time < ttl)) {
+      return cached.data;
+    }
+  }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), init.method && init.method !== "GET" ? 15000 : 8000);
+  const timeout = setTimeout(() => controller.abort(), method !== "GET" ? 15000 : 8000);
   const headers = new Headers(init.headers || {});
   if (!(init.body instanceof FormData)) headers.set("content-type", "application/json");
   if (state.csrfToken) headers.set("x-ltn-csrf-token", state.csrfToken);
@@ -77,6 +127,13 @@ async function api(path, init = {}) {
       if (response.status >= 500) throw new Error(`Có lỗi hệ thống. Mã yêu cầu: ${payload.requestId || "unknown"}.`);
       throw new Error(payload.error?.message || code || "Admin API lỗi.");
     }
+    
+    if (method === "GET") {
+      apiCache.set(path, { time: Date.now(), data: payload.data });
+    } else {
+      apiCache.clear();
+    }
+    
     return payload.data;
   } finally {
     clearTimeout(timeout);
@@ -123,7 +180,6 @@ function shell(content) {
             <small>Team scope: ${escapeHtml(state.admin?.teamIds?.join(", ") || "Toàn hệ thống")}</small>
           </div>
         </header>
-        ${state.toast ? `<div class="toast" role="status">${escapeHtml(state.toast)}</div>` : ""}
         <section class="content">${content}</section>
       </main>
     </div>
@@ -253,6 +309,7 @@ function miniBars(items) {
 async function pageUsers() {
   const params = new URLSearchParams(location.search);
   const [users, teams] = await Promise.all([api(`/users${location.search}`), api("/teams")]);
+  state.cachedTeams = teams;
   render(`
     <div class="toolbar" style="justify-content: space-between;">
       <div style="display: flex; gap: 12px; flex: 1; flex-wrap: wrap;">
@@ -274,7 +331,6 @@ async function pageUsers() {
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
-    ${state.showCreateUserModal ? createUserModalHtml(teams) : ""}
   `);
 }
 
@@ -362,9 +418,18 @@ async function pageAudit() {
 }
 
 async function route() {
+  startProgress();
+  const contentArea = document.querySelector(".content");
+  if (contentArea) contentArea.style.opacity = "0.4";
+  document.body.style.cursor = "wait";
+
   try {
-    state.admin = (await api("/me")).admin;
-    await refreshCsrf();
+    if (!state.admin) {
+      state.admin = (await api("/me")).admin;
+    }
+    if (!state.csrfToken) {
+      await refreshCsrf();
+    }
     const path = location.pathname;
     if (path === "/admin") await pageDashboard();
     else if (path === "/admin/users") await pageUsers();
@@ -382,6 +447,11 @@ async function route() {
     else render(`<div class="card error"><h2>Không tìm thấy trang</h2><p>Route này chưa được cấu hình.</p></div>`);
   } catch (error) {
     document.querySelector("#root").innerHTML = `<main class="standaloneError"><h1>Không truy cập được Admin Console</h1><p>${escapeHtml(error.message)}</p><p>Kiểm tra Cloudflare Access, admins.json, hostname và quyền RBAC.</p></main>`;
+  } finally {
+    const newContent = document.querySelector(".content");
+    if (newContent) newContent.style.opacity = "1";
+    document.body.style.cursor = "default";
+    finishProgress();
   }
 }
 
@@ -406,6 +476,14 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const link = event.target.closest("a");
+  if (link && link.href.startsWith(window.location.origin + "/admin")) {
+    event.preventDefault();
+    history.pushState(null, "", link.href);
+    route();
+    return;
+  }
+
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const action = target.dataset.action;
@@ -413,12 +491,15 @@ document.addEventListener("click", async (event) => {
     if (action === "copy-key" && state.oneTimeKey) await navigator.clipboard.writeText(state.oneTimeKey);
     else if (action === "close-key") state.oneTimeKey = null;
     else if (action === "open-create-user") {
-      state.showCreateUserModal = true;
-      await route();
+      const existing = document.getElementById("dynamic-modal-container");
+      if (existing) existing.remove();
+      const div = document.createElement("div");
+      div.id = "dynamic-modal-container";
+      div.innerHTML = createUserModalHtml(state.cachedTeams || { items: [] });
+      document.body.appendChild(div);
       return;
     } else if (action === "close-create-user") {
-      state.showCreateUserModal = false;
-      await route();
+      document.getElementById("dynamic-modal-container")?.remove();
       return;
     } else if (action === "create-user-from-form") {
       const userId = document.querySelector("#newUserId")?.value.trim();
@@ -431,7 +512,9 @@ document.addEventListener("click", async (event) => {
       const aiPolicy = { mode: policyMode };
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
       await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, apiKey, aiPolicy }) });
-      state.showCreateUserModal = false;
+      document.getElementById("dynamic-modal-container")?.remove();
+      showToast("Đã tạo nhân viên mới thành công.");
+      await route();
     } else if (action.startsWith("rotate:")) {
       const userId = action.split(":")[1];
       const apiKey = prompt(`Nhập API key 9Router mới cho tài khoản ${userId}`);
@@ -476,11 +559,11 @@ document.addEventListener("click", async (event) => {
     } else if (action === "retry-all-sync") {
       await api("/sync/retry-all", { method: "POST", body: "{}" });
     }
-    state.toast = "Đã thực hiện thao tác.";
+    showToast("Thao tác thành công.");
     await route();
   } catch (error) {
-    state.toast = error.message;
-    await route();
+    showToast(error.message, true);
+    finishProgress();
   }
 });
 

@@ -500,16 +500,42 @@ pre {
   padding: 40px 20px;
 }
 
-.toast {
-  border-color: #FECACA;
-  background: #FEF2F2;
-  color: #991B1B;
-  margin-bottom: 24px;
-  padding: 14px 20px;
+.toast-floating {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: white;
+  border-left: 4px solid #10B981;
+  color: var(--text-main);
+  padding: 16px 24px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.2);
+  z-index: 9999;
   font-weight: 500;
   display: flex;
   align-items: center;
-  border-left: 4px solid #EF4444;
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease;
+}
+
+.toast-floating.error {
+  border-left-color: #EF4444;
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(40px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+#nprogress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: var(--primary);
+  z-index: 9999;
+  transition: width 0.2s ease, opacity 0.4s ease;
+  box-shadow: 0 0 10px var(--primary);
 }
 
 .modalBackdrop {
