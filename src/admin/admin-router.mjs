@@ -164,7 +164,11 @@ export async function handleAdminApi(req, res) {
       sendAdminJson(res, 201, result, requestId, { "cache-control": "no-store" });
     } else if (req.method === "POST" && path === "/admin/api/v1/users/import/validate") {
       requirePermission(admin, "users:write");
-      sendAdminJson(res, 200, await validateUsersCsv(String(body.csv || "")), requestId);
+      const validation = await validateUsersCsv(String(body.csv || ""));
+      sendAdminJson(res, 200, {
+        ...validation,
+        preview: validation.preview.map(({ apiKey, ...item }) => item)
+      }, requestId);
     } else if (req.method === "POST" && path === "/admin/api/v1/users/import/commit") {
       requirePermission(admin, "users:key");
       const csv = await guardedWrite(req, admin, requestId, "USERS_IMPORTED", "USER", "bulk", null, () => importUsersCsv(String(body.csv || "")));
@@ -172,7 +176,7 @@ export async function handleAdminApi(req, res) {
       res.writeHead(200, {
         ...adminHeaders({
           "content-type": "text/csv; charset=utf-8",
-          "content-disposition": 'attachment; filename="ltn-user-keys.csv"'
+          "content-disposition": 'attachment; filename="ltn-users-imported.csv"'
         }),
         "content-length": out.length
       });
@@ -207,7 +211,7 @@ export async function handleAdminApi(req, res) {
     } else if (/^\/admin\/api\/v1\/users\/[^/]+\/rotate-key$/.test(path) && req.method === "POST") {
       requirePermission(admin, "users:key");
       const userId = decodeURIComponent(path.split("/").at(-2));
-      sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "USER_KEY_ROTATED", "USER", userId, null, () => rotateUserKey(userId)), requestId, { "cache-control": "no-store" });
+      sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "USER_KEY_ROTATED", "USER", userId, null, () => rotateUserKey(userId, body)), requestId, { "cache-control": "no-store" });
     } else if (req.method === "GET" && path === "/admin/api/v1/teams") {
       requirePermission(admin, "teams:read");
       sendAdminJson(res, 200, { items: await listTeams() }, requestId);

@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { config, loadTeams, normalizeAiPolicy } from "../../config.mjs";
-import { sha256, newUserApiKey, safePolicy, safeTeamId, safeText, safeUserId, parseCsv, csvEscape } from "../admin-validation.mjs";
+import { sha256, safePolicy, safeTeamId, safeText, safeUserId, parseCsv, csvEscape } from "../admin-validation.mjs";
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,6 +64,14 @@ async function ensureTeamEnabled(teamId) {
   if (!team) throw Object.assign(new Error("Team không tồn tại."), { statusCode: 400, code: "TEAM_NOT_FOUND" });
   if (!team.enabled) throw Object.assign(new Error("Team đang disabled."), { statusCode: 400, code: "TEAM_DISABLED" });
   return team;
+}
+
+function safeExternalApiKey(value) {
+  const apiKey = String(value || "").trim();
+  if (!apiKey || apiKey.length < 8 || apiKey.length > 512 || apiKey.includes("\0") || /[\r\n]/.test(apiKey)) {
+    throw Object.assign(new Error("API key không hợp lệ."), { statusCode: 400, code: "INVALID_API_KEY" });
+  }
+  return apiKey;
 }
 
 async function ensureUserMemory(memoryFile, userId, teamId, role) {
@@ -149,11 +157,11 @@ export async function createUser(input) {
   const teamId = safeTeamId(input.teamId || input.team);
   const displayName = safeText(input.displayName || userId, 120);
   const role = safeText(input.role || "", 120);
+  const apiKey = safeExternalApiKey(input.apiKey);
   await ensureTeamEnabled(teamId);
   return withUsersLock(async () => {
     const parsed = await readUsersFile();
     if (parsed.users[userId]) throw Object.assign(new Error("User đã tồn tại."), { statusCode: 409, code: "USER_EXISTS" });
-    const apiKey = newUserApiKey();
     parsed.users[userId] = {
       displayName,
       teamId,
@@ -165,7 +173,7 @@ export async function createUser(input) {
     };
     await writeUsersFile(parsed);
     await ensureUserMemory(parsed.users[userId].memoryFile, userId, teamId, role);
-    return { user: publicUser(userId, parsed.users[userId]), apiKey };
+    return { user: publicUser(userId, parsed.users[userId]) };
   });
 }
 
@@ -202,16 +210,16 @@ export async function setUserEnabled(userId, enabled) {
   });
 }
 
-export async function rotateUserKey(userId) {
+export async function rotateUserKey(userId, input = {}) {
   const id = safeUserId(userId);
+  const apiKey = safeExternalApiKey(input.apiKey);
   return withUsersLock(async () => {
     const parsed = await readUsersFile();
     const user = parsed.users[id];
     if (!user) throw Object.assign(new Error("Không tìm thấy nhân viên."), { statusCode: 404, code: "USER_NOT_FOUND" });
-    const apiKey = newUserApiKey();
     user.keyHash = sha256(apiKey);
     await writeUsersFile(parsed);
-    return { user: publicUser(id, user), apiKey };
+    return { user: publicUser(id, user) };
   });
 }
 
@@ -219,7 +227,7 @@ export async function validateUsersCsv(csvText) {
   const rows = parseCsv(csvText);
   const [header, ...dataRows] = rows;
   const columns = (header || []).map((item) => String(item).trim());
-  const required = ["userId", "displayName", "teamId", "role", "policyMode", "premiumLimit"];
+  const required = ["userId", "displayName", "teamId", "apiKey", "policyMode", "premiumLimit"];
   if (required.some((col) => !columns.includes(col))) {
     throw Object.assign(new Error("CSV thiếu header bắt buộc."), { statusCode: 400, code: "INVALID_CSV" });
   }
@@ -232,6 +240,7 @@ export async function validateUsersCsv(csvText) {
     try {
       const userId = safeUserId(item.userId);
       const teamId = safeTeamId(item.teamId);
+      const apiKey = safeExternalApiKey(item.apiKey);
       if (seen.has(userId)) throw new Error("Trùng userId trong CSV.");
       if (existing.users[userId]) throw new Error("User đã tồn tại trong config.");
       seen.add(userId);
@@ -241,7 +250,8 @@ export async function validateUsersCsv(csvText) {
         userId,
         displayName: safeText(item.displayName || userId, 120),
         teamId,
-        role: safeText(item.role || "", 120),
+        apiKey,
+        role: "",
         aiPolicy: safePolicy({ mode: item.policyMode || "inherit", premiumLimit: item.premiumLimit })
       });
     } catch (error) {
@@ -264,20 +274,19 @@ export async function importUsersCsv(csvText) {
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
-    const keyRows = [["userId", "displayName", "teamId", "apiKey"]];
+    const importedRows = [["userId", "displayName", "teamId", "status"]];
     for (const item of validation.preview) {
       if (parsed.users[item.userId]) throw Object.assign(new Error("User đã tồn tại."), { statusCode: 409, code: "USER_EXISTS" });
-      const apiKey = newUserApiKey();
       parsed.users[item.userId] = {
         displayName: item.displayName,
         teamId: item.teamId,
         role: item.role,
-        keyHash: sha256(apiKey),
+        keyHash: sha256(item.apiKey),
         enabled: true,
         memoryFile: `users/${item.teamId}/${item.userId}.md`,
         aiPolicy: item.aiPolicy
       };
-      keyRows.push([item.userId, item.displayName, item.teamId, apiKey]);
+      importedRows.push([item.userId, item.displayName, item.teamId, "imported"]);
     }
     const createdMemoryFiles = [];
     try {
@@ -307,6 +316,6 @@ export async function importUsersCsv(csvText) {
       }
       throw error;
     }
-    return "\uFEFF" + keyRows.map((row) => row.map(csvEscape).join(",")).join("\n") + "\n";
+    return "\uFEFF" + importedRows.map((row) => row.map(csvEscape).join(",")).join("\n") + "\n";
   });
 }

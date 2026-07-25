@@ -166,10 +166,10 @@ function csvTemplate(teams) {
   const ids = (teams.items || []).map((team) => team.teamId || team.code);
   const fallback = ids.length ? ids : ["CSKH", "SALES", "MARKETING"];
   return [
-    "userId,displayName,teamId,role,policyMode,premiumLimit",
-    `nguyen-van-a,Nguyễn Văn A,${fallback[0] || "CSKH"},Nhân viên,inherit,`,
-    `tran-thi-b,Trần Thị B,${fallback[1] || fallback[0] || "SALES"},Nhân viên,inherit,`,
-    `le-van-c,Lê Văn C,${fallback[2] || fallback[0] || "MARKETING"},Nhân viên,inherit,`
+    "userId,displayName,teamId,apiKey,policyMode,premiumLimit",
+    `nguyen-van-a,Nguyễn Văn A,${fallback[0] || "CSKH"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`,
+    `tran-thi-b,Trần Thị B,${fallback[1] || fallback[0] || "SALES"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`,
+    `le-van-c,Lê Văn C,${fallback[2] || fallback[0] || "MARKETING"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`
   ].join("\n");
 }
 
@@ -178,17 +178,17 @@ function createUserPanel(teams) {
     <div class="card createUserCard">
       <div>
         <h2>Tạo user nhanh</h2>
-        <p>Team chỉ là nhóm/bộ phận. API key sẽ được tạo riêng cho user và chỉ hiển thị một lần.</p>
+        <p>Tạo user trong 9Router trước, copy API key của user đó rồi dán vào đây. Gateway chỉ lưu hash, không lưu API key gốc.</p>
       </div>
       <div class="formGrid">
         <label>User ID<input id="newUserId" placeholder="vd: ngoc-cskh" /></label>
         <label>Tên hiển thị<input id="newDisplayName" placeholder="vd: Ngọc CSKH" /></label>
         <label>Team<select id="newTeamId">${teamOptions(teams)}</select></label>
-        <label>Vai trò<input id="newRole" placeholder="vd: Chăm sóc khách hàng" /></label>
+        <label>API key 9Router<input id="newApiKey" type="password" autocomplete="off" placeholder="Dán API key của user từ 9Router" /></label>
         <label>Policy<select id="newPolicyMode"><option value="inherit">Kế thừa team</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option></select></label>
         <label>Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="để trống = theo team" /></label>
       </div>
-      <div class="actions">${button("Tạo user + API key", "create-user-from-form")}<a class="pill secondary" href="/admin/users/import">Import nhiều user</a></div>
+      <div class="actions">${button("Lưu user", "create-user-from-form")}<a class="pill secondary" href="/admin/users/import">Import nhiều user</a></div>
     </div>
   ` : "";
 }
@@ -199,7 +199,7 @@ function importResultHtml(result) {
   if (result.valid) {
     return `<div class="card success compactCard">
       <h2>CSV hợp lệ</h2>
-      <p>Sẵn sàng import ${preview.length} user. Khi commit, hệ thống sẽ tạo API key riêng cho từng user và tải về CSV key một lần.</p>
+      <p>Sẵn sàng import ${preview.length} user. API key trong CSV chỉ dùng để hash rồi lưu, không được trả lại hoặc ghi log.</p>
       ${table(["Dòng", "User ID", "Tên", "Team", "Policy", "Premium"], preview.slice(0, 30).map((item) => `
         <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
       `), "Chưa có dòng preview.")}
@@ -257,16 +257,15 @@ async function pageUsers() {
       <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
       ${can("usersWrite") ? `<a class="pill" href="/admin/users/import">Import 30 người</a>` : ""}
     </div>
-    ${table(["User ID", "Tên", "Team", "Vai trò", "Trạng thái", "Policy", "Premium", "Thao tác"], (users.items || []).map((u) => `
+    ${table(["User ID", "Tên", "Team", "Trạng thái", "Policy", "Premium", "Thao tác"], (users.items || []).map((u) => `
       <tr>
         <td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td>
         <td>${escapeHtml(u.displayName)}</td>
         <td>${escapeHtml(u.teamId)}</td>
-        <td>${escapeHtml(u.role)}</td>
         <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
         <td>${escapeHtml(u.aiPolicy?.mode || "inherit")}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
-        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Rotate", `rotate:${u.userId}`, true)}` : ""}</td>
+        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}`);
 }
 
@@ -278,7 +277,7 @@ async function pageUserDetail(userId) {
   ]);
   render(`
     <div class="twoCol">
-      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>User ID: ${escapeHtml(user.userId)}</p><p>Team: ${escapeHtml(user.teamId)} · Role: ${escapeHtml(user.role)}</p><p>Policy: ${escapeHtml(user.aiPolicy?.mode || "inherit")}</p></div>
+      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>User ID: ${escapeHtml(user.userId)}</p><p>Team: ${escapeHtml(user.teamId)}</p><p>Policy: ${escapeHtml(user.aiPolicy?.mode || "inherit")}</p></div>
       <div class="grid compact">${metric("Request", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Devices", usage.devices)}</div>
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Hash prefix", "Request", "First seen", "Last seen", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
@@ -290,12 +289,12 @@ async function pageImport() {
   render(`<div class="twoCol importLayout">
     <div class="card">
       <h2>Import 30 user bằng CSV</h2>
-      <p>Dùng khi cần tạo nhiều nhân viên cùng lúc. Team chỉ là ID bộ phận; API key sẽ được tạo riêng cho từng user khi commit.</p>
+      <p>Dùng khi cần tạo nhiều nhân viên cùng lúc. Mỗi dòng dùng API key đã tạo sẵn từ 9Router; Gateway chỉ lưu hash.</p>
       <div class="hintBox">
         <strong>Header bắt buộc</strong>
-        <code>userId,displayName,teamId,role,policyMode,premiumLimit</code>
+        <code>userId,displayName,teamId,apiKey,policyMode,premiumLimit</code>
       </div>
-      <div class="actions">${button("Điền mẫu CSV", "fill-import-template")}${button("Validate", "validate-import")}${button("Commit và tải key CSV", "commit-import", true)}</div>
+      <div class="actions">${button("Điền mẫu CSV", "fill-import-template")}${button("Validate", "validate-import")}${button("Commit import", "commit-import", true)}</div>
       <textarea id="csvInput" rows="14" spellcheck="false" placeholder="${escapeHtml(csvTemplate(teams))}"></textarea>
       <div id="importResult"></div>
     </div>
@@ -314,7 +313,7 @@ async function pageTeams() {
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Enabled" : "Disabled"}</p><p>Policy: ${escapeHtml(team.aiPolicy?.mode || "inherit")}</p></div><div class="grid compact">${metric("Members", team.memberCount)}${metric("Request", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["User", "Tên", "Vai trò", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${escapeHtml(u.role)}</td><td>${u.enabled ? "Enabled" : "Disabled"}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Enabled" : "Disabled"}</p><p>Policy: ${escapeHtml(team.aiPolicy?.mode || "inherit")}</p></div><div class="grid compact">${metric("Members", team.memberCount)}${metric("Request", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["User", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Enabled" : "Disabled"}</td></tr>`))}`);
 }
 
 async function pageUsage() {
@@ -408,19 +407,18 @@ document.addEventListener("click", async (event) => {
       const userId = document.querySelector("#newUserId")?.value.trim();
       const displayName = document.querySelector("#newDisplayName")?.value.trim();
       const teamId = document.querySelector("#newTeamId")?.value.trim();
-      const role = document.querySelector("#newRole")?.value.trim() || "";
+      const apiKey = document.querySelector("#newApiKey")?.value.trim();
       const policyMode = document.querySelector("#newPolicyMode")?.value || "inherit";
       const premiumLimit = document.querySelector("#newPremiumLimit")?.value.trim();
-      if (!userId || !displayName || !teamId) throw new Error("Vui lòng nhập User ID, tên hiển thị và team.");
+      if (!userId || !displayName || !teamId || !apiKey) throw new Error("Vui lòng nhập User ID, tên hiển thị, team và API key 9Router.");
       const aiPolicy = { mode: policyMode };
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
-      const result = await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, role, aiPolicy }) });
-      state.oneTimeKey = result.apiKey;
+      await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, apiKey, aiPolicy }) });
     } else if (action.startsWith("rotate:")) {
       const userId = action.split(":")[1];
-      if (confirm(`Rotate API key cho ${userId}? Key cũ mất hiệu lực ngay.`)) {
-        const result = await api(`/users/${encodeURIComponent(userId)}/rotate-key`, { method: "POST", body: "{}" });
-        state.oneTimeKey = result.apiKey;
+      const apiKey = prompt(`Dán API key 9Router mới cho ${userId}`);
+      if (apiKey && confirm(`Cập nhật key hash cho ${userId}? Key cũ trong Gateway sẽ mất hiệu lực.`)) {
+        await api(`/users/${encodeURIComponent(userId)}/rotate-key`, { method: "POST", body: JSON.stringify({ apiKey }) });
       }
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
@@ -442,7 +440,7 @@ document.addEventListener("click", async (event) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = "ltn-user-keys.csv";
+        a.download = "ltn-users-imported.csv";
         a.click();
         URL.revokeObjectURL(url);
       }

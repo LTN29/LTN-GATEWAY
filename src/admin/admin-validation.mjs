@@ -1,11 +1,7 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export function sha256(value) {
   return createHash("sha256").update(String(value), "utf8").digest("hex");
-}
-
-export function newUserApiKey() {
-  return `ltn-user-${randomBytes(32).toString("base64url")}`;
 }
 
 export function safeUserId(value) {

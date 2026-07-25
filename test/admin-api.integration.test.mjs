@@ -61,7 +61,7 @@ async function request(port, path, { method = "GET", token = "", csrf = "", orig
   });
 }
 
-test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async () => {
+test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user keys", async () => {
   const root = await mkdtemp(join(tmpdir(), "ltn-admin-api-"));
   const teamsFile = join(root, "teams.json");
   const usersFile = join(root, "users.json");
@@ -127,6 +127,7 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async (
   process.env.MEMORY_SYNC_OUTBOX_FILE = join(root, "memory-sync-outbox.jsonl");
   process.env.MEMORY_BACKUP_DIR = join(root, "memory-backups");
   process.env.UPSTREAM_BASE_URL = "http://127.0.0.1:1";
+  process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
 
   const { createGatewayServer } = await import(`../src/server.mjs?admin=${Date.now()}`);
   const server = createGatewayServer();
@@ -158,18 +159,33 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async (
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, csrf, origin: "https://evil.example", body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
 
+    const routerApiKey = "sk-9router-sales-ngoc-test-key";
     const created = await request(port, "/admin/api/v1/users", {
       method: "POST",
       token: adminToken,
       csrf,
-      body: { userId: "sales-ngoc", displayName: "Ngọc", teamId: "SALES", role: "Sales" }
+      body: { userId: "sales-ngoc", displayName: "Ngọc", teamId: "SALES", apiKey: routerApiKey }
     });
     assert.equal(created.status, 201);
-    assert.match(created.json.data.apiKey, /^ltn-user-/);
     assert.equal(created.headers["cache-control"], "no-store");
+    assert.equal(created.json.data.apiKey, undefined);
     assert.equal(created.json.data.user.keyHash, undefined);
-    assert.doesNotMatch(await readFile(usersFile, "utf8"), new RegExp(created.json.data.apiKey));
-    assert.doesNotMatch(await readFile(auditFile, "utf8"), new RegExp(created.json.data.apiKey));
+    const usersText = await readFile(usersFile, "utf8");
+    assert.match(usersText, new RegExp(hash(routerApiKey)));
+    assert.doesNotMatch(usersText, new RegExp(routerApiKey));
+    assert.doesNotMatch(await readFile(auditFile, "utf8"), new RegExp(routerApiKey));
+
+    const updatedKey = "sk-9router-sales-ngoc-rotated-key";
+    const rotated = await request(port, "/admin/api/v1/users/sales-ngoc/rotate-key", {
+      method: "POST",
+      token: adminToken,
+      csrf,
+      body: { apiKey: updatedKey }
+    });
+    assert.equal(rotated.status, 200);
+    const rotatedUsersText = await readFile(usersFile, "utf8");
+    assert.match(rotatedUsersText, new RegExp(hash(updatedKey)));
+    assert.doesNotMatch(rotatedUsersText, new RegExp(updatedKey));
 
     const managerCsrf = (await request(port, "/admin/api/v1/csrf", { token: managerToken })).json.data.token;
     const companyApprove = await request(port, "/admin/api/v1/memory/review/company-candidate/approve", {
