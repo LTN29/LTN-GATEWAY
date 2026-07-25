@@ -81,6 +81,16 @@ function escapeHtml(value) {
   }[char]));
 }
 
+function formatPolicy(mode) {
+  switch (mode) {
+    case "inherit": return "Kế thừa";
+    case "limited_daily": return "Giới hạn (ngày)";
+    case "premium_always": return "Luôn Premium";
+    case "free_only": return "Chỉ Free";
+    default: return mode || "Kế thừa";
+  }
+}
+
 function qs(params) {
   const out = new URLSearchParams();
   for (const [key, value] of Object.entries(params || {})) {
@@ -261,7 +271,7 @@ function importResultHtml(result) {
       <h2>Dữ liệu hợp lệ</h2>
       <p>Sẵn sàng import ${preview.length} nhân viên. Hệ thống đảm bảo tính bảo mật tuyệt đối cho dữ liệu API Key khi xử lý.</p>
       ${table(["Dòng", "Mã nhân viên", "Tên", "Bộ phận", "Gói AI", "Lượt Premium"], preview.slice(0, 30).map((item) => `
-        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
+        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(formatPolicy(item.aiPolicy?.mode))}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
       `), "Chưa có dòng preview.")}
     </div>`;
   }
@@ -327,7 +337,7 @@ async function pageUsers() {
         <td>${escapeHtml(u.displayName)}</td>
         <td>${escapeHtml(u.teamId)}</td>
         <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
-        <td>${escapeHtml(u.aiPolicy?.mode || "kế thừa")}</td>
+        <td>${escapeHtml(formatPolicy(u.aiPolicy?.mode))}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
@@ -342,7 +352,7 @@ async function pageUserDetail(userId) {
   ]);
   render(`
     <div class="twoCol">
-      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(user.aiPolicy?.mode || "kế thừa")}</p></div>
+      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p></div>
       <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Thiết bị", usage.devices)}</div>
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
@@ -366,19 +376,19 @@ async function pageImport() {
     <div class="card">
       <h2>Team đang có</h2>
       <p>Copy đúng Team ID vào cột <code>teamId</code>. Không cần API key ở team.</p>
-      ${table(["Mã bộ phận", "Tên", "Gói AI", "Lượt Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(team.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có bộ phận.")}
+      ${table(["Mã bộ phận", "Tên", "Gói AI", "Lượt Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có bộ phận.")}
     </div>
   </div>`);
 }
 
 async function pageTeams() {
   const teams = await api("/teams");
-  render(table(["Bộ phận", "Tên", "Trạng thái", "Nhân viên", "Gói AI", "Lượt Premium"], (teams.items || []).map((t) => `<tr><td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td><td>${escapeHtml(t.displayName)}</td><td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td><td>${t.memberCount}</td><td>${escapeHtml(t.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td></tr>`)));
+  render(table(["Bộ phận", "Tên", "Trạng thái", "Nhân viên", "Gói AI", "Lượt Premium"], (teams.items || []).map((t) => `<tr><td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td><td>${escapeHtml(t.displayName)}</td><td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td><td>${t.memberCount}</td><td>${escapeHtml(formatPolicy(t.aiPolicy?.mode))}</td><td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td></tr>`)));
 }
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(team.aiPolicy?.mode || "kế thừa")}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
 }
 
 async function pageUsage() {
