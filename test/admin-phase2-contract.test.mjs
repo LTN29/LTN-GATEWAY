@@ -43,12 +43,15 @@ test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", a
 
 test("Admin build emits real app assets instead of placeholder-only bundle", async () => {
   const build = await readFile("admin-ui/scripts/build.mjs", "utf8");
-  assert.match(build, /admin\.js/);
-  assert.match(build, /admin\.css/);
+  assert.match(build, /admin\.\$\{jsHash\}\.js/);
+  assert.match(build, /admin\.\$\{cssHash\}\.css/);
   assert.doesNotMatch(build, /admin-placeholder/);
 });
 
 test("Admin built bundle is valid JavaScript", async () => {
   execFileSync(process.execPath, ["admin-ui/scripts/build.mjs"], { stdio: "pipe" });
-  execFileSync(process.execPath, ["--check", "admin-ui/dist/assets/admin.js"], { stdio: "pipe" });
+  const html = await readFile("admin-ui/dist/index.html", "utf8");
+  const match = html.match(/\/admin\/assets\/(admin\.[a-f0-9]{12}\.js)/);
+  assert.ok(match, "hashed admin JS asset should be referenced by index.html");
+  execFileSync(process.execPath, ["--check", `admin-ui/dist/assets/${match[1]}`], { stdio: "pipe" });
 });
