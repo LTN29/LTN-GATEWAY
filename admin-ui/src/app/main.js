@@ -51,12 +51,12 @@ const navItems = [
   { href: "/admin/users", label: "Nhân viên", permission: "users" },
   { href: "/admin/users/import", label: "Import CSV", permission: "usersWrite" },
   { href: "/admin/teams", label: "Bộ phận", permission: "teams" },
-  { href: "/admin/usage", label: "Usage", permission: "usage" },
+  { href: "/admin/usage", label: "Thống kê", permission: "usage" },
   { href: "/admin/memory/review", label: "Duyệt kiến thức", permission: "memory" },
-  { href: "/admin/memory/files", label: "Knowledge Memory", permission: "memory" },
+  { href: "/admin/memory/files", label: "Kho kiến thức", permission: "memory" },
   { href: "/admin/sync", label: "Đồng bộ", permission: "sync" },
   { href: "/admin/system", label: "Hệ thống", permission: "system" },
-  { href: "/admin/audit", label: "Audit", permission: "audit" }
+  { href: "/admin/audit", label: "Nhật ký hệ thống", permission: "audit" }
 ];
 
 function hasRole(role) {
@@ -152,12 +152,12 @@ function routeTitle() {
   if (path.includes("/users")) return "Nhân viên";
   if (path.includes("/teams/")) return "Chi tiết bộ phận";
   if (path.includes("/teams")) return "Bộ phận";
-  if (path.includes("/usage")) return "Usage analytics";
+  if (path.includes("/usage")) return "Thống kê sử dụng";
   if (path.includes("/memory/review")) return "Duyệt kiến thức";
-  if (path.includes("/memory/files")) return "Knowledge Memory";
-  if (path.includes("/sync")) return "SharePoint sync";
+  if (path.includes("/memory/files")) return "Kho kiến thức";
+  if (path.includes("/sync")) return "Đồng bộ SharePoint";
   if (path.includes("/system")) return "Hệ thống";
-  if (path.includes("/audit")) return "Audit";
+  if (path.includes("/audit")) return "Nhật ký hệ thống";
   return "Tổng quan";
 }
 
@@ -177,7 +177,7 @@ function shell(content) {
           <div class="adminBadge">
             <strong>${escapeHtml(state.admin?.email || "Cloudflare Access")}</strong>
             <span>${escapeHtml(state.admin?.roles?.join(", ") || "")}</span>
-            <small>Team scope: ${escapeHtml(state.admin?.teamIds?.join(", ") || "Toàn hệ thống")}</small>
+            <small>Phạm vi: ${escapeHtml(state.admin?.teamIds?.join(", ") || "Toàn hệ thống")}</small>
           </div>
         </header>
         <section class="content">${content}</section>
@@ -260,8 +260,8 @@ function importResultHtml(result) {
     return `<div class="card success compactCard">
       <h2>Dữ liệu hợp lệ</h2>
       <p>Sẵn sàng import ${preview.length} nhân viên. Hệ thống đảm bảo tính bảo mật tuyệt đối cho dữ liệu API Key khi xử lý.</p>
-      ${table(["Dòng", "User ID", "Tên", "Team", "Policy", "Premium"], preview.slice(0, 30).map((item) => `
-        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
+      ${table(["Dòng", "Mã nhân viên", "Tên", "Bộ phận", "Gói AI", "Lượt Premium"], preview.slice(0, 30).map((item) => `
+        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
       `), "Chưa có dòng preview.")}
     </div>`;
   }
@@ -283,21 +283,21 @@ async function pageDashboard() {
       ${metric("Tổng nhân viên", dashboard.usersTotal)}
       ${metric("Đang hoạt động", dashboard.usersEnabled)}
       ${metric("Đã khóa", dashboard.usersDisabled)}
-      ${metric("Request", dashboard.usage.requests)}
+      ${metric("Lượt dùng", dashboard.usage.requests)}
       ${metric("Premium", dashboard.usage.premium)}
       ${metric("Free", dashboard.usage.free)}
-      ${metric("Success rate", `${dashboard.usage.successRate || 0}%`)}
-      ${metric("Latency TB", `${dashboard.usage.averageLatencyMs || 0}ms`)}
-      ${metric("TEAM pending", dashboard.health.memoryPendingTeam)}
-      ${metric("COMPANY pending", dashboard.health.memoryPendingCompany)}
-      ${metric("Sync pending", dashboard.health.syncPending)}
-      ${metric("Sync failed", dashboard.health.syncFailed)}
+      ${metric("Tỉ lệ thành công", `${dashboard.usage.successRate || 0}%`)}
+      ${metric("Độ trễ trung bình", `${dashboard.usage.averageLatencyMs || 0}ms`)}
+      ${metric("Chờ xử lý (Bộ phận)", dashboard.health.memoryPendingTeam)}
+      ${metric("Chờ xử lý (Công ty)", dashboard.health.memoryPendingCompany)}
+      ${metric("Chờ đồng bộ", dashboard.health.syncPending)}
+      ${metric("Đồng bộ lỗi", dashboard.health.syncFailed)}
     </div>
     <div class="twoCol">
-      <div class="card"><h2>Request 7/30 ngày</h2>${miniBars(timeseries.map((x) => ({ label: x.date, value: x.requests })))}</div>
-      <div class="card"><h2>Usage theo team</h2>${miniBars((teams.items || []).map((x) => ({ label: x.teamId, value: x.requests })))}</div>
+      <div class="card"><h2>Lượt dùng 7/30 ngày</h2>${miniBars(timeseries.map((x) => ({ label: x.date, value: x.requests })))}</div>
+      <div class="card"><h2>Sử dụng theo bộ phận</h2>${miniBars((teams.items || []).map((x) => ({ label: x.teamId, value: x.requests })))}</div>
     </div>
-    <div class="card"><h2>Trạng thái hệ thống</h2><p>Gateway: ${escapeHtml(dashboard.health.gateway)} · 9Router: ${escapeHtml(dashboard.health.router)} · SharePoint: ${dashboard.health.sharePointConfigured ? "configured" : "off"} · Extractor: ${dashboard.health.memoryExtractionEnabled ? "on" : "off"}</p></div>
+    <div class="card"><h2>Trạng thái hệ thống</h2><p>Gateway: ${escapeHtml(dashboard.health.gateway)} · 9Router: ${escapeHtml(dashboard.health.router)} · SharePoint: ${dashboard.health.sharePointConfigured ? "Đã kết nối" : "Chưa kết nối"} · Bộ trích xuất: ${dashboard.health.memoryExtractionEnabled ? "Bật" : "Tắt"}</p></div>
   `);
 }
 
@@ -321,15 +321,15 @@ async function pageUsers() {
         ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button> <a class="pill secondary" href="/admin/users/import">Import hàng loạt</a>` : ""}
       </div>
     </div>
-    ${table(["User ID", "Tên", "Team", "Trạng thái", "Policy", "Premium", "Thao tác"], (users.items || []).map((u) => `
+    ${table(["Mã nhân viên", "Tên", "Bộ phận", "Trạng thái", "Gói AI", "Lượt Premium", "Thao tác"], (users.items || []).map((u) => `
       <tr>
         <td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td>
         <td>${escapeHtml(u.displayName)}</td>
         <td>${escapeHtml(u.teamId)}</td>
         <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
-        <td>${escapeHtml(u.aiPolicy?.mode || "inherit")}</td>
+        <td>${escapeHtml(u.aiPolicy?.mode || "kế thừa")}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
-        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
+        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
   `);
 }
@@ -342,10 +342,10 @@ async function pageUserDetail(userId) {
   ]);
   render(`
     <div class="twoCol">
-      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>User ID: ${escapeHtml(user.userId)}</p><p>Team: ${escapeHtml(user.teamId)}</p><p>Policy: ${escapeHtml(user.aiPolicy?.mode || "inherit")}</p></div>
-      <div class="grid compact">${metric("Request", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Devices", usage.devices)}</div>
+      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(user.aiPolicy?.mode || "kế thừa")}</p></div>
+      <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Thiết bị", usage.devices)}</div>
     </div>
-    <div class="card"><h2>Thiết bị</h2>${table(["Hash prefix", "Request", "First seen", "Last seen", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
+    <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
   `);
 }
 
@@ -366,55 +366,55 @@ async function pageImport() {
     <div class="card">
       <h2>Team đang có</h2>
       <p>Copy đúng Team ID vào cột <code>teamId</code>. Không cần API key ở team.</p>
-      ${table(["Team ID", "Tên", "Policy", "Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(team.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có team.")}
+      ${table(["Mã bộ phận", "Tên", "Gói AI", "Lượt Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(team.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có bộ phận.")}
     </div>
   </div>`);
 }
 
 async function pageTeams() {
   const teams = await api("/teams");
-  render(table(["Team", "Tên", "Trạng thái", "User", "Policy", "Premium"], (teams.items || []).map((t) => `<tr><td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td><td>${escapeHtml(t.displayName)}</td><td>${t.enabled ? "Enabled" : "Disabled"}</td><td>${t.memberCount}</td><td>${escapeHtml(t.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td></tr>`)));
+  render(table(["Bộ phận", "Tên", "Trạng thái", "Nhân viên", "Gói AI", "Lượt Premium"], (teams.items || []).map((t) => `<tr><td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td><td>${escapeHtml(t.displayName)}</td><td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td><td>${t.memberCount}</td><td>${escapeHtml(t.aiPolicy?.mode || "kế thừa")}</td><td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td></tr>`)));
 }
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Enabled" : "Disabled"}</p><p>Policy: ${escapeHtml(team.aiPolicy?.mode || "inherit")}</p></div><div class="grid compact">${metric("Members", team.memberCount)}${metric("Request", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["User", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Enabled" : "Disabled"}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(team.aiPolicy?.mode || "kế thừa")}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
 }
 
 async function pageUsage() {
   const [summary, users, teams, devices] = await Promise.all([api(`/usage/summary${location.search}`), api(`/usage/users${location.search}`), api(`/usage/teams${location.search}`), api(`/usage/devices${location.search}`)]);
-  render(`<div class="grid">${metric("Request", summary.requests)}${metric("Premium", summary.premium)}${metric("Free", summary.free)}${metric("Token", summary.totalTokens)}${metric("Success rate", `${summary.successRate || 0}%`)}${metric("Latency", `${summary.averageLatencyMs || 0}ms`)}${metric("Active devices", summary.devices)}${metric("Errors", summary.errors)}</div><div class="card"><h2>Top users</h2>${table(["User", "Team", "Request", "Premium", "Free", "Errors", "Devices", "Last used"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}</div><div class="twoCol"><div class="card"><h2>Team</h2>${miniBars((teams.items || []).map((t) => ({ label: t.teamId, value: t.requests })))}</div><div class="card"><h2>Thiết bị</h2>${table(["User", "Hash", "Request", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.userId)}</td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div></div>`);
+  render(`<div class="grid">${metric("Lượt dùng", summary.requests)}${metric("Premium", summary.premium)}${metric("Free", summary.free)}${metric("Số Token", summary.totalTokens)}${metric("Tỉ lệ thành công", `${summary.successRate || 0}%`)}${metric("Độ trễ TB", `${summary.averageLatencyMs || 0}ms`)}${metric("Thiết bị online", summary.devices)}${metric("Lỗi", summary.errors)}</div><div class="card"><h2>Top nhân viên</h2>${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}</div><div class="twoCol"><div class="card"><h2>Bộ phận</h2>${miniBars((teams.items || []).map((t) => ({ label: t.teamId, value: t.requests })))}</div><div class="card"><h2>Thiết bị</h2>${table(["Nhân viên", "Mã thiết bị", "Lượt dùng", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.userId)}</td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div></div>`);
 }
 
 async function pageReview() {
   const status = new URLSearchParams(location.search).get("status") || "pending";
   const data = await api(`/memory/review${qs({ status })}`);
-  render(`<div class="toolbar"><a class="pill" href="/admin/memory/review?status=pending">Pending</a><a class="pill" href="/admin/memory/review?status=approved">Approved</a><a class="pill" href="/admin/memory/review?status=rejected">Rejected</a></div>${table(["Scope", "Team", "Key", "Summary", "Confidence", "Action"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Approve", `approve:${c.id}`)} ${button("Reject", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có candidate.")}`);
+  render(`<div class="toolbar"><a class="pill" href="/admin/memory/review?status=pending">Chờ duyệt</a><a class="pill" href="/admin/memory/review?status=approved">Đã duyệt</a><a class="pill" href="/admin/memory/review?status=rejected">Bị từ chối</a></div>${table(["Phạm vi", "Bộ phận", "Khóa (Key)", "Tóm tắt", "Độ tin cậy", "Thao tác"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Duyệt", `approve:${c.id}`)} ${button("Từ chối", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có dữ liệu chờ duyệt.")}`);
 }
 
 async function pageMemoryFiles() {
   const data = await api("/memory/files");
-  render(table(["File", "Scope", "Team", "Size", "Versions", "Updated"], (data.items || []).map((f) => `<tr><td><a href="/admin/memory/files/${encodeURIComponent(f.fileId)}">${escapeHtml(f.path)}</a></td><td>${escapeHtml(f.scope)}</td><td>${escapeHtml(f.teamId || "")}</td><td>${f.size}</td><td>${f.versionCount}</td><td>${escapeHtml(f.updatedAt || "")}</td></tr>`), "Chưa có memory file."));
+  render(table(["Tập tin", "Phạm vi", "Bộ phận", "Kích thước", "Phiên bản", "Cập nhật lúc"], (data.items || []).map((f) => `<tr><td><a href="/admin/memory/files/${encodeURIComponent(f.fileId)}">${escapeHtml(f.path)}</a></td><td>${escapeHtml(f.scope)}</td><td>${escapeHtml(f.teamId || "")}</td><td>${f.size}</td><td>${f.versionCount}</td><td>${escapeHtml(f.updatedAt || "")}</td></tr>`), "Chưa có tập tin kiến thức."));
 }
 
 async function pageMemoryFile(fileId) {
   const [file, versions] = await Promise.all([api(`/memory/files/${encodeURIComponent(fileId)}`), api(`/memory/files/${encodeURIComponent(fileId)}/versions`)]);
-  render(`<div class="card"><h2>${escapeHtml(file.path)}</h2><p>Hash: ${escapeHtml(file.contentHash)}</p><pre>${escapeHtml(file.content)}</pre></div><div class="card"><h2>Versions</h2>${table(["Version", "Action"], (versions.items || []).map((v) => `<tr><td>${escapeHtml(v.versionId)}</td><td>${button("Rollback", `rollback:${fileId}:${v.versionId}`, true)}</td></tr>`), "Chưa có backup.")}</div>`);
+  render(`<div class="card"><h2>${escapeHtml(file.path)}</h2><p>Mã băm: ${escapeHtml(file.contentHash)}</p><pre>${escapeHtml(file.content)}</pre></div><div class="card"><h2>Các phiên bản</h2>${table(["Phiên bản", "Thao tác"], (versions.items || []).map((v) => `<tr><td>${escapeHtml(v.versionId)}</td><td>${button("Phục hồi", `rollback:${fileId}:${v.versionId}`, true)}</td></tr>`), "Chưa có bản sao lưu.")}</div>`);
 }
 
 async function pageSync() {
   const data = await api("/sync");
-  render(`<div class="actions">${button("Retry all", "retry-all-sync")}</div>${table(["Local", "Remote", "Status", "Attempts", "Next", "Error", "Action"], (data.items || []).map((s) => `<tr><td>${escapeHtml(s.localPath)}</td><td>${escapeHtml(s.remotePath)}</td><td>${escapeHtml(s.status)}</td><td>${s.attempts}</td><td>${escapeHtml(s.nextAttemptAt || "")}</td><td>${escapeHtml(s.lastErrorCode || "")}</td><td>${button("Retry", `retry-sync:${s.id}`)}</td></tr>`), "Sync outbox trống.")}`);
+  render(`<div class="actions">${button("Thử lại tất cả", "retry-all-sync")}</div>${table(["Máy chủ", "Đám mây", "Trạng thái", "Số lần thử", "Lần tới", "Lỗi", "Thao tác"], (data.items || []).map((s) => `<tr><td>${escapeHtml(s.localPath)}</td><td>${escapeHtml(s.remotePath)}</td><td>${escapeHtml(s.status)}</td><td>${s.attempts}</td><td>${escapeHtml(s.nextAttemptAt || "")}</td><td>${escapeHtml(s.lastErrorCode || "")}</td><td>${button("Thử lại", `retry-sync:${s.id}`)}</td></tr>`), "Không có tác vụ đồng bộ.")}`);
 }
 
 async function pageSystem() {
   const [health, cfg] = await Promise.all([api("/system/health"), api("/system/config-summary")]);
-  render(`<div class="grid">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Node", health.nodeVersion)}${metric("Sync pending", health.syncPending)}${metric("Sync failed", health.syncFailed)}${metric("Disk data", health.diskBytes)}${metric("Admin UI", cfg.adminUiEnabled ? "Enabled" : "Disabled")}</div><div class="card"><h2>Config an toàn</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>SharePoint mode: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
+  render(`<div class="grid">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Phiên bản Node", health.nodeVersion)}${metric("Chờ đồng bộ", health.syncPending)}${metric("Đồng bộ lỗi", health.syncFailed)}${metric("Dung lượng đĩa", health.diskBytes)}${metric("Admin UI", cfg.adminUiEnabled ? "Bật" : "Tắt")}</div><div class="card"><h2>Cấu hình bảo mật</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>Chế độ SharePoint: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
 }
 
 async function pageAudit() {
   const data = await api(`/audit${location.search}`);
-  render(table(["Time", "Admin", "Action", "Target", "Team", "Result", "Request"], (data.items || []).map((a) => `<tr><td>${escapeHtml(a.timestamp)}</td><td>${escapeHtml(a.adminEmail)}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.targetType)}:${escapeHtml(a.targetId)}</td><td>${escapeHtml(a.teamId || "")}</td><td>${escapeHtml(a.result)}</td><td>${escapeHtml(a.requestId)}</td></tr>`), "Chưa có audit."));
+  render(table(["Thời gian", "Quản trị viên", "Thao tác", "Mục tiêu", "Bộ phận", "Kết quả", "Yêu cầu"], (data.items || []).map((a) => `<tr><td>${escapeHtml(a.timestamp)}</td><td>${escapeHtml(a.adminEmail)}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.targetType)}:${escapeHtml(a.targetId)}</td><td>${escapeHtml(a.teamId || "")}</td><td>${escapeHtml(a.result)}</td><td>${escapeHtml(a.requestId)}</td></tr>`), "Chưa có nhật ký hoạt động."));
 }
 
 async function route() {
@@ -523,7 +523,7 @@ document.addEventListener("click", async (event) => {
       }
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
-      if (confirm(`${mode === "disable" ? "Disable" : "Enable"} user ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
+      if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
     } else if (action === "fill-import-template") {
       const teams = await api("/teams");
       document.querySelector("#csvInput").value = csvTemplate(teams);
@@ -551,7 +551,7 @@ document.addEventListener("click", async (event) => {
       await api(`/memory/review/${encodeURIComponent(id)}/${mode}`, { method: "POST", body: JSON.stringify({ note }) });
     } else if (action.startsWith("rollback:")) {
       const [, fileId, versionId] = action.split(":");
-      if (confirm(`Rollback file về version ${versionId}? File hiện tại sẽ được backup và sync lại SharePoint.`)) {
+      if (confirm(`Khôi phục tập tin về phiên bản ${versionId}? Tập tin hiện tại sẽ được sao lưu và đồng bộ lại SharePoint.`)) {
         await api(`/memory/files/${encodeURIComponent(fileId)}/rollback`, { method: "POST", body: JSON.stringify({ versionId }) });
       }
     } else if (action.startsWith("retry-sync:")) {
