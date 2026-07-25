@@ -4,7 +4,8 @@ const state = {
   csrfToken: "",
   admin: null,
   toast: "",
-  oneTimeKey: null
+  oneTimeKey: null,
+  showCreateUserModal: false
 };
 
 const navItems = [
@@ -173,22 +174,25 @@ function csvTemplate(teams) {
   ].join("\n");
 }
 
-function createUserPanel(teams) {
+function createUserModalHtml(teams) {
   return can("usersWrite") ? `
-    <div class="card createUserCard">
-      <div>
-        <h2>Tạo user nhanh</h2>
-        <p>Tạo user trong 9Router trước, copy API key của user đó rồi dán vào đây. Gateway chỉ lưu hash, không lưu API key gốc.</p>
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-modal="true" style="max-width: 720px; width: 90vw;">
+        <h2>Tạo nhân viên mới</h2>
+        <p style="margin-bottom: 20px;">Nhập thông tin và API Key tương ứng từ hệ thống 9Router. Hệ thống áp dụng chuẩn bảo mật mã hóa một chiều cho toàn bộ API Key.</p>
+        <div class="formGrid" style="grid-template-columns: repeat(2, 1fr);">
+          <label>Mã định danh (User ID)<input id="newUserId" placeholder="vd: nguyen-van-a" /></label>
+          <label>Tên hiển thị<input id="newDisplayName" placeholder="vd: Nguyễn Văn A" /></label>
+          <label>Phòng ban (Team)<select id="newTeamId">${teamOptions(teams)}</select></label>
+          <label>API Key (9Router)<input id="newApiKey" type="password" autocomplete="off" placeholder="Nhập API key từ hệ thống 9Router" /></label>
+          <label>Chính sách (Policy)<select id="newPolicyMode"><option value="inherit">Kế thừa phòng ban</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option></select></label>
+          <label>Giới hạn Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="Để trống = Mặc định theo team" /></label>
+        </div>
+        <div class="actions" style="margin-top: 24px; justify-content: flex-end; gap: 12px;">
+          ${button("Hủy", "close-create-user", true)}
+          ${button("Lưu thông tin", "create-user-from-form")}
+        </div>
       </div>
-      <div class="formGrid">
-        <label>User ID<input id="newUserId" placeholder="vd: ngoc-cskh" /></label>
-        <label>Tên hiển thị<input id="newDisplayName" placeholder="vd: Ngọc CSKH" /></label>
-        <label>Team<select id="newTeamId">${teamOptions(teams)}</select></label>
-        <label>API key 9Router<input id="newApiKey" type="password" autocomplete="off" placeholder="Dán API key của user từ 9Router" /></label>
-        <label>Policy<select id="newPolicyMode"><option value="inherit">Kế thừa team</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option></select></label>
-        <label>Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="để trống = theo team" /></label>
-      </div>
-      <div class="actions">${button("Lưu user", "create-user-from-form")}<a class="pill secondary" href="/admin/users/import">Import nhiều user</a></div>
     </div>
   ` : "";
 }
@@ -198,16 +202,16 @@ function importResultHtml(result) {
   const errors = result.errors || [];
   if (result.valid) {
     return `<div class="card success compactCard">
-      <h2>CSV hợp lệ</h2>
-      <p>Sẵn sàng import ${preview.length} user. API key trong CSV chỉ dùng để hash rồi lưu, không được trả lại hoặc ghi log.</p>
+      <h2>Dữ liệu hợp lệ</h2>
+      <p>Sẵn sàng import ${preview.length} nhân viên. Hệ thống đảm bảo tính bảo mật tuyệt đối cho dữ liệu API Key khi xử lý.</p>
       ${table(["Dòng", "User ID", "Tên", "Team", "Policy", "Premium"], preview.slice(0, 30).map((item) => `
         <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
       `), "Chưa có dòng preview.")}
     </div>`;
   }
   return `<div class="card error compactCard">
-    <h2>CSV chưa hợp lệ</h2>
-    <p>Sửa các dòng lỗi bên dưới rồi validate lại. Import là all-or-nothing nên chưa có user nào được tạo.</p>
+    <h2>Dữ liệu chưa hợp lệ</h2>
+    <p>Vui lòng kiểm tra và khắc phục các lỗi bên dưới, sau đó thực hiện xác thực (validate) lại.</p>
     ${table(["Dòng", "Lỗi"], errors.map((item) => `<tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.message)}</td></tr>`), "Không có chi tiết lỗi.")}
   </div>`;
 }
@@ -250,12 +254,15 @@ async function pageUsers() {
   const params = new URLSearchParams(location.search);
   const [users, teams] = await Promise.all([api(`/users${location.search}`), api("/teams")]);
   render(`
-    ${createUserPanel(teams)}
-    <div class="toolbar">
-      <input aria-label="Tìm nhân viên" id="search" placeholder="Tìm user hoặc tên" value="${escapeHtml(params.get("search") || "")}" />
-      <select id="teamFilter"><option value="">Tất cả team</option>${teamOptions(teams, params.get("teamId") || "")}</select>
-      <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
-      ${can("usersWrite") ? `<a class="pill" href="/admin/users/import">Import 30 người</a>` : ""}
+    <div class="toolbar" style="justify-content: space-between;">
+      <div style="display: flex; gap: 12px; flex: 1; flex-wrap: wrap;">
+        <input aria-label="Tìm nhân viên" id="search" placeholder="Tìm user hoặc tên" value="${escapeHtml(params.get("search") || "")}" />
+        <select id="teamFilter"><option value="">Tất cả team</option>${teamOptions(teams, params.get("teamId") || "")}</select>
+        <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
+      </div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button> <a class="pill secondary" href="/admin/users/import">Import hàng loạt</a>` : ""}
+      </div>
     </div>
     ${table(["User ID", "Tên", "Team", "Trạng thái", "Policy", "Premium", "Thao tác"], (users.items || []).map((u) => `
       <tr>
@@ -266,7 +273,9 @@ async function pageUsers() {
         <td>${escapeHtml(u.aiPolicy?.mode || "inherit")}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
-      </tr>`), "Chưa có nhân viên.")}`);
+      </tr>`), "Chưa có nhân viên.")}
+    ${state.showCreateUserModal ? createUserModalHtml(teams) : ""}
+  `);
 }
 
 async function pageUserDetail(userId) {
@@ -288,13 +297,13 @@ async function pageImport() {
   const teams = await api("/teams");
   render(`<div class="twoCol importLayout">
     <div class="card">
-      <h2>Import 30 user bằng CSV</h2>
-      <p>Dùng khi cần tạo nhiều nhân viên cùng lúc. Mỗi dòng dùng API key đã tạo sẵn từ 9Router; Gateway chỉ lưu hash.</p>
+      <h2>Thêm hàng loạt qua CSV</h2>
+      <p>Sử dụng chức năng này để tạo nhiều tài khoản cùng lúc. Đảm bảo mỗi tài khoản đã có sẵn API Key từ 9Router hợp lệ.</p>
       <div class="hintBox">
         <strong>Header bắt buộc</strong>
         <code>userId,displayName,teamId,apiKey,policyMode,premiumLimit</code>
       </div>
-      <div class="actions">${button("Điền mẫu CSV", "fill-import-template")}${button("Validate", "validate-import")}${button("Commit import", "commit-import", true)}</div>
+      <div class="actions">${button("Xem mẫu CSV", "fill-import-template")}${button("Xác thực dữ liệu", "validate-import")}${button("Tiến hành Import", "commit-import", true)}</div>
       <textarea id="csvInput" rows="14" spellcheck="false" placeholder="${escapeHtml(csvTemplate(teams))}"></textarea>
       <div id="importResult"></div>
     </div>
@@ -403,21 +412,30 @@ document.addEventListener("click", async (event) => {
   try {
     if (action === "copy-key" && state.oneTimeKey) await navigator.clipboard.writeText(state.oneTimeKey);
     else if (action === "close-key") state.oneTimeKey = null;
-    else if (action === "create-user-from-form") {
+    else if (action === "open-create-user") {
+      state.showCreateUserModal = true;
+      await route();
+      return;
+    } else if (action === "close-create-user") {
+      state.showCreateUserModal = false;
+      await route();
+      return;
+    } else if (action === "create-user-from-form") {
       const userId = document.querySelector("#newUserId")?.value.trim();
       const displayName = document.querySelector("#newDisplayName")?.value.trim();
       const teamId = document.querySelector("#newTeamId")?.value.trim();
       const apiKey = document.querySelector("#newApiKey")?.value.trim();
       const policyMode = document.querySelector("#newPolicyMode")?.value || "inherit";
       const premiumLimit = document.querySelector("#newPremiumLimit")?.value.trim();
-      if (!userId || !displayName || !teamId || !apiKey) throw new Error("Vui lòng nhập User ID, tên hiển thị, team và API key 9Router.");
+      if (!userId || !displayName || !teamId || !apiKey) throw new Error("Vui lòng nhập đầy đủ Mã định danh, Tên hiển thị, Phòng ban và API Key.");
       const aiPolicy = { mode: policyMode };
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
       await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, apiKey, aiPolicy }) });
+      state.showCreateUserModal = false;
     } else if (action.startsWith("rotate:")) {
       const userId = action.split(":")[1];
-      const apiKey = prompt(`Dán API key 9Router mới cho ${userId}`);
-      if (apiKey && confirm(`Cập nhật key hash cho ${userId}? Key cũ trong Gateway sẽ mất hiệu lực.`)) {
+      const apiKey = prompt(`Nhập API key 9Router mới cho tài khoản ${userId}`);
+      if (apiKey && confirm(`Xác nhận cập nhật API Key cho ${userId}? Key cũ sẽ mất hiệu lực ngay lập tức.`)) {
         await api(`/users/${encodeURIComponent(userId)}/rotate-key`, { method: "POST", body: JSON.stringify({ apiKey }) });
       }
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
@@ -434,7 +452,7 @@ document.addEventListener("click", async (event) => {
         document.querySelector("#importResult").innerHTML = importResultHtml(result);
         return;
       }
-      if (confirm("Import all-or-nothing và tải CSV key một lần?")) {
+      if (confirm("Bạn có chắc chắn muốn tiến hành import danh sách nhân viên này?")) {
         const response = await api("/users/import/commit", { method: "POST", body: JSON.stringify({ csv }) });
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
