@@ -22,7 +22,7 @@ test("Admin Phase 2 exposes pilot-critical backend endpoints", async () => {
 });
 
 test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", async () => {
-  const source = await readFile("admin-ui/src/app/main.tsx", "utf8");
+  const source = await readFile("admin-ui/src/app/main.js", "utf8");
   for (const marker of [
     "pageDashboard",
     "pageUsers",

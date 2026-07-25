@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const source = await readFile(resolve(root, "src/app/main.tsx"), "utf8");
+const source = await readFile(resolve(root, "src/app/main.js"), "utf8");
 if (!source.includes("x-ltn-csrf-token")) throw new Error("CSRF header missing");
 if (source.includes("localStorage.setItem") || source.includes("sessionStorage.setItem")) {
   throw new Error("Do not persist secrets in browser storage");

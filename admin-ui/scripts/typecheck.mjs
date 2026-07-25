@@ -10,7 +10,7 @@ async function files(dir) {
     const path = resolve(dir, name);
     const info = await stat(path);
     if (info.isDirectory()) out.push(...await files(path));
-    else if (/\.(ts|tsx|css|html)$/.test(name)) out.push(path);
+    else if (/\.(js|ts|tsx|css|html)$/.test(name)) out.push(path);
   }
   return out;
 }
@@ -21,4 +21,4 @@ for (const file of await files(resolve(root, "src"))) {
     throw new Error(`Secret storage guard failed: ${file}`);
   }
 }
-console.log("admin-ui typecheck placeholder completed");
+console.log("admin-ui static checks completed");
