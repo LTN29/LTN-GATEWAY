@@ -1,0 +1,48 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+test("Admin Phase 2 exposes pilot-critical backend endpoints", async () => {
+  const router = await readFile("src/admin/admin-router.mjs", "utf8");
+  for (const marker of [
+    "/admin/api/v1/usage/users",
+    "/admin/api/v1/usage/teams",
+    "/admin/api/v1/usage/devices",
+    "/admin/api/v1/usage/export",
+    "/admin/api/v1/memory/files",
+    "/versions",
+    "/rollback",
+    "/admin/api/v1/audit",
+    "visibleTeamIds",
+    "MEMORY_ROLLBACK"
+  ]) {
+    assert.match(router, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+});
+
+test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", async () => {
+  const source = await readFile("admin-ui/src/app/main.tsx", "utf8");
+  for (const marker of [
+    "pageDashboard",
+    "pageUsers",
+    "pageImport",
+    "pageUsage",
+    "pageReview",
+    "pageMemoryFiles",
+    "pageSync",
+    "pageSystem",
+    "pageAudit",
+    "oneTimeKey",
+    "Không lưu API key"
+  ]) {
+    assert.match(source, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.doesNotMatch(source, /localStorage\.setItem|sessionStorage\.setItem|console\.log\(.*apiKey/i);
+});
+
+test("Admin build emits real app assets instead of placeholder-only bundle", async () => {
+  const build = await readFile("admin-ui/scripts/build.mjs", "utf8");
+  assert.match(build, /admin\.js/);
+  assert.match(build, /admin\.css/);
+  assert.doesNotMatch(build, /admin-placeholder/);
+});

@@ -7,7 +7,7 @@ import {
 } from "./codex-usage-store.mjs";
 
 const VALID_MODES = new Set(["premium_always", "limited_daily", "free_only"]);
-const VALID_SCOPES = new Set(["client", "team"]);
+const VALID_SCOPES = new Set(["client", "team", "user"]);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -95,6 +95,33 @@ export function resolveTeamCodexPolicy(team) {
   return policy;
 }
 
+export function resolvePrincipalCodexPolicy(principal) {
+  if (!principal || principal.principalType === "team") {
+    return resolveTeamCodexPolicy(principal?.team || principal);
+  }
+
+  const userPolicy = principal.aiPolicy || {};
+  if (userPolicy.mode && userPolicy.mode !== "inherit") {
+    const syntheticTeam = {
+      ...principal.team,
+      aiPolicy: {
+        ...userPolicy,
+        usageScope: userPolicy.usageScope || "user"
+      }
+    };
+    return resolveTeamCodexPolicy(syntheticTeam);
+  }
+
+  const policy = resolveTeamCodexPolicy(principal.team);
+  if (policy.mode === "limited_daily" && !policy.usageScope) {
+    policy.usageScope = "user";
+  }
+  if (policy.mode === "limited_daily" && policy.usageScope === "client") {
+    policy.usageScope = "user";
+  }
+  return policy;
+}
+
 export function codexConfigForTeam(team) {
   const policy = resolveTeamCodexPolicy(team);
   const routing = {
@@ -118,8 +145,34 @@ export function codexConfigForTeam(team) {
   };
 }
 
-export async function selectCodexRoute({ team, headers }) {
-  const policy = resolveTeamCodexPolicy(team);
+export function codexConfigForPrincipal(principal) {
+  const teamConfig = codexConfigForTeam(principal.team || principal);
+  if (!principal || principal.principalType === "team") return teamConfig;
+  const policy = resolvePrincipalCodexPolicy(principal);
+  return {
+    ...teamConfig,
+    principalType: "user",
+    userId: principal.userId,
+    displayName: principal.displayName,
+    teamId: principal.teamId,
+    teamDisplayName: principal.team.displayName,
+    role: principal.role,
+    routing: {
+      ...teamConfig.routing,
+      mode: policy.mode,
+      ...(policy.mode === "limited_daily" ? {
+        premiumLimit: policy.premiumLimit,
+        usageScope: policy.usageScope,
+        resetTimezone: policy.resetTimezone
+      } : {})
+    }
+  };
+}
+
+export async function selectCodexRoute({ team, principal, headers }) {
+  const activePrincipal = principal || { principalType: "team", team, teamId: team.code };
+  const activeTeam = activePrincipal.team || team;
+  const policy = principal ? resolvePrincipalCodexPolicy(activePrincipal) : resolveTeamCodexPolicy(team);
   if (policy.mode === "premium_always") {
     return {
       routeTier: "premium",
@@ -146,13 +199,15 @@ export async function selectCodexRoute({ team, headers }) {
     };
   }
 
-  const clientId = policy.usageScope === "client"
+  const clientId = policy.usageScope === "client" || activePrincipal.principalType === "user"
     ? validateClientId(headers["x-ltn-client-id"])
     : "";
   const clientIdHash = clientId ? sha256(clientId) : "";
   const usageDate = dailyDate(policy.resetTimezone);
   const reservation = await reserveDailyUsageSlot({
-    teamCode: team.code,
+    teamCode: activeTeam.code,
+    principalType: activePrincipal.principalType || "team",
+    userId: activePrincipal.userId || null,
     clientIdHash,
     usageDate,
     usageScope: policy.usageScope,

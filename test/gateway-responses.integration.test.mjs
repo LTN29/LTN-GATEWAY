@@ -141,7 +141,23 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       res.end(JSON.stringify({
         choices: [{
           message: {
-            content: "# IT TEAM CONTEXT\n\nCập nhật gần nhất: 2026-07-23\n\n## Ngữ cảnh và kiến thức\n- Updated"
+            content: JSON.stringify({
+              version: 1,
+              candidates: [{
+                scope: "TEAM",
+                category: "workflow",
+                summary: "IT team uses the confirmed durable workflow.",
+                normalizedKey: "it.confirmed-durable-workflow",
+                targetUserId: null,
+                targetTeamId: "IT",
+                durability: "long_term",
+                confidence: 0.96,
+                sensitivity: "none",
+                sourceType: "explicit_user_statement",
+                action: "upsert",
+                reason: "confirmed team workflow"
+              }]
+            })
           }
         }]
       }));
@@ -174,6 +190,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
   process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "3";
   process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
   process.env.CODEX_USAGE_FILE = join(root, "codex-usage.json");
+  process.env.MEMORY_REVIEW_QUEUE_FILE = join(root, "memory-review-queue.jsonl");
+  process.env.MEMORY_AUDIT_FILE = join(root, "memory-audit.jsonl");
+  process.env.MEMORY_SYNC_OUTBOX_FILE = join(root, "memory-sync-outbox.jsonl");
+  process.env.MEMORY_BACKUP_DIR = join(root, "memory-backups");
 
   const { createGatewayServer } = await import(
     `../src/server.mjs?integration=${Date.now()}`
@@ -430,16 +450,16 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     await waitFor(async () => {
       try {
-        return (await readFile(join(syncDir, "IT.md"), "utf8"))
-          .includes("Updated");
+        return (await readFile(join(root, "memory-review-queue.jsonl"), "utf8"))
+          .includes("it.confirmed-durable-workflow");
       } catch {
         return false;
       }
     });
 
     assert.equal(extractionCalls, 1);
-    assert.match(await readFile(join(memoryDir, "IT.md"), "utf8"), /Updated/);
-    assert.match(await readFile(join(syncDir, "IT.md"), "utf8"), /Updated/);
+    assert.doesNotMatch(await readFile(join(memoryDir, "IT.md"), "utf8"), /confirmed durable workflow/);
+    assert.match(await readFile(join(root, "memory-review-queue.jsonl"), "utf8"), /"scope":"TEAM"/);
 
     const streamed = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",

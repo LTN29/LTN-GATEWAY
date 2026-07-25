@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "users": {
+    "sales-ngoc": {
+      "displayName": "Ngọc",
+      "teamId": "SALES",
+      "role": "Tư vấn khách hàng Shopee",
+      "keyHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "enabled": true,
+      "memoryFile": "users/SALES/sales-ngoc.md",
+      "aiPolicy": {
+        "mode": "inherit"
+      }
+    }
+  }
+}

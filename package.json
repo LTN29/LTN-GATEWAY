@@ -7,9 +7,14 @@
   "scripts": {
     "start": "node src/server.mjs",
     "check": "node --check src/server.mjs",
-    "test": "node --test",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "register-team": "node scripts/register-team.mjs",
-    "sync-all": "node scripts/sync-all.mjs"
+    "sync-all": "node scripts/sync-all.mjs",
+    "admin:dev": "npm --prefix admin-ui run dev",
+    "admin:build": "npm --prefix admin-ui run build",
+    "admin:test": "npm --prefix admin-ui run test",
+    "admin:typecheck": "npm --prefix admin-ui run typecheck",
+    "admin:lint": "npm --prefix admin-ui run lint"
   },
   "engines": {
     "node": ">=20"

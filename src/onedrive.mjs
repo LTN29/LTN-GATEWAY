@@ -1,5 +1,5 @@
 import { mkdir, copyFile, writeFile, rename } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, relative } from "node:path";
 import { config } from "./config.mjs";
 import { jsonLog, redactSecrets } from "./utils.mjs";
 
@@ -96,25 +96,56 @@ async function syncGraph(filename, content) {
   }
 }
 
+function normalizeLocalMemoryPath(localPath) {
+  const raw = String(localPath || "").replaceAll("\\", "/").replace(/^memory\//, "");
+  const target = resolve(config.memoryDir, raw);
+  const rel = relative(config.memoryDir, target).replaceAll("\\", "/");
+  if (!rel || rel.startsWith("../") || rel === ".." || rel.includes("\0") || /[\r\n]/.test(rel)) {
+    throw new Error("Memory path traversal");
+  }
+  return rel;
+}
+
+export function resolveSharePointMemoryPath(localPath) {
+  const rel = normalizeLocalMemoryPath(localPath);
+  if (rel === "COMPANY.md") return "COMPANY.md";
+  if (/^[A-Z0-9_-]{2,40}\.md$/.test(rel)) return `teams/${rel}`;
+  if (/^users\/[A-Z0-9_-]{2,40}\/[a-z0-9][a-z0-9._-]{1,63}\.md$/.test(rel)) return rel;
+  throw new Error(`Memory file is not allowed to sync: ${rel}`);
+}
+
 export async function syncMemoryFile(filename, content) {
   const mode = config.oneDrive.mode;
+  const remoteFilename = resolveSharePointMemoryPath(filename);
 
   if (mode === "off") return { mode: "off", synced: false };
 
   try {
     if (mode === "local") {
-      await syncLocal(filename, content);
+      await syncLocal(remoteFilename, content);
     } else if (mode === "graph") {
-      await syncGraph(filename, content);
+      await syncGraph(remoteFilename, content);
     } else {
       throw new Error(`ONEDRIVE_MODE không hợp lệ: ${mode}`);
     }
 
-    jsonLog("onedrive_sync_completed", { filename, mode });
-    return { mode, synced: true };
+    jsonLog("onedrive_sync_completed", { filename, remoteFilename, mode });
+    jsonLog("memory_sharepoint_sync_completed", {
+      localPath: filename,
+      remotePath: remoteFilename,
+      mode
+    });
+    return { mode, synced: true, remotePath: remoteFilename };
   } catch (error) {
     jsonLog("onedrive_sync_failed", {
       filename,
+      remoteFilename,
+      mode,
+      error: redactSecrets(error?.message || String(error))
+    });
+    jsonLog("memory_sharepoint_sync_failed", {
+      localPath: filename,
+      remotePath: remoteFilename,
       mode,
       error: redactSecrets(error?.message || String(error))
     });

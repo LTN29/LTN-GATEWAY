@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "admins": {
+    "admin@simi.vn": {
+      "displayName": "Quản trị hệ thống",
+      "enabled": true,
+      "roles": ["SUPER_ADMIN"],
+      "teamIds": []
+    },
+    "sales-manager@simi.vn": {
+      "displayName": "Trưởng phòng Kinh doanh",
+      "enabled": true,
+      "roles": ["TEAM_MANAGER"],
+      "teamIds": ["SALES"]
+    }
+  }
+}

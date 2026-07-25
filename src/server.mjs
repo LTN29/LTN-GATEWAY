@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { config, loadTeams } from "./config.mjs";
-import { authenticateTeam } from "./auth.mjs";
+import { authenticatePrincipal } from "./auth.mjs";
 import {
   loadMemoryContext,
   injectMemory
@@ -23,9 +23,11 @@ import {
   responsesSseCompleted
 } from "./response-parser.mjs";
 import {
-  codexConfigForTeam,
+  codexConfigForPrincipal,
   selectCodexRoute
 } from "./codex-routing.mjs";
+import { recordUserAnalytics } from "./user-analytics-store.mjs";
+import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import {
   sendJson,
   openAiError,
@@ -79,6 +81,19 @@ function clientAbortSignal(req, res) {
   return controller.signal;
 }
 
+function localDate() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: config.codexUsageTimezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+}
+
+function usageFromResponsePayload(payload) {
+  return payload?.usage || payload?.response?.usage || null;
+}
+
 async function pipeAndCapture(upstream, res) {
   if (!upstream.body) {
     res.end();
@@ -108,7 +123,8 @@ async function pipeAndCapture(upstream, res) {
   return Buffer.concat(captured);
 }
 
-async function proxyModels(req, res, rawKey, team, id) {
+async function proxyModels(req, res, rawKey, principal, id) {
+  const team = principal.team;
   const upstream = await upstreamFetch("/v1/models", {
     rawKey,
     requestId: id
@@ -141,7 +157,8 @@ async function serveInstallerFile(res, path, contentType = "text/plain; charset=
   res.end(body);
 }
 
-async function proxyResponses(req, res, rawKey, team, id) {
+async function proxyResponses(req, res, rawKey, principal, id) {
+  const team = principal.team;
   const signal = clientAbortSignal(req, res);
   const raw = await readBody(req);
   let payload;
@@ -160,10 +177,11 @@ async function proxyResponses(req, res, rawKey, team, id) {
   }
 
   const originalMessages = responseInputMessages(payload.input);
-  const { systemContent } = await loadMemoryContext(team);
+  const { systemContent } = await loadMemoryContext(team, principal);
   const upstreamPayload = injectResponsesMemory(payload, systemContent);
   route = await selectCodexRoute({
     team,
+    principal,
     headers: req.headers
   });
   shouldReleaseRoute = true;
@@ -172,6 +190,8 @@ async function proxyResponses(req, res, rawKey, team, id) {
   jsonLog("codex_route_selected", {
     requestId: id,
     team: team.code,
+    principalType: principal.principalType,
+    userId: principal.userId,
     routeTier: route.routeTier,
     requestNumber: route.requestNumber,
     limit: route.limit,
@@ -203,6 +223,7 @@ async function proxyResponses(req, res, rawKey, team, id) {
     }
     res.statusCode = upstream.status;
     const captured = await pipeAndCapture(upstream, res);
+    let responseUsage = null;
 
     if (upstream.ok) {
       let assistantText = "";
@@ -214,6 +235,7 @@ async function proxyResponses(req, res, rawKey, team, id) {
           assistantText = assistantTextFromSse(rawSse);
         } else {
           const responsePayload = JSON.parse(captured.toString("utf8"));
+          responseUsage = usageFromResponsePayload(responsePayload);
           completed = responsesJsonSucceeded(responsePayload);
           assistantText = assistantTextFromJson(responsePayload);
         }
@@ -226,6 +248,7 @@ async function proxyResponses(req, res, rawKey, team, id) {
         shouldReleaseRoute = false;
         scheduleMemoryExtraction({
           team,
+          principal,
           rawKey,
           originalMessages,
           assistantText,
@@ -234,9 +257,22 @@ async function proxyResponses(req, res, rawKey, team, id) {
       }
     }
 
+    await recordUserAnalytics({
+      date: localDate(),
+      principal,
+      routeTier: route.routeTier,
+      selectedCombo: route.selectedCombo,
+      status: upstream.status,
+      latencyMs: Date.now() - startedAt,
+      usage: responseUsage,
+      clientIdHashPrefix: route.clientIdHashPrefix
+    });
+
     jsonLog("responses_completed", {
       requestId: id,
       team: team.code,
+      principalType: principal.principalType,
+      userId: principal.userId,
       model: route.selectedCombo,
       status: upstream.status,
       latencyMs: Date.now() - startedAt
@@ -248,7 +284,8 @@ async function proxyResponses(req, res, rawKey, team, id) {
   }
 }
 
-async function handleChat(req, res, rawKey, team, id) {
+async function handleChat(req, res, rawKey, principal, id) {
+  const team = principal.team;
   const signal = clientAbortSignal(req, res);
   const raw = await readBody(req);
   let payload;
@@ -270,18 +307,22 @@ async function handleChat(req, res, rawKey, team, id) {
   }
 
   const originalMessages = structuredClone(payload.messages);
-  const { companyMemory, teamMemory } = await loadMemoryContext(team);
+  const { companyMemory, teamMemory, userMemory } = await loadMemoryContext(team, principal);
 
   payload.messages = injectMemory(
     payload.messages,
     team,
     companyMemory,
-    teamMemory
+    teamMemory,
+    userMemory,
+    principal
   );
 
   jsonLog("chat_started", {
     requestId: id,
     team: team.code,
+    principalType: principal.principalType,
+    userId: principal.userId,
     model: payload.model || null,
     stream: Boolean(payload.stream)
   });
@@ -317,6 +358,7 @@ async function handleChat(req, res, rawKey, team, id) {
 
     scheduleMemoryExtraction({
       team,
+      principal,
       rawKey,
       originalMessages,
       assistantText,
@@ -327,6 +369,8 @@ async function handleChat(req, res, rawKey, team, id) {
   jsonLog("chat_completed", {
     requestId: id,
     team: team.code,
+    principalType: principal.principalType,
+    userId: principal.userId,
     status: upstream.status,
     latencyMs: Date.now() - startedAt
   });
@@ -341,6 +385,15 @@ export function createGatewayServer() {
   return http.createServer(async (req, res) => {
   const id = makeRequestId(req.headers["x-request-id"]);
   res.setHeader("x-request-id", id);
+
+  if (req.url?.startsWith("/admin/api/v1/")) {
+    await handleAdminApi(req, res);
+    return;
+  }
+
+  if (await handleAdminStatic(req, res)) {
+    return;
+  }
 
   if (req.method === "OPTIONS") {
     handleOptions(res);
@@ -484,45 +537,62 @@ export function createGatewayServer() {
       return;
     }
 
-    const team = await authenticateTeam(rawKey);
+    const principal = await authenticatePrincipal(rawKey);
 
-    if (!team) {
+    if (!principal) {
       sendJson(
         res,
         401,
         openAiError(
-          "API key chưa được đăng ký với team",
+          "API key ch?a ???c ??ng k?",
           "authentication_error"
         )
       );
       return;
     }
 
-    if (!team.enabled) {
+    if (!principal.enabled) {
       sendJson(
         res,
         403,
-        openAiError("Team đã bị vô hiệu hóa", "permission_error")
+        openAiError("Principal ?? b? v? hi?u h?a", "permission_error")
       );
       return;
     }
 
+    if (!principal.team?.enabled) {
+      sendJson(
+        res,
+        403,
+        openAiError("Team ?? b? v? hi?u h?a", "permission_error")
+      );
+      return;
+    }
+
+    jsonLog("auth_principal_resolved", {
+      requestId: id,
+      principalType: principal.principalType,
+      principalId: principal.principalId,
+      userId: principal.userId,
+      teamId: principal.teamId
+    });
+
     if (req.method === "GET" && req.url === "/v1/codex/config") {
-      sendJson(res, 200, codexConfigForTeam(team));
+      sendJson(res, 200, codexConfigForPrincipal(principal));
       return;
     }
 
     if (req.method === "GET") {
-      await proxyModels(req, res, rawKey, team, id);
+      await proxyModels(req, res, rawKey, principal, id);
       return;
     }
 
     if (req.url === "/v1/responses") {
-      await proxyResponses(req, res, rawKey, team, id);
+      await proxyResponses(req, res, rawKey, principal, id);
       return;
     }
 
-    await handleChat(req, res, rawKey, team, id);
+    await handleChat(req, res, rawKey, principal, id);
   } catch (error) {
     jsonLog("request_failed", {
       requestId: id,

@@ -65,10 +65,22 @@ async function writeStore(path, store) {
   await writeFile(tmp, JSON.stringify(store, null, 2) + "\n", "utf8");
   if (process.platform !== "win32") {
     await chmod(tmp, 0o600);
-  }
-  await rename(tmp, path);
-  if (process.platform !== "win32") {
+    await rename(tmp, path);
     await chmod(path, 0o600);
+    return;
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await copyFile(tmp, path);
+      await rm(tmp, { force: true });
+      return;
+    } catch (error) {
+      if (!["EPERM", "EBUSY", "EACCES"].includes(error?.code) || attempt === 4) {
+        throw error;
+      }
+      await sleep(50 * (attempt + 1));
+    }
   }
 }
 
@@ -143,15 +155,19 @@ async function withStoreLock(task) {
   }
 }
 
-function recordKey({ teamCode, usageDate, usageScope, clientIdHash }) {
+function recordKey({ teamCode, usageDate, usageScope, clientIdHash, principalType, userId }) {
+  if (principalType === "user") {
+    return `${teamCode}|user|${userId}|${usageDate}`;
+  }
   if (usageScope === "team") {
     return `${teamCode}|team|${usageDate}`;
   }
   return `${teamCode}|client|${clientIdHash}|${usageDate}`;
 }
 
-function normalizedClientIdHash(clientIdHash, usageScope) {
+function normalizedClientIdHash(clientIdHash, usageScope, principalType) {
   if (usageScope === "team") return "";
+  if (principalType === "user" && !clientIdHash) return "";
   const value = String(clientIdHash || "").trim().toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(value)) {
     throw new Error("clientIdHash phải là SHA-256 hex và không được là client ID thô");
@@ -176,6 +192,8 @@ function cleanupOldRecords(store, today) {
 
 export async function reserveDailyUsageSlot({
   teamCode,
+  principalType = "team",
+  userId = null,
   clientIdHash,
   usageDate,
   usageScope,
@@ -183,15 +201,23 @@ export async function reserveDailyUsageSlot({
 }) {
   return withStoreLock(async (store) => {
     cleanupOldRecords(store, usageDate);
-    const safeClientIdHash = normalizedClientIdHash(clientIdHash, usageScope);
+    const safeClientIdHash = normalizedClientIdHash(clientIdHash, usageScope, principalType);
+    const safeUserId = userId ? String(userId).trim() : null;
+    if (principalType === "user" && !/^[a-z0-9][a-z0-9._-]{1,63}$/.test(safeUserId || "")) {
+      throw new Error("userId không hợp lệ cho usage store");
+    }
     const key = recordKey({
       teamCode,
       clientIdHash: safeClientIdHash,
       usageDate,
-      usageScope
+      usageScope,
+      principalType,
+      userId: safeUserId
     });
     const record = store.codex_daily_usage[key] || {
       team_code: teamCode,
+      principal_type: principalType,
+      user_id: safeUserId,
       client_id_hash: safeClientIdHash,
       usage_scope: usageScope,
       usage_date: usageDate,

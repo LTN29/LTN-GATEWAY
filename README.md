@@ -278,3 +278,122 @@ Không commit:
 - Log chứa dữ liệu nhạy cảm
 
 `config/teams.json` chỉ chứa hash của key, không chứa key nguyên bản.
+
+## User-key pilot
+
+Gateway hỗ trợ migration từ team key sang API key riêng cho từng nhân viên:
+
+```text
+API key cá nhân → userId → teamId → aiPolicy → usage theo user → COMPANY.md + TEAM.md + USER.md
+```
+
+`LTN_CLIENT_ID` chỉ là device ID. Một user dùng nhiều máy vẫn dùng chung quota Premium theo `userId`; client ID chỉ được hash để phân tích thiết bị.
+
+Config user production nằm ở `config/users.json` qua biến:
+
+```bash
+LTN_USERS_CONFIG_FILE=./config/users.json
+LTN_LEGACY_TEAM_KEYS_ENABLED=true
+```
+
+Không commit `config/users.json` production. Dùng `config/users.example.json` làm mẫu.
+
+Tạo user pilot:
+
+```bash
+node scripts/manage-users.mjs create \
+  --user-id sales-ngoc \
+  --display-name "Ngọc" \
+  --team SALES \
+  --role "Tư vấn Shopee"
+```
+
+CLI chỉ in API key plaintext đúng một lần và chỉ lưu SHA-256 hash. Rotate/disable:
+
+```bash
+node scripts/manage-users.mjs rotate-key --user-id sales-ngoc
+node scripts/manage-users.mjs disable --user-id sales-ngoc
+```
+
+Nhân viên không cần cài lại Codex; chạy installer, chọn `Repair`, nhập key cá nhân.
+
+Report/coaching nội bộ, không có public admin endpoint mặc định:
+
+```bash
+node scripts/report-user-usage.mjs --user sales-ngoc --days 7
+node scripts/report-user-usage.mjs --team SALES --days 7 --csv ./reports/sales.csv
+node scripts/generate-user-coaching.mjs --user sales-ngoc --days 7
+```
+
+Memory user được nạp theo thứ tự `COMPANY.md → TEAM.md → USER.md`. Nếu USER.md chưa tồn tại, Gateway tạo template an toàn trong `memory/users/<TEAM>/<userId>.md`.
+
+TEAM/COMPANY memory candidate nên đi qua review queue trong pilot:
+
+```bash
+node scripts/review-memory.mjs list
+node scripts/review-memory.mjs show CANDIDATE_ID
+node scripts/review-memory.mjs approve CANDIDATE_ID
+node scripts/review-memory.mjs reject CANDIDATE_ID
+```
+
+Knowledge Memory hiện dùng extractor JSON có validate, redaction, dedup theo `normalizedKey`,
+USER auto-update an toàn, còn TEAM/COMPANY bắt buộc qua review queue. Xem đầy đủ tại
+`docs/MEMORY_GOVERNANCE.md`.
+
+Lệnh vận hành memory:
+
+```bash
+node scripts/memory-status.mjs
+node scripts/review-memory.mjs list --scope TEAM
+node scripts/retry-memory-sync.mjs --status
+node scripts/retry-memory-sync.mjs --max 20
+node scripts/migrate-memory-format.mjs --dry-run
+```
+
+Rollback memory chỉ trong thư mục `memory/`:
+
+```bash
+node scripts/memory-rollback.mjs --file memory/users/SALES/sales-ngoc.md --list
+node scripts/memory-rollback.mjs --file memory/users/SALES/sales-ngoc.md --version VERSION_ID
+```
+
+Xem checklist pilot đầy đủ tại `docs/USER_PILOT_GUIDE.md`.
+
+## LTN Admin Console
+
+Admin Console là lớp quản trị riêng dự kiến chạy tại `https://admin-ai.simi.vn`, tách khỏi 9Router Dashboard.
+
+9Router tiếp tục quản lý provider/model/Combo/fallback. LTN Admin Console quản lý:
+
+- nhân viên, team, API key cá nhân;
+- AI policy/quota và usage aggregate;
+- Knowledge Memory, review TEAM/COMPANY;
+- SharePoint sync/outbox;
+- audit và health Gateway/9Router.
+
+Admin API nằm dưới `/admin/api/v1/*`, không dùng employee API key và không đặt dưới `/v1`.
+Backend xác thực bằng Cloudflare Access JWT `Cf-Access-Jwt-Assertion`, enforce RBAC, CSRF cho write request,
+host/origin allowlist và audit bắt buộc cho thao tác ghi.
+
+Tài liệu:
+
+- `docs/ADMIN_CONSOLE.md`
+- `docs/ADMIN_SECURITY.md`
+- `docs/ADMIN_DEPLOYMENT.md`
+- `docs/ADMIN_PILOT_CHECKLIST.md`
+
+Phase 2 bổ sung các màn hình pilot thực tế cho user lifecycle, bulk import, usage theo user/team/device,
+memory review, memory explorer/version/rollback, SharePoint sync, system health và audit explorer.
+Admin UI vẫn mặc định tắt bằng `ADMIN_UI_ENABLED=false`; chỉ bật sau khi Cloudflare Access và
+`config/admins.json` đã sẵn sàng.
+
+Lưu ý vận hành: CSRF token và Admin API rate-limit hiện là in-memory, phù hợp mô hình một process trên
+Mac mini. Nếu mở rộng multi-process/container scale-out, cần chuyển các state này sang store dùng chung.
+
+Build/test local:
+
+```bash
+npm run admin:typecheck
+npm run admin:test
+npm run admin:build
+```
