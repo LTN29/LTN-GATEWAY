@@ -155,6 +155,63 @@ function oneTimeKeyModal() {
   </div></div>`;
 }
 
+function teamOptions(teams, selected = "") {
+  return (teams.items || []).map((team) => {
+    const id = team.teamId || team.code;
+    return `<option value="${escapeHtml(id)}" ${selected === id ? "selected" : ""}>${escapeHtml(team.displayName || id)} (${escapeHtml(id)})</option>`;
+  }).join("");
+}
+
+function csvTemplate(teams) {
+  const ids = (teams.items || []).map((team) => team.teamId || team.code);
+  const fallback = ids.length ? ids : ["CSKH", "SALES", "MARKETING"];
+  return [
+    "userId,displayName,teamId,role,policyMode,premiumLimit",
+    `nguyen-van-a,Nguyễn Văn A,${fallback[0] || "CSKH"},Nhân viên,inherit,`,
+    `tran-thi-b,Trần Thị B,${fallback[1] || fallback[0] || "SALES"},Nhân viên,inherit,`,
+    `le-van-c,Lê Văn C,${fallback[2] || fallback[0] || "MARKETING"},Nhân viên,inherit,`
+  ].join("\n");
+}
+
+function createUserPanel(teams) {
+  return can("usersWrite") ? `
+    <div class="card createUserCard">
+      <div>
+        <h2>Tạo user nhanh</h2>
+        <p>Team chỉ là nhóm/bộ phận. API key sẽ được tạo riêng cho user và chỉ hiển thị một lần.</p>
+      </div>
+      <div class="formGrid">
+        <label>User ID<input id="newUserId" placeholder="vd: ngoc-cskh" /></label>
+        <label>Tên hiển thị<input id="newDisplayName" placeholder="vd: Ngọc CSKH" /></label>
+        <label>Team<select id="newTeamId">${teamOptions(teams)}</select></label>
+        <label>Vai trò<input id="newRole" placeholder="vd: Chăm sóc khách hàng" /></label>
+        <label>Policy<select id="newPolicyMode"><option value="inherit">Kế thừa team</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option></select></label>
+        <label>Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="để trống = theo team" /></label>
+      </div>
+      <div class="actions">${button("Tạo user + API key", "create-user-from-form")}<a class="pill secondary" href="/admin/users/import">Import nhiều user</a></div>
+    </div>
+  ` : "";
+}
+
+function importResultHtml(result) {
+  const preview = result.preview || [];
+  const errors = result.errors || [];
+  if (result.valid) {
+    return `<div class="card success compactCard">
+      <h2>CSV hợp lệ</h2>
+      <p>Sẵn sàng import ${preview.length} user. Khi commit, hệ thống sẽ tạo API key riêng cho từng user và tải về CSV key một lần.</p>
+      ${table(["Dòng", "User ID", "Tên", "Team", "Policy", "Premium"], preview.slice(0, 30).map((item) => `
+        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(item.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
+      `), "Chưa có dòng preview.")}
+    </div>`;
+  }
+  return `<div class="card error compactCard">
+    <h2>CSV chưa hợp lệ</h2>
+    <p>Sửa các dòng lỗi bên dưới rồi validate lại. Import là all-or-nothing nên chưa có user nào được tạo.</p>
+    ${table(["Dòng", "Lỗi"], errors.map((item) => `<tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.message)}</td></tr>`), "Không có chi tiết lỗi.")}
+  </div>`;
+}
+
 async function pageDashboard() {
   const [dashboard, timeseries, teams] = await Promise.all([
     api("/dashboard"),
@@ -193,11 +250,12 @@ async function pageUsers() {
   const params = new URLSearchParams(location.search);
   const [users, teams] = await Promise.all([api(`/users${location.search}`), api("/teams")]);
   render(`
+    ${createUserPanel(teams)}
     <div class="toolbar">
       <input aria-label="Tìm nhân viên" id="search" placeholder="Tìm user hoặc tên" value="${escapeHtml(params.get("search") || "")}" />
-      <select id="teamFilter"><option value="">Tất cả team</option>${(teams.items || []).map((t) => `<option value="${t.teamId}" ${params.get("teamId") === t.teamId ? "selected" : ""}>${escapeHtml(t.displayName || t.teamId)}</option>`).join("")}</select>
-      <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true">Đang hoạt động</option><option value="false">Đã khóa</option></select>
-      ${can("usersWrite") ? button("Tạo user", "show-create-user") : ""}
+      <select id="teamFilter"><option value="">Tất cả team</option>${teamOptions(teams, params.get("teamId") || "")}</select>
+      <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
+      ${can("usersWrite") ? `<a class="pill" href="/admin/users/import">Import 30 người</a>` : ""}
     </div>
     ${table(["User ID", "Tên", "Team", "Vai trò", "Trạng thái", "Policy", "Premium", "Thao tác"], (users.items || []).map((u) => `
       <tr>
@@ -228,7 +286,25 @@ async function pageUserDetail(userId) {
 }
 
 async function pageImport() {
-  render(`<div class="card"><h2>Import CSV</h2><p>Header: userId,displayName,teamId,role,policyMode,premiumLimit</p><textarea id="csvInput" rows="12" placeholder="Dán CSV ở đây"></textarea><div class="actions">${button("Validate", "validate-import")}${button("Commit và tải key CSV", "commit-import", true)}</div><div id="importResult"></div></div>`);
+  const teams = await api("/teams");
+  render(`<div class="twoCol importLayout">
+    <div class="card">
+      <h2>Import 30 user bằng CSV</h2>
+      <p>Dùng khi cần tạo nhiều nhân viên cùng lúc. Team chỉ là ID bộ phận; API key sẽ được tạo riêng cho từng user khi commit.</p>
+      <div class="hintBox">
+        <strong>Header bắt buộc</strong>
+        <code>userId,displayName,teamId,role,policyMode,premiumLimit</code>
+      </div>
+      <div class="actions">${button("Điền mẫu CSV", "fill-import-template")}${button("Validate", "validate-import")}${button("Commit và tải key CSV", "commit-import", true)}</div>
+      <textarea id="csvInput" rows="14" spellcheck="false" placeholder="${escapeHtml(csvTemplate(teams))}"></textarea>
+      <div id="importResult"></div>
+    </div>
+    <div class="card">
+      <h2>Team đang có</h2>
+      <p>Copy đúng Team ID vào cột <code>teamId</code>. Không cần API key ở team.</p>
+      ${table(["Team ID", "Tên", "Policy", "Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(team.aiPolicy?.mode || "inherit")}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có team.")}
+    </div>
+  </div>`);
 }
 
 async function pageTeams() {
@@ -301,6 +377,26 @@ async function route() {
   }
 }
 
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  if (target?.id === "teamFilter" || target?.id === "enabledFilter") {
+    const search = document.querySelector("#search")?.value || "";
+    const teamId = document.querySelector("#teamFilter")?.value || "";
+    const enabled = document.querySelector("#enabledFilter")?.value || "";
+    history.pushState(null, "", `/admin/users${qs({ search, teamId, enabled })}`);
+    route();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.target?.id !== "search") return;
+  const search = document.querySelector("#search")?.value || "";
+  const teamId = document.querySelector("#teamFilter")?.value || "";
+  const enabled = document.querySelector("#enabledFilter")?.value || "";
+  history.pushState(null, "", `/admin/users${qs({ search, teamId, enabled })}`);
+  route();
+});
+
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
@@ -308,15 +404,18 @@ document.addEventListener("click", async (event) => {
   try {
     if (action === "copy-key" && state.oneTimeKey) await navigator.clipboard.writeText(state.oneTimeKey);
     else if (action === "close-key") state.oneTimeKey = null;
-    else if (action === "show-create-user") {
-      const userId = prompt("User ID?");
-      const displayName = prompt("Tên hiển thị?");
-      const teamId = prompt("Team ID?");
-      const role = prompt("Vai trò?") || "";
-      if (userId && displayName && teamId) {
-        const result = await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, role, aiPolicy: { mode: "inherit" } }) });
-        state.oneTimeKey = result.apiKey;
-      }
+    else if (action === "create-user-from-form") {
+      const userId = document.querySelector("#newUserId")?.value.trim();
+      const displayName = document.querySelector("#newDisplayName")?.value.trim();
+      const teamId = document.querySelector("#newTeamId")?.value.trim();
+      const role = document.querySelector("#newRole")?.value.trim() || "";
+      const policyMode = document.querySelector("#newPolicyMode")?.value || "inherit";
+      const premiumLimit = document.querySelector("#newPremiumLimit")?.value.trim();
+      if (!userId || !displayName || !teamId) throw new Error("Vui lòng nhập User ID, tên hiển thị và team.");
+      const aiPolicy = { mode: policyMode };
+      if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
+      const result = await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, role, aiPolicy }) });
+      state.oneTimeKey = result.apiKey;
     } else if (action.startsWith("rotate:")) {
       const userId = action.split(":")[1];
       if (confirm(`Rotate API key cho ${userId}? Key cũ mất hiệu lực ngay.`)) {
@@ -326,11 +425,15 @@ document.addEventListener("click", async (event) => {
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
       if (confirm(`${mode === "disable" ? "Disable" : "Enable"} user ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
+    } else if (action === "fill-import-template") {
+      const teams = await api("/teams");
+      document.querySelector("#csvInput").value = csvTemplate(teams);
+      return;
     } else if (action === "validate-import" || action === "commit-import") {
       const csv = document.querySelector("#csvInput").value;
       if (action === "validate-import") {
         const result = await api("/users/import/validate", { method: "POST", body: JSON.stringify({ csv }) });
-        document.querySelector("#importResult").innerHTML = `<pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
+        document.querySelector("#importResult").innerHTML = importResultHtml(result);
         return;
       }
       if (confirm("Import all-or-nothing và tải CSV key một lần?")) {
@@ -363,6 +466,10 @@ document.addEventListener("click", async (event) => {
     state.toast = error.message;
     await route();
   }
+});
+
+window.addEventListener("popstate", () => {
+  route();
 });
 
 window.addEventListener("storage", () => {

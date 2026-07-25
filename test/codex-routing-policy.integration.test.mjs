@@ -159,6 +159,7 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
   process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "2";
   process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
   process.env.CODEX_USAGE_FILE = join(root, "codex-usage.json");
+  process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
 
   const capturedLogs = [];
   const originalWrite = process.stdout.write;

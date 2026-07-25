@@ -72,7 +72,7 @@ export const config = {
   ),
   codexRoutingEnabled: bool(process.env.CODEX_ROUTING_ENABLED, true),
   get legacyTeamKeysEnabled() {
-    return bool(process.env.LTN_LEGACY_TEAM_KEYS_ENABLED, true);
+    return bool(process.env.LTN_LEGACY_TEAM_KEYS_ENABLED, false);
   },
   get teamsFile() {
     return resolve(process.env.TEAMS_FILE || "./config/teams.json");
@@ -201,7 +201,7 @@ export function normalizeAiPolicy(value, fallbackUsageScope = "client") {
 
 export async function loadTeams({ force = false } = {}) {
   const teamsFile = config.teamsFile;
-  if (!force && teamsCache.path === teamsFile && teamsCache.byHash.size && Date.now() - teamsCache.loadedAt < 10_000) {
+  if (!force && teamsCache.path === teamsFile && teamsCache.loadedAt && Date.now() - teamsCache.loadedAt < 10_000) {
     return teamsCache;
   }
 
@@ -226,10 +226,13 @@ export async function loadTeams({ force = false } = {}) {
     if (!/^[A-Z0-9_-]{2,40}$/.test(code)) {
       throw new Error(`Team code không hợp lệ: ${item.code}`);
     }
-    if (!/^[a-f0-9]{64}$/.test(keyHash)) {
+    if (keyHash && !/^[a-f0-9]{64}$/.test(keyHash)) {
       throw new Error(`keyHash không hợp lệ của team ${code}`);
     }
-    if (byHash.has(keyHash)) {
+    if (config.legacyTeamKeysEnabled && !keyHash) {
+      throw new Error(`Team ${code} thiếu keyHash trong khi LTN_LEGACY_TEAM_KEYS_ENABLED=true`);
+    }
+    if (keyHash && byHash.has(keyHash)) {
       throw new Error(`Trùng keyHash ở team ${code}`);
     }
     if (byCode.has(code)) {
@@ -246,10 +249,10 @@ export async function loadTeams({ force = false } = {}) {
       ),
       displayName: String(item.displayName || code),
       enabled,
-      aiPolicy: normalizeAiPolicy(item.aiPolicy, "client")
+      aiPolicy: normalizeAiPolicy(item.aiPolicy, "user")
     };
 
-    byHash.set(keyHash, team);
+    if (keyHash) byHash.set(keyHash, team);
     byCode.set(code, team);
   }
 

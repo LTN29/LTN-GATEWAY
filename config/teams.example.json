@@ -1,3 +1,70 @@
 {
-  "teams": []
+  "teams": [
+    {
+      "code": "MANAGEMENT",
+      "displayName": "Ban quản lý",
+      "memoryFile": "MANAGEMENT.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "premium_always",
+        "premiumLimit": 0,
+        "usageScope": "user"
+      }
+    },
+    {
+      "code": "SALES",
+      "displayName": "Sales",
+      "memoryFile": "SALES.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 3,
+        "usageScope": "user"
+      }
+    },
+    {
+      "code": "CSKH",
+      "displayName": "CSKH",
+      "memoryFile": "CSKH.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 3,
+        "usageScope": "user"
+      }
+    },
+    {
+      "code": "MARKETING",
+      "displayName": "Marketing",
+      "memoryFile": "MARKETING.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 3,
+        "usageScope": "user"
+      }
+    },
+    {
+      "code": "WARRANTY",
+      "displayName": "Bảo hành",
+      "memoryFile": "WARRANTY.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 3,
+        "usageScope": "user"
+      }
+    },
+    {
+      "code": "IT",
+      "displayName": "IT",
+      "memoryFile": "IT.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "premium_always",
+        "premiumLimit": 0,
+        "usageScope": "user"
+      }
+    }
+  ]
 }

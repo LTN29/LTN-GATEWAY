@@ -21,11 +21,14 @@ for (const route of [
 }
 for (const marker of [
   "oneTimeKey",
+  "createUserPanel",
+  "create-user-from-form",
+  "fill-import-template",
   "validate-import",
   "commit-import",
   "rollback:",
   "retry-all-sync",
-  "Phiên Cloudflare Access"
+  "Cloudflare Access"
 ]) {
   if (!source.includes(marker)) throw new Error(`UI marker missing: ${marker}`);
 }

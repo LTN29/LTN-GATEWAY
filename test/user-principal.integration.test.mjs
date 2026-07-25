@@ -220,6 +220,32 @@ test("user config rejects duplicate hash and user hash matching legacy team key"
   await assert.rejects(() => mod.loadUsers({ force: true }), /trùng legacy team keyHash/);
 });
 
+test("team config can be team-only when legacy team keys are disabled", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ltn-team-only-config-test-"));
+  const teamsFile = join(root, "teams.json");
+  await writeFile(teamsFile, JSON.stringify({
+    teams: [{
+      code: "CSKH",
+      displayName: "CSKH",
+      enabled: true,
+      memoryFile: "CSKH.md",
+      aiPolicy: { mode: "limited_daily", premiumLimit: 3, usageScope: "user" }
+    }]
+  }));
+  process.env.TEAMS_FILE = teamsFile;
+  process.env.MEMORY_DIR = join(root, "memory");
+
+  process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "false";
+  let mod = await import(`../src/config.mjs?teamonly=${Date.now()}`);
+  let teams = await mod.loadTeams({ force: true });
+  assert.equal(teams.byCode.get("CSKH").displayName, "CSKH");
+  assert.equal(teams.byHash.size, 0);
+
+  process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
+  mod = await import(`../src/config.mjs?teamonlylegacy=${Date.now()}`);
+  await assert.rejects(() => mod.loadTeams({ force: true }), /thiếu keyHash/);
+});
+
 test("legacy team key follows compatibility flag", async () => {
   const root = await mkdtemp(join(tmpdir(), "ltn-legacy-flag-test-"));
   const teamsFile = join(root, "teams.json");

@@ -190,6 +190,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
   process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "3";
   process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
   process.env.CODEX_USAGE_FILE = join(root, "codex-usage.json");
+  process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
   process.env.MEMORY_REVIEW_QUEUE_FILE = join(root, "memory-review-queue.jsonl");
   process.env.MEMORY_AUDIT_FILE = join(root, "memory-audit.jsonl");
   process.env.MEMORY_SYNC_OUTBOX_FILE = join(root, "memory-sync-outbox.jsonl");
