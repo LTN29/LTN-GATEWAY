@@ -39,8 +39,8 @@ Thêm env production, không commit:
 ```env
 ADMIN_UI_ENABLED=true
 ADMIN_UI_DIST_DIR=./admin-ui/dist
-ADMIN_ALLOWED_HOSTS=admin-ai.simi.vn
-ADMIN_ALLOWED_ORIGIN=https://admin-ai.simi.vn
+ADMIN_ALLOWED_HOSTS=admin-simi.simi.vn
+ADMIN_ALLOWED_ORIGIN=https://admin-simi.simi.vn
 ADMIN_CONFIG_FILE=./config/admins.json
 ADMIN_AUDIT_FILE=./data/admin-audit.jsonl
 CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com
@@ -57,13 +57,13 @@ Health check:
 
 ```bash
 curl -sS http://127.0.0.1:20129/health
-curl -sS -H "Host: admin-ai.simi.vn" http://127.0.0.1:20129/admin/api/v1/system/health
+curl -sS -H "Host: admin-simi.simi.vn" http://127.0.0.1:20129/admin/api/v1/system/health
 ```
 
 Cloudflare dự kiến:
 
 ```text
-admin-ai.simi.vn
+admin-simi.simi.vn
 → Cloudflare Access policy
 → Cloudflare Tunnel
 → http://127.0.0.1:20129

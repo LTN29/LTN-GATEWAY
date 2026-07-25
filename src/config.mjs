@@ -118,11 +118,11 @@ export const config = {
   adminToken: process.env.ADMIN_TOKEN || "",
   adminUiEnabled: bool(process.env.ADMIN_UI_ENABLED, false),
   adminUiDistDir: resolve(process.env.ADMIN_UI_DIST_DIR || "./admin-ui/dist"),
-  adminAllowedHosts: String(process.env.ADMIN_ALLOWED_HOSTS || "admin-ai.simi.vn")
+  adminAllowedHosts: String(process.env.ADMIN_ALLOWED_HOSTS || "admin-simi.simi.vn")
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean),
-  adminAllowedOrigin: process.env.ADMIN_ALLOWED_ORIGIN || "https://admin-ai.simi.vn",
+  adminAllowedOrigin: process.env.ADMIN_ALLOWED_ORIGIN || "https://admin-simi.simi.vn",
   adminConfigFile: resolve(process.env.ADMIN_CONFIG_FILE || "./config/admins.json"),
   adminAuditFile: resolve(process.env.ADMIN_AUDIT_FILE || "./data/admin-audit.jsonl"),
   cloudflareAccessTeamDomain: process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN || "",

@@ -40,7 +40,7 @@ function hash(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-async function request(port, path, { method = "GET", token = "", csrf = "", origin = "https://admin-ai.simi.vn", host = "admin-ai.simi.vn", body = null } = {}) {
+async function request(port, path, { method = "GET", token = "", csrf = "", origin = "https://admin-simi.simi.vn", host = "admin-simi.simi.vn", body = null } = {}) {
   const headers = { host };
   if (token) headers["cf-access-jwt-assertion"] = token;
   if (csrf) headers["x-ltn-csrf-token"] = csrf;
@@ -68,9 +68,12 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async (
   const adminsFile = join(root, "admins.json");
   const jwksFile = join(root, "jwks.json");
   const memoryDir = join(root, "memory");
+  const adminDistDir = join(root, "admin-ui-dist");
   const queueFile = join(root, "memory-review-queue.jsonl");
   const auditFile = join(root, "admin-audit.jsonl");
   await mkdir(memoryDir, { recursive: true });
+  await mkdir(adminDistDir, { recursive: true });
+  await writeFile(join(adminDistDir, "index.html"), "<!doctype html><title>LTN Admin</title><main>admin-ui-ok</main>");
   await writeFile(teamsFile, JSON.stringify({ teams: [{ code: "SALES", keyHash: hash("team-key"), enabled: true, memoryFile: "SALES.md", displayName: "Sales" }] }));
   await writeFile(usersFile, JSON.stringify({ version: 1, users: {} }));
   await writeFile(adminsFile, JSON.stringify({
@@ -113,8 +116,10 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async (
   process.env.CLOUDFLARE_ACCESS_JWKS_FILE = jwksFile;
   process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN = "test.cloudflareaccess.com";
   process.env.CLOUDFLARE_ACCESS_AUD = "admin-aud";
-  process.env.ADMIN_ALLOWED_HOSTS = "admin-ai.simi.vn";
-  process.env.ADMIN_ALLOWED_ORIGIN = "https://admin-ai.simi.vn";
+  process.env.ADMIN_ALLOWED_HOSTS = "admin-simi.simi.vn";
+  process.env.ADMIN_ALLOWED_ORIGIN = "https://admin-simi.simi.vn";
+  process.env.ADMIN_UI_ENABLED = "true";
+  process.env.ADMIN_UI_DIST_DIR = adminDistDir;
   process.env.ADMIN_AUDIT_FILE = auditFile;
   process.env.MEMORY_DIR = memoryDir;
   process.env.MEMORY_REVIEW_QUEUE_FILE = queueFile;
@@ -140,6 +145,14 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and one-time keys", async (
     const me = await request(port, "/admin/api/v1/me", { token: adminToken });
     assert.equal(me.status, 200);
     assert.equal(me.json.data.admin.email, "admin@simi.vn");
+
+    const adminRoot = await request(port, "/", { origin: "" });
+    assert.equal(adminRoot.status, 302);
+    assert.equal(adminRoot.headers.location, "/admin/");
+    assert.equal((await request(port, "/", { host: "ai.simi.vn", origin: "" })).status, 404);
+    const adminUi = await request(port, "/admin/", { origin: "" });
+    assert.equal(adminUi.status, 200);
+    assert.match(adminUi.text, /admin-ui-ok/);
 
     const csrf = (await request(port, "/admin/api/v1/csrf", { token: adminToken })).json.data.token;
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);

@@ -361,7 +361,7 @@ Xem checklist pilot đầy đủ tại `docs/USER_PILOT_GUIDE.md`.
 
 ## LTN Admin Console
 
-Admin Console là lớp quản trị riêng dự kiến chạy tại `https://admin-ai.simi.vn`, tách khỏi 9Router Dashboard.
+Admin Console là lớp quản trị riêng dự kiến chạy tại `https://admin-simi.simi.vn`, tách khỏi 9Router Dashboard.
 
 9Router tiếp tục quản lý provider/model/Combo/fallback. LTN Admin Console quản lý:
 
@@ -374,6 +374,16 @@ Admin Console là lớp quản trị riêng dự kiến chạy tại `https://ad
 Admin API nằm dưới `/admin/api/v1/*`, không dùng employee API key và không đặt dưới `/v1`.
 Backend xác thực bằng Cloudflare Access JWT `Cf-Access-Jwt-Assertion`, enforce RBAC, CSRF cho write request,
 host/origin allowlist và audit bắt buộc cho thao tác ghi.
+
+Cloudflare Tunnel production nên route chung về LTN Gateway port `20129`:
+
+```text
+ai.simi.vn           -> http://localhost:20129
+admin-simi.simi.vn   -> http://localhost:20129
+router.simi.vn       -> http://localhost:20128
+```
+
+Admin Console vẫn tách bằng hostname/path và Cloudflare Access, không cần service riêng port `20130`.
 
 Tài liệu:
 

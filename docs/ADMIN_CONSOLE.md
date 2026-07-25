@@ -1,13 +1,13 @@
 # LTN Admin Console
 
-LTN Admin Console là lớp quản trị riêng cho SIMI AI tại `https://admin-ai.simi.vn`.
+LTN Admin Console là lớp quản trị riêng cho SIMI AI tại `https://admin-simi.simi.vn`.
 
 9Router vẫn chỉ phụ trách provider, model, Combo và usage upstream. Admin Console phụ trách nhân viên, team, API key cá nhân, AI policy/quota, usage aggregate, Knowledge Memory, review TEAM/COMPANY, SharePoint sync, audit và health.
 
 ## Kiến trúc
 
 ```text
-admin-ai.simi.vn
+admin-simi.simi.vn
 → Cloudflare Access
 → LTN Gateway /admin và /admin/api/v1/*
 → admin services

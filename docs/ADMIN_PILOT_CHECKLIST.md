@@ -4,11 +4,11 @@ Checklist này dùng cho pilot 5 người trước khi mở rộng lên khoảng
 
 ## Trước khi bật
 
-- Cloudflare Access đã bảo vệ `admin-ai.simi.vn`.
+- Cloudflare Access đã bảo vệ `admin-simi.simi.vn`.
 - Tunnel trỏ về `http://127.0.0.1:20129`.
 - `ADMIN_UI_ENABLED=true` chỉ đặt trên Mac mini production khi đã sẵn sàng.
-- `ADMIN_ALLOWED_HOSTS=admin-ai.simi.vn`.
-- `ADMIN_ALLOWED_ORIGIN=https://admin-ai.simi.vn`.
+- `ADMIN_ALLOWED_HOSTS=admin-simi.simi.vn`.
+- `ADMIN_ALLOWED_ORIGIN=https://admin-simi.simi.vn`.
 - `CLOUDFLARE_ACCESS_TEAM_DOMAIN` và `CLOUDFLARE_ACCESS_AUD` đã đúng app Access.
 - `config/admins.json` được tạo từ `config/admins.example.json`.
 - `.env`, `config/users.json`, `config/teams.json`, `config/admins.json`, `data/*.jsonl` không nằm trong Git.

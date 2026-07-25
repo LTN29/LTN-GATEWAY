@@ -381,6 +381,11 @@ function isAdmin(req) {
   return getBearerToken(req.headers) === config.adminToken;
 }
 
+function isConfiguredAdminHost(req) {
+  const host = String(req.headers.host || "").split(":")[0].toLowerCase();
+  return config.adminAllowedHosts.includes(host);
+}
+
 export function createGatewayServer() {
   return http.createServer(async (req, res) => {
   const id = makeRequestId(req.headers["x-request-id"]);
@@ -388,6 +393,16 @@ export function createGatewayServer() {
 
   if (req.url?.startsWith("/admin/api/v1/")) {
     await handleAdminApi(req, res);
+    return;
+  }
+
+  if (config.adminUiEnabled && req.url === "/" && isConfiguredAdminHost(req)) {
+    res.writeHead(302, {
+      location: "/admin/",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    });
+    res.end();
     return;
   }
 

@@ -17,8 +17,8 @@ Admin không có trong `config/admins.json` trả 403. Admin disabled trả 403.
 Admin routes chỉ hoạt động trên hostname trong `ADMIN_ALLOWED_HOSTS`. Production nên đặt:
 
 ```env
-ADMIN_ALLOWED_HOSTS=admin-ai.simi.vn
-ADMIN_ALLOWED_ORIGIN=https://admin-ai.simi.vn
+ADMIN_ALLOWED_HOSTS=admin-simi.simi.vn
+ADMIN_ALLOWED_ORIGIN=https://admin-simi.simi.vn
 ```
 
 Write request kiểm tra Origin và CSRF.
