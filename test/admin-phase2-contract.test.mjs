@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 
 test("Admin Phase 2 exposes pilot-critical backend endpoints", async () => {
   const router = await readFile("src/admin/admin-router.mjs", "utf8");
@@ -45,4 +46,9 @@ test("Admin build emits real app assets instead of placeholder-only bundle", asy
   assert.match(build, /admin\.js/);
   assert.match(build, /admin\.css/);
   assert.doesNotMatch(build, /admin-placeholder/);
+});
+
+test("Admin built bundle is valid JavaScript", async () => {
+  execFileSync(process.execPath, ["admin-ui/scripts/build.mjs"], { stdio: "pipe" });
+  execFileSync(process.execPath, ["--check", "admin-ui/dist/assets/admin.js"], { stdio: "pipe" });
 });

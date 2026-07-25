@@ -209,7 +209,7 @@ async function pageUsers() {
         <td>${escapeHtml(u.aiPolicy?.mode || "inherit")}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Disable" : "Enable", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Rotate", `rotate:${u.userId}`, true)}` : ""}</td>
-      </tr>`), "Chưa có nhân viên.")}`;
+      </tr>`), "Chưa có nhân viên.")}`);
 }
 
 async function pageUserDetail(userId) {
