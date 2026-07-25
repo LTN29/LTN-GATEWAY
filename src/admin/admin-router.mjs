@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, relative, resolve } from "node:path";
 import { config } from "../config.mjs";
 import { readBody } from "../http.mjs";
-import { requestId as makeRequestId, redactSecrets } from "../utils.mjs";
+import { jsonLog, requestId as makeRequestId, redactSecrets } from "../utils.mjs";
 import { authenticateAdmin } from "./admin-auth.mjs";
 import { issueCsrfToken, verifyCsrfToken } from "./admin-csrf.mjs";
 import { requirePermission, visibleTeamIds } from "./admin-rbac.mjs";
@@ -342,6 +342,14 @@ export async function handleAdminApi(req, res) {
       sendAdminError(res, 404, "NOT_FOUND", "Không tìm thấy Admin API.", requestId);
     }
   } catch (error) {
+    jsonLog("admin_api_failed", {
+      requestId,
+      method: req.method,
+      path: req.url,
+      statusCode: error?.statusCode || 500,
+      code: error?.code || "ADMIN_INTERNAL_ERROR",
+      message: redactSecrets(error?.message || String(error))
+    });
     sendAdminError(
       res,
       error?.statusCode || 500,
