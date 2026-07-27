@@ -37,6 +37,10 @@ export const config = {
   memoryExtractionModel: process.env.MEMORY_EXTRACTION_MODEL || process.env.MEMORY_MODEL || "SIMI-FREE",
   memoryExtractionTimeoutMs: number(process.env.MEMORY_EXTRACTION_TIMEOUT_MS || 15000, 15000),
   memoryExtractionMinConfidence: number(process.env.MEMORY_EXTRACTION_MIN_CONFIDENCE || 0.8, 0.8),
+  memoryExtractionQueueLimit: Math.max(
+    1,
+    number(process.env.MEMORY_EXTRACTION_QUEUE_LIMIT || 100, 100)
+  ),
   codexCombos: {
     premium: process.env.CODEX_COMBO_PREMIUM || "",
     free: process.env.CODEX_COMBO_FREE || ""

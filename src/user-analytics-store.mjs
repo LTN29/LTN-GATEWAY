@@ -7,6 +7,10 @@ function emptyStore() {
   return { version: 1, dailyUsers: {} };
 }
 
+// Analytics is a small JSON file. Serialize read/modify/write transactions
+// in this process so concurrent requests cannot overwrite each other's data.
+let analyticsWriteQueue = Promise.resolve();
+
 function dateKey(date, userId) {
   return `${date}|${userId || "legacy-team"}`;
 }
@@ -21,11 +25,20 @@ async function readStore(path) {
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed.version !== 1 || !parsed.dailyUsers || typeof parsed.dailyUsers !== "object") {
-      return emptyStore();
+      throw new Error("user analytics schema không hợp lệ");
     }
     return parsed;
   } catch (error) {
     if (error?.code === "ENOENT") return emptyStore();
+    try {
+      const backup = `${path}.corrupt-${Date.now()}`;
+      await copyFile(path, backup);
+      jsonLog("user_analytics_corrupt_backup", { backup });
+    } catch (backupError) {
+      jsonLog("user_analytics_corrupt_backup_failed", {
+        error: redactSecrets(backupError?.message || String(backupError))
+      });
+    }
     jsonLog("user_analytics_read_failed", {
       error: redactSecrets(error?.message || String(error))
     });
@@ -68,6 +81,33 @@ export async function recordUserAnalytics({
 }) {
   if (!config.userAnalyticsEnabled || !principal?.userId) return;
 
+  analyticsWriteQueue = analyticsWriteQueue
+    .catch(() => undefined)
+    .then(() => recordUserAnalyticsTransaction({
+      date,
+      principal,
+      routeTier,
+      selectedCombo,
+      status,
+      latencyMs,
+      usage,
+      analytics,
+      clientIdHashPrefix
+    }));
+  return analyticsWriteQueue;
+}
+
+async function recordUserAnalyticsTransaction({
+  date,
+  principal,
+  routeTier,
+  selectedCombo,
+  status,
+  latencyMs,
+  usage,
+  analytics,
+  clientIdHashPrefix
+}) {
   try {
     const store = await readStore(config.userAnalyticsFile);
     const key = dateKey(date, principal.userId);

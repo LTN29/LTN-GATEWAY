@@ -1,10 +1,11 @@
 import { resolve, relative, dirname } from "node:path";
 import { mkdir, chmod, readFile } from "node:fs/promises";
 import { config } from "./config.mjs";
-import { readUtf8, atomicWrite, redactSecrets, stripCodeFence } from "./utils.mjs";
+import { readUtf8, atomicWrite, redactSecrets, stripCodeFence, jsonLog } from "./utils.mjs";
 import { syncMemoryFile } from "./onedrive.mjs";
 
 const teamQueues = new Map();
+const teamQueueDepths = new Map();
 
 function safeMemoryPath(memoryFile, label = "memory file") {
   const path = resolve(config.memoryDir, memoryFile);
@@ -173,18 +174,32 @@ export function injectMemory(
 }
 
 export function enqueueTeamMemoryUpdate(team, task) {
-  const previous = teamQueues.get(team.code) || Promise.resolve();
+  const teamId = team.code;
+  const depth = teamQueueDepths.get(teamId) || 0;
+  if (depth >= config.memoryExtractionQueueLimit) {
+    jsonLog("memory_extraction_dropped_queue_full", {
+      team: teamId,
+      queueLimit: config.memoryExtractionQueueLimit
+    });
+    return null;
+  }
+
+  teamQueueDepths.set(teamId, depth + 1);
+  const previous = teamQueues.get(teamId) || Promise.resolve();
 
   const next = previous
     .catch(() => undefined)
     .then(task)
     .finally(() => {
-      if (teamQueues.get(team.code) === next) {
-        teamQueues.delete(team.code);
+      const remaining = (teamQueueDepths.get(teamId) || 1) - 1;
+      if (remaining > 0) teamQueueDepths.set(teamId, remaining);
+      else teamQueueDepths.delete(teamId);
+      if (teamQueues.get(teamId) === next) {
+        teamQueues.delete(teamId);
       }
     });
 
-  teamQueues.set(team.code, next);
+  teamQueues.set(teamId, next);
   return next;
 }
 
