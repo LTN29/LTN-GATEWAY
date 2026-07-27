@@ -178,8 +178,9 @@ function shell(content) {
   return `
     <div class="shell">
       <aside class="sidebar" aria-label="Điều hướng Admin">
-        <div class="brand"><span class="brandMark">S</span><div><strong>SIMI AI</strong><small>LTN Admin Console</small></div></div>
+        <div class="brand"><span class="brandMark">S</span><div><strong>SIMI AI</strong><small>Admin Console</small></div></div>
         <nav>${nav}</nav>
+        <div class="sidebarFooter">By LTN</div>
       </aside>
       <main class="main">
         <header class="topbar">
@@ -321,13 +322,13 @@ async function pageUsers() {
   const [users, teams] = await Promise.all([api(`/users${location.search}`), api("/teams")]);
   state.cachedTeams = teams;
   render(`
-    <div class="toolbar" style="justify-content: space-between;">
-      <div style="display: flex; gap: 12px; flex: 1; flex-wrap: wrap;">
+    <div class="toolbar">
+      <div class="toolbarGroup">
         <input aria-label="Tìm nhân viên" id="search" placeholder="Tìm user hoặc tên" value="${escapeHtml(params.get("search") || "")}" />
         <select id="teamFilter"><option value="">Tất cả team</option>${teamOptions(teams, params.get("teamId") || "")}</select>
         <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
       </div>
-      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <div class="toolbarGroup">
         ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button> <a class="pill secondary" href="/admin/users/import">Import hàng loạt</a>` : ""}
       </div>
     </div>
@@ -392,8 +393,47 @@ async function pageTeamDetail(teamId) {
 }
 
 async function pageUsage() {
-  const [summary, users, teams, devices] = await Promise.all([api(`/usage/summary${location.search}`), api(`/usage/users${location.search}`), api(`/usage/teams${location.search}`), api(`/usage/devices${location.search}`)]);
-  render(`<div class="grid">${metric("Lượt dùng", summary.requests)}${metric("Premium", summary.premium)}${metric("Free", summary.free)}${metric("Số Token", summary.totalTokens)}${metric("Tỉ lệ thành công", `${summary.successRate || 0}%`)}${metric("Độ trễ TB", `${summary.averageLatencyMs || 0}ms`)}${metric("Thiết bị online", summary.devices)}${metric("Lỗi", summary.errors)}</div><div class="card"><h2>Top nhân viên</h2>${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}</div><div class="twoCol"><div class="card"><h2>Bộ phận</h2>${miniBars((teams.items || []).map((t) => ({ label: t.teamId, value: t.requests })))}</div><div class="card"><h2>Thiết bị</h2>${table(["Nhân viên", "Mã thiết bị", "Lượt dùng", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.userId)}</td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div></div>`);
+  const [summary, users, teams, devices, timeseries] = await Promise.all([
+    api(`/usage/summary${location.search}`),
+    api(`/usage/users${location.search}`),
+    api(`/usage/teams${location.search}`),
+    api(`/usage/devices${location.search}`),
+    api(`/usage/timeseries${location.search}`).catch(() => [])
+  ]);
+  
+  render(`
+    <div class="grid cols-8">
+      ${metric("Lượt dùng", summary.requests)}
+      ${metric("Premium", summary.premium)}
+      ${metric("Free", summary.free)}
+      ${metric("Token", summary.totalTokens)}
+      ${metric("Thành công", `${summary.successRate || 0}%`)}
+      ${metric("Độ trễ TB", `${summary.averageLatencyMs || 0}ms`)}
+      ${metric("Thiết bị", summary.devices)}
+      ${metric("Lỗi", summary.errors)}
+    </div>
+    
+    <div class="twoCol">
+      <div class="card">
+        <h2>Truy cập (12 ngày qua)</h2>
+        ${miniBars((timeseries || []).map((x) => ({ label: x.date, value: x.requests })))}
+      </div>
+      <div class="card">
+        <h2>Top 12 Bộ phận (Lượt dùng)</h2>
+        ${miniBars((teams.items || []).slice(0, 12).map((t) => ({ label: t.teamId, value: t.requests })))}
+      </div>
+    </div>
+    
+    <div class="card" style="margin-bottom: 24px;">
+      <h2>Top nhân viên</h2>
+      ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}
+    </div>
+    
+    <div class="card">
+      <h2>Thiết bị</h2>
+      ${table(["Nhân viên", "Mã thiết bị", "Lượt dùng", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td><a href="/admin/users/${encodeURIComponent(d.userId)}">${escapeHtml(d.userId)}</a></td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}
+    </div>
+  `);
 }
 
 async function pageReview() {

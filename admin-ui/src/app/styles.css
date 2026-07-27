@@ -190,6 +190,22 @@ textarea {
   margin-top: 2px;
 }
 
+/* Sidebar Footer */
+.sidebarFooter {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-weight: 500;
+  letter-spacing: 1px;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.sidebarFooter:hover {
+  opacity: 1;
+}
+
 /* Navigation */
 nav {
   display: grid;
@@ -319,6 +335,23 @@ nav a:hover:not(.active) {
 
 .grid.compact {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid.cols-8 {
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.grid.cols-8 .metric {
+  padding: 16px;
+}
+
+.grid.cols-8 .metric strong {
+  font-size: 24px;
+}
+
+.grid.cols-8 .metric span {
+  font-size: 11px;
 }
 
 .twoCol {
@@ -459,7 +492,26 @@ p code {
 .error h2 { color: #991B1B; }
 
 /* Toolbar */
-.toolbar,
+.toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.toolbarGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.toolbarGroup:first-child {
+  flex: 1;
+}
+
 .actions {
   align-items: center;
   display: flex;
@@ -480,7 +532,8 @@ p code {
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   box-shadow: var(--shadow-card);
 }
 
@@ -519,6 +572,13 @@ tr:last-child td {
 
 tr:hover td {
   background: #F8FAFC;
+}
+
+td.actions {
+  margin-bottom: 0;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* Status Badges */
@@ -684,8 +744,15 @@ pre {
 }
 
 /* Responsive */
+@media (max-width: 1400px) {
+  .grid.cols-8 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1200px) {
   .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid.cols-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1024px) {
@@ -728,6 +795,9 @@ pre {
     white-space: nowrap;
     padding: 8px 14px;
   }
+  .sidebarFooter {
+    display: none;
+  }
   nav a.active::before {
     top: auto;
     bottom: -4px;
@@ -745,12 +815,16 @@ pre {
     margin-bottom: 24px;
   }
   .adminBadge { min-width: 0; }
-  .grid, .grid.compact {
+  .grid, .grid.compact, .grid.cols-8 {
     grid-template-columns: 1fr;
     gap: 16px;
   }
   .formGrid { grid-template-columns: 1fr; }
   .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .toolbarGroup {
     flex-direction: column;
     align-items: stretch;
   }
