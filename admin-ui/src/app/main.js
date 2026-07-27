@@ -212,6 +212,19 @@ function metric(label, value, hint = "") {
   return `<div class="metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${hint ? `<small>${escapeHtml(hint)}</small>` : ""}</div>`;
 }
 
+function formatBytes(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = bytes;
+  let unit = -1;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[unit]}`;
+}
+
 function table(headers, rows, empty = "Không có dữ liệu.") {
   if (!rows.length) return `<div class="card empty"><h2>Trống</h2><p>${escapeHtml(empty)}</p></div>`;
   return `<div class="tableWrap"><table><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
@@ -414,8 +427,8 @@ async function pageSync() {
 
 async function pageSystem() {
   const [health, cfg] = await Promise.all([api("/system/health"), api("/system/config-summary")]);
-  const diskGB = (Number(health.diskBytes || 0) / 1024).toFixed(2) + " GB";
-  render(`<div class="grid cols-8">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Phiên bản Node", health.nodeVersion)}${metric("Chờ đồng bộ", health.syncPending)}${metric("Đồng bộ lỗi", health.syncFailed)}${metric("Dung lượng đĩa", diskGB)}${metric("Admin UI", cfg.adminUiEnabled ? "Bật" : "Tắt")}</div><div class="card"><h2>Cấu hình bảo mật</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>Chế độ SharePoint: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
+  const dataSize = formatBytes(health.diskBytes);
+  render(`<div class="grid cols-8">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Phiên bản Node", health.nodeVersion)}${metric("Chờ đồng bộ", health.syncPending)}${metric("Đồng bộ lỗi", health.syncFailed)}${metric("Dung lượng dữ liệu", dataSize, "Thư mục ./data")}${metric("Admin UI", cfg.adminUiEnabled ? "Bật" : "Tắt")}</div><div class="card"><h2>Cấu hình bảo mật</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>Chế độ SharePoint: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
 }
 
 async function pageAudit() {
