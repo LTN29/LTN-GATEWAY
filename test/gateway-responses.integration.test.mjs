@@ -223,6 +223,9 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(installer.body, /& \$tempInstaller/);
     assert.match(installer.body, /finally/);
 
+    const installerWithQuery = await rawGet(gatewayPort, "/install/codex.ps1?cache=1");
+    assert.equal(installerWithQuery.status, 404);
+
     const fullInstaller = await rawGet(
       gatewayPort,
       "/install/codex-full.ps1"
@@ -356,6 +359,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     const health = await fetch(`${baseUrl}/health`);
     assert.equal(health.status, 200);
     assert.equal((await health.json()).status, "ok");
+    const healthWithQuery = await fetch(`${baseUrl}/health?probe=1`);
+    assert.equal(healthWithQuery.status, 200);
 
     const missingAuth = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",

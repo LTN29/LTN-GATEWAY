@@ -161,3 +161,22 @@ test("corrupt JSON is backed up and is not silently reset", async () => {
   assert.ok(files.some((file) => file.startsWith("codex-usage.json.corrupt-")));
   assert.equal(await readFile(usageFile, "utf8"), "{not-json");
 });
+
+test("valid JSON with invalid usage schema is backed up and fails closed", async () => {
+  await writeFile(usageFile, JSON.stringify({ version: 1, unexpected: true }), "utf8");
+
+  await assert.rejects(
+    reserveDailyUsageSlot({
+      teamCode: "INVALID_SCHEMA",
+      clientIdHash: sha256("client"),
+      usageDate,
+      usageScope: "client",
+      premiumLimit: 1
+    }),
+    /sai schema/
+  );
+
+  const files = await readdir(join(root, "nested"));
+  assert.ok(files.some((file) => file.startsWith("codex-usage.json.corrupt-")));
+  assert.match(await readFile(usageFile, "utf8"), /unexpected/);
+});

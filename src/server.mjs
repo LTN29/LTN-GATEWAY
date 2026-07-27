@@ -389,6 +389,9 @@ function isConfiguredAdminHost(req) {
 export function createGatewayServer() {
   return http.createServer(async (req, res) => {
   const id = makeRequestId(req.headers["x-request-id"]);
+  const parsedUrl = new URL(req.url || "/", "http://gateway.local");
+  const pathname = parsedUrl.pathname;
+  const hasQuery = Boolean(parsedUrl.search);
   res.setHeader("x-request-id", id);
 
   if (req.url?.startsWith("/admin/api/v1/")) {
@@ -396,7 +399,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (config.adminUiEnabled && req.url === "/" && isConfiguredAdminHost(req)) {
+  if (config.adminUiEnabled && pathname === "/" && isConfiguredAdminHost(req)) {
     res.writeHead(302, {
       location: "/admin/",
       "cache-control": "no-store",
@@ -415,7 +418,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/install/codex.ps1") {
+  if (req.method === "GET" && pathname === "/install/codex.ps1" && !hasQuery) {
     try {
       await serveInstallerFile(res, codexBootstrapPath);
     } catch (error) {
@@ -432,7 +435,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/install/codex-full.ps1") {
+  if (req.method === "GET" && pathname === "/install/codex-full.ps1" && !hasQuery) {
     try {
       await serveInstallerFile(res, codexFullInstallerPath);
     } catch (error) {
@@ -449,7 +452,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/install/codex.sh") {
+  if (req.method === "GET" && pathname === "/install/codex.sh" && !hasQuery) {
     try {
       await serveInstallerFile(
         res,
@@ -470,7 +473,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/install/codex-full.sh") {
+  if (req.method === "GET" && pathname === "/install/codex-full.sh" && !hasQuery) {
     try {
       await serveInstallerFile(
         res,
@@ -491,7 +494,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/health") {
+  if (req.method === "GET" && pathname === "/health") {
     let teams = 0;
     try {
       teams = (await loadTeams()).byCode.size;
@@ -511,7 +514,7 @@ export function createGatewayServer() {
     return;
   }
 
-  if (req.method === "GET" && req.url === "/internal/teams") {
+  if (req.method === "GET" && pathname === "/internal/teams") {
     if (!isAdmin(req)) {
       sendJson(res, 401, openAiError("Không có quyền", "authentication_error"));
       return;
@@ -530,10 +533,10 @@ export function createGatewayServer() {
   }
 
   const supported =
-    (req.method === "GET" && req.url === "/v1/models") ||
-    (req.method === "GET" && req.url === "/v1/codex/config") ||
-    (req.method === "POST" && req.url === "/v1/chat/completions") ||
-    (req.method === "POST" && req.url === "/v1/responses");
+    (req.method === "GET" && pathname === "/v1/models") ||
+    (req.method === "GET" && pathname === "/v1/codex/config") ||
+    (req.method === "POST" && pathname === "/v1/chat/completions") ||
+    (req.method === "POST" && pathname === "/v1/responses");
 
   if (!supported) {
     sendJson(res, 404, openAiError("Không tìm thấy route", "not_found_error"));
@@ -592,7 +595,7 @@ export function createGatewayServer() {
       teamId: principal.teamId
     });
 
-    if (req.method === "GET" && req.url === "/v1/codex/config") {
+    if (req.method === "GET" && pathname === "/v1/codex/config") {
       sendJson(res, 200, codexConfigForPrincipal(principal));
       return;
     }
@@ -602,7 +605,7 @@ export function createGatewayServer() {
       return;
     }
 
-    if (req.url === "/v1/responses") {
+    if (pathname === "/v1/responses") {
       await proxyResponses(req, res, rawKey, principal, id);
       return;
     }

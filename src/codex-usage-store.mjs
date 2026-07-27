@@ -29,7 +29,25 @@ async function readStore(path) {
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed.codex_daily_usage || typeof parsed.codex_daily_usage !== "object") {
-      return emptyStore();
+      const backupPath = `${path}.corrupt-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")}`;
+      try {
+        await copyFile(path, backupPath);
+      } catch (backupError) {
+        jsonLog("codex_usage_corrupt_backup_failed", {
+          error: redactSecrets(backupError?.message || String(backupError))
+        });
+      }
+      jsonLog("codex_usage_corrupt", {
+        backupPath,
+        error: "Usage store schema không hợp lệ"
+      });
+      const wrapped = new Error(
+        `Usage store Codex sai schema. Đã backup tại ${backupPath}; không reset usage tự động.`
+      );
+      wrapped.code = "CODEX_USAGE_INVALID_SCHEMA";
+      throw wrapped;
     }
     return parsed;
   } catch (error) {

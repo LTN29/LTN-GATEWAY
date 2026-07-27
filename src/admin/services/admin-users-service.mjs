@@ -1,7 +1,8 @@
-import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { config, loadTeams, normalizeAiPolicy } from "../../config.mjs";
 import { sha256, safePolicy, safeTeamId, safeText, safeUserId, parseCsv, csvEscape } from "../admin-validation.mjs";
+import { jsonLog } from "../../utils.mjs";
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -13,13 +14,18 @@ async function chmodPrivate(path) {
 
 async function withUsersLock(fn) {
   const lockPath = `${config.usersFile}.lock`;
-  const deadline = Date.now() + 5000;
+  const deadline = Date.now() + config.usersLockTimeoutMs;
   await mkdir(dirname(config.usersFile), { recursive: true });
   while (true) {
     try {
       await mkdir(lockPath, { recursive: false });
+      await writeFile(`${lockPath}/owner.json`, JSON.stringify({
+        pid: process.pid,
+        created_at: new Date().toISOString()
+      }) + "\n", "utf8");
       break;
     } catch (error) {
+      if (error?.code === "EEXIST" && await recoverStaleUsersLock(lockPath)) continue;
       if (error?.code !== "EEXIST" || Date.now() > deadline) throw new Error("Không thể khóa users.json.");
       await sleep(25);
     }
@@ -28,6 +34,20 @@ async function withUsersLock(fn) {
     return await fn();
   } finally {
     await rm(lockPath, { recursive: true, force: true });
+  }
+}
+
+async function recoverStaleUsersLock(lockPath) {
+  try {
+    const info = await stat(lockPath);
+    const ageMs = Date.now() - info.mtimeMs;
+    if (ageMs <= config.usersLockStaleMs) return false;
+    await rm(lockPath, { recursive: true, force: true });
+    jsonLog("users_stale_lock_recovered", { ageMs: Math.round(ageMs) });
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return true;
+    throw error;
   }
 }
 

@@ -70,6 +70,14 @@ export const config = {
     process.env.CODEX_USAGE_LOCK_STALE_MS || 120_000,
     120_000
   ),
+  usersLockTimeoutMs: number(
+    process.env.LTN_USERS_LOCK_TIMEOUT_MS || 5000,
+    5000
+  ),
+  usersLockStaleMs: number(
+    process.env.LTN_USERS_LOCK_STALE_MS || 120_000,
+    120_000
+  ),
   codexRoutingEnabled: bool(process.env.CODEX_ROUTING_ENABLED, true),
   get legacyTeamKeysEnabled() {
     return bool(process.env.LTN_LEGACY_TEAM_KEYS_ENABLED, false);

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { createHash, createSign, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -121,6 +121,8 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
   process.env.ADMIN_UI_ENABLED = "true";
   process.env.ADMIN_UI_DIST_DIR = adminDistDir;
   process.env.ADMIN_AUDIT_FILE = auditFile;
+  process.env.LTN_USERS_LOCK_TIMEOUT_MS = "1000";
+  process.env.LTN_USERS_LOCK_STALE_MS = "500";
   process.env.MEMORY_DIR = memoryDir;
   process.env.MEMORY_REVIEW_QUEUE_FILE = queueFile;
   process.env.MEMORY_AUDIT_FILE = join(root, "memory-audit.jsonl");
@@ -160,6 +162,10 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, csrf, origin: "https://evil.example", body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
 
     const routerApiKey = "sk-9router-sales-ngoc-test-key";
+    const usersLock = `${usersFile}.lock`;
+    await mkdir(usersLock, { recursive: true });
+    const staleTime = new Date(Date.now() - 5000);
+    await utimes(usersLock, staleTime, staleTime);
     const created = await request(port, "/admin/api/v1/users", {
       method: "POST",
       token: adminToken,
