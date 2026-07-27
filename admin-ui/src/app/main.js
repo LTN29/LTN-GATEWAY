@@ -49,7 +49,6 @@ function showToast(message, isError = false) {
 const navItems = [
   { href: "/admin", label: "Tổng quan", permission: "dashboard" },
   { href: "/admin/users", label: "Nhân viên", permission: "users" },
-  { href: "/admin/users/import", label: "Import CSV", permission: "usersWrite" },
   { href: "/admin/teams", label: "Bộ phận", permission: "teams" },
   { href: "/admin/usage", label: "Thống kê", permission: "usage" },
   { href: "/admin/memory/review", label: "Duyệt kiến thức", permission: "memory" },
@@ -157,7 +156,6 @@ async function refreshCsrf() {
 
 function routeTitle() {
   const path = location.pathname;
-  if (path.includes("/users/import")) return "Import nhân viên";
   if (path.match(/\/users\/[^/]+$/)) return "Chi tiết nhân viên";
   if (path.includes("/users")) return "Nhân viên";
   if (path.includes("/teams/")) return "Chi tiết bộ phận";
@@ -199,6 +197,15 @@ function shell(content) {
 
 function render(content) {
   document.querySelector("#root").innerHTML = shell(content);
+  
+  // Auto-scroll mobile horizontal nav to active item
+  setTimeout(() => {
+    const activeNav = document.querySelector("nav a.active");
+    const nav = document.querySelector("nav");
+    if (activeNav && nav && nav.scrollWidth > nav.clientWidth) {
+      nav.scrollLeft = activeNav.offsetLeft - (nav.clientWidth / 2) + (activeNav.clientWidth / 2);
+    }
+  }, 10);
 }
 
 function metric(label, value, hint = "") {
@@ -230,17 +237,6 @@ function teamOptions(teams, selected = "") {
   }).join("");
 }
 
-function csvTemplate(teams) {
-  const ids = (teams.items || []).map((team) => team.teamId || team.code);
-  const fallback = ids.length ? ids : ["CSKH", "SALES", "MARKETING"];
-  return [
-    "userId,displayName,teamId,apiKey,policyMode,premiumLimit",
-    `nguyen-van-a,Nguyễn Văn A,${fallback[0] || "CSKH"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`,
-    `tran-thi-b,Trần Thị B,${fallback[1] || fallback[0] || "SALES"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`,
-    `le-van-c,Lê Văn C,${fallback[2] || fallback[0] || "MARKETING"},DAN_API_KEY_9ROUTER_VAO_DAY,inherit,`
-  ].join("\n");
-}
-
 function createUserModalHtml(teams) {
   return can("usersWrite") ? `
     <div class="modalBackdrop">
@@ -262,25 +258,6 @@ function createUserModalHtml(teams) {
       </div>
     </div>
   ` : "";
-}
-
-function importResultHtml(result) {
-  const preview = result.preview || [];
-  const errors = result.errors || [];
-  if (result.valid) {
-    return `<div class="card success compactCard">
-      <h2>Dữ liệu hợp lệ</h2>
-      <p>Sẵn sàng import ${preview.length} nhân viên. Hệ thống đảm bảo tính bảo mật tuyệt đối cho dữ liệu API Key khi xử lý.</p>
-      ${table(["Dòng", "Mã nhân viên", "Tên", "Bộ phận", "Gói AI", "Lượt Premium"], preview.slice(0, 30).map((item) => `
-        <tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.userId)}</td><td>${escapeHtml(item.displayName)}</td><td>${escapeHtml(item.teamId)}</td><td>${escapeHtml(formatPolicy(item.aiPolicy?.mode))}</td><td>${escapeHtml(item.aiPolicy?.premiumLimit ?? "")}</td></tr>
-      `), "Chưa có dòng preview.")}
-    </div>`;
-  }
-  return `<div class="card error compactCard">
-    <h2>Dữ liệu chưa hợp lệ</h2>
-    <p>Vui lòng kiểm tra và khắc phục các lỗi bên dưới, sau đó thực hiện xác thực (validate) lại.</p>
-    ${table(["Dòng", "Lỗi"], errors.map((item) => `<tr><td>${escapeHtml(item.row)}</td><td>${escapeHtml(item.message)}</td></tr>`), "Không có chi tiết lỗi.")}
-  </div>`;
 }
 
 async function pageDashboard() {
@@ -329,7 +306,7 @@ async function pageUsers() {
         <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
       </div>
       <div class="toolbarGroup">
-        ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button> <a class="pill secondary" href="/admin/users/import">Import hàng loạt</a>` : ""}
+        ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button>` : ""}
       </div>
     </div>
     ${table(["Mã nhân viên", "Tên", "Bộ phận", "Trạng thái", "Gói AI", "Lượt Premium", "Thao tác"], (users.items || []).map((u) => `
@@ -358,28 +335,6 @@ async function pageUserDetail(userId) {
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
   `);
-}
-
-async function pageImport() {
-  const teams = await api("/teams");
-  render(`<div class="twoCol importLayout">
-    <div class="card">
-      <h2>Thêm hàng loạt qua CSV</h2>
-      <p>Sử dụng chức năng này để tạo nhiều tài khoản cùng lúc. Đảm bảo mỗi tài khoản đã có sẵn API Key từ 9Router hợp lệ.</p>
-      <div class="hintBox">
-        <strong>Header bắt buộc</strong>
-        <code>userId,displayName,teamId,apiKey,policyMode,premiumLimit</code>
-      </div>
-      <div class="actions">${button("Xem mẫu CSV", "fill-import-template")}${button("Xác thực dữ liệu", "validate-import")}${button("Tiến hành Import", "commit-import", true)}</div>
-      <textarea id="csvInput" rows="14" spellcheck="false" placeholder="${escapeHtml(csvTemplate(teams))}"></textarea>
-      <div id="importResult"></div>
-    </div>
-    <div class="card">
-      <h2>Team đang có</h2>
-      <p>Copy đúng Team ID vào cột <code>teamId</code>. Không cần API key ở team.</p>
-      ${table(["Mã bộ phận", "Tên", "Gói AI", "Lượt Premium"], (teams.items || []).map((team) => `<tr><td>${escapeHtml(team.teamId)}</td><td>${escapeHtml(team.displayName)}</td><td>${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</td><td>${escapeHtml(team.aiPolicy?.premiumLimit ?? "")}</td></tr>`), "Chưa có bộ phận.")}
-    </div>
-  </div>`);
 }
 
 async function pageTeams() {
@@ -483,7 +438,6 @@ async function route() {
     const path = location.pathname;
     if (path === "/admin") await pageDashboard();
     else if (path === "/admin/users") await pageUsers();
-    else if (path === "/admin/users/import") await pageImport();
     else if (path.match(/^\/admin\/users\/[^/]+$/)) await pageUserDetail(decodeURIComponent(path.split("/").at(-1)));
     else if (path === "/admin/teams") await pageTeams();
     else if (path.match(/^\/admin\/teams\/[^/]+$/)) await pageTeamDetail(decodeURIComponent(path.split("/").at(-1)));
@@ -574,27 +528,6 @@ document.addEventListener("click", async (event) => {
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
       if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
-    } else if (action === "fill-import-template") {
-      const teams = await api("/teams");
-      document.querySelector("#csvInput").value = csvTemplate(teams);
-      return;
-    } else if (action === "validate-import" || action === "commit-import") {
-      const csv = document.querySelector("#csvInput").value;
-      if (action === "validate-import") {
-        const result = await api("/users/import/validate", { method: "POST", body: JSON.stringify({ csv }) });
-        document.querySelector("#importResult").innerHTML = importResultHtml(result);
-        return;
-      }
-      if (confirm("Bạn có chắc chắn muốn tiến hành import danh sách nhân viên này?")) {
-        const response = await api("/users/import/commit", { method: "POST", body: JSON.stringify({ csv }) });
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = "ltn-users-imported.csv";
-        a.click();
-        URL.revokeObjectURL(url);
-      }
     } else if (action.startsWith("approve:") || action.startsWith("reject:")) {
       const [mode, id] = action.split(":");
       const note = prompt("Ghi chú?") || "";
