@@ -414,7 +414,8 @@ async function pageSync() {
 
 async function pageSystem() {
   const [health, cfg] = await Promise.all([api("/system/health"), api("/system/config-summary")]);
-  render(`<div class="grid">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Phiên bản Node", health.nodeVersion)}${metric("Chờ đồng bộ", health.syncPending)}${metric("Đồng bộ lỗi", health.syncFailed)}${metric("Dung lượng đĩa", health.diskBytes)}${metric("Admin UI", cfg.adminUiEnabled ? "Bật" : "Tắt")}</div><div class="card"><h2>Cấu hình bảo mật</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>Chế độ SharePoint: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
+  const diskGB = (Number(health.diskBytes || 0) / 1024).toFixed(2) + " GB";
+  render(`<div class="grid cols-8">${metric("Gateway", health.gateway)}${metric("9Router", health.router)}${metric("Uptime", `${health.uptimeSeconds}s`)}${metric("Phiên bản Node", health.nodeVersion)}${metric("Chờ đồng bộ", health.syncPending)}${metric("Đồng bộ lỗi", health.syncFailed)}${metric("Dung lượng đĩa", diskGB)}${metric("Admin UI", cfg.adminUiEnabled ? "Bật" : "Tắt")}</div><div class="card"><h2>Cấu hình bảo mật</h2><p>Allowed hosts: ${escapeHtml((cfg.allowedHosts || []).join(", "))}</p><p>Chế độ SharePoint: ${escapeHtml(cfg.sharePointMode)}</p></div>`);
 }
 
 async function pageAudit() {
