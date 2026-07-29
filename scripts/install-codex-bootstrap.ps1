@@ -27,7 +27,17 @@ try {
     throw "Không tải được Codex installer."
   }
 
-  & $tempInstaller
+  $powerShellExecutable = (Get-Process -Id $PID -ErrorAction Stop).Path
+  & $powerShellExecutable `
+    -NoLogo `
+    -NoProfile `
+    -NonInteractive `
+    -ExecutionPolicy Bypass `
+    -File $tempInstaller
+
+  if ($LASTEXITCODE -ne 0) {
+    throw "Codex installer thất bại với mã thoát $LASTEXITCODE."
+  }
 } finally {
   if (Test-Path -LiteralPath $tempInstaller) {
     Remove-Item -LiteralPath $tempInstaller -Force -ErrorAction SilentlyContinue

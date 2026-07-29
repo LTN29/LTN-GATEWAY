@@ -220,7 +220,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.doesNotMatch(installer.body, /^\s*param\s*\(/m);
     assert.match(installer.body, /\/install\/codex-full\.ps1/);
     assert.match(installer.body, /MaximumRedirection 0/);
-    assert.match(installer.body, /& \$tempInstaller/);
+    assert.match(installer.body, /& \$powerShellExecutable/);
+    assert.match(installer.body, /-ExecutionPolicy Bypass/);
+    assert.match(installer.body, /-File \$tempInstaller/);
+    assert.doesNotMatch(installer.body, /^\s*& \$tempInstaller\s*$/m);
     assert.match(installer.body, /finally/);
 
     const installerWithQuery = await rawGet(gatewayPort, "/install/codex.ps1?cache=1");

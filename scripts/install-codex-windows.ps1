@@ -425,8 +425,15 @@ $clientId = Get-OrCreateClientId
 [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $clientId, "User")
 $env:LTN_CLIENT_ID = $clientId
 
+$installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""
-Write-Host "Cài đặt hoàn tất."
+Write-Host "Cài đặt LTN Codex hoàn tất."
+Write-Host "  Hệ điều hành: Windows"
+Write-Host "  Codex CLI: $(if ($installedCodexStatus.Healthy) { $installedCodexStatus.Version } else { "chưa xác định" })"
 Write-Host "  Gateway: $GatewayBaseUrl"
 Write-Host "  Model mặc định: $defaultModel"
-Write-Host "  Sử dụng: codex"
+Write-Host ""
+Write-Host "Bước tiếp theo:"
+Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."
+Write-Host "  2. Kiểm tra: codex --version"
+Write-Host "  3. Khởi động: codex"

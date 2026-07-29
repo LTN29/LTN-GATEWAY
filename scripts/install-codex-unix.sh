@@ -634,12 +634,26 @@ install_or_repair() {
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."
+  case "${OS_NAME}" in
+    macos) echo "Hệ điều hành: macOS" ;;
+    linux) echo "Hệ điều hành: Linux" ;;
+  esac
+  echo "Codex CLI: ${CODEX_VERSION}"
   echo "Gateway: ${GATEWAY_BASE_URL%/}"
   echo "Model mặc định: ${DEFAULT_MODEL}"
-  echo "Sử dụng: codex"
-  if [ "${OS_NAME}" = "macos" ]; then
-    echo "Nếu dùng Codex Desktop: hãy đóng hoàn toàn app, mở lại, rồi tạo New chat."
-  fi
+  echo ""
+  echo "Bước tiếp theo:"
+  echo "  1. Mở cửa sổ Terminal mới."
+  echo "  2. Kiểm tra: codex --version"
+  echo "  3. Khởi động: codex"
+  case "${OS_NAME}" in
+    macos)
+      echo "  4. Nếu dùng Codex Desktop: đóng hoàn toàn ứng dụng, mở lại, rồi tạo New chat."
+      ;;
+    linux)
+      echo "  4. Nếu lệnh codex chưa được nhận diện, đăng xuất rồi đăng nhập lại."
+      ;;
+  esac
 }
 
 status() {

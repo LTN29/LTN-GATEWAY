@@ -10,6 +10,15 @@ const bootstrap = await readFile(
   "utf8"
 );
 
+test("bootstrap runs the downloaded installer in a process-scoped bypass", () => {
+  assert.match(
+    bootstrap,
+    /& \$powerShellExecutable[\s\S]*-ExecutionPolicy Bypass[\s\S]*-File \$tempInstaller/
+  );
+  assert.doesNotMatch(bootstrap, /^\s*& \$tempInstaller\s*$/m);
+  assert.match(bootstrap, /\$LASTEXITCODE -ne 0/);
+});
+
 function findCommand(command) {
   const result = spawnSync(
     process.platform === "win32" ? "where.exe" : "which",
