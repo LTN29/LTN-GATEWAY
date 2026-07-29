@@ -11,6 +11,21 @@ const installerSource = await readFile(
   "utf8"
 );
 
+test("Windows installer uses the official standalone Codex installer without requiring Node.js", () => {
+  assert.match(
+    installerSource,
+    /https:\/\/chatgpt\.com\/codex\/install\.ps1/
+  );
+  assert.match(installerSource, /CODEX_NON_INTERACTIVE/);
+  assert.match(installerSource, /Install-OfficialCodexCli/);
+  assert.doesNotMatch(installerSource, /npm install --global @openai\/codex/);
+  assert.doesNotMatch(installerSource, /Chưa có Node\.js\/npm/);
+  assert.match(
+    installerSource,
+    /Đang xác minh Combo SIMI AI qua Gateway\.\.\./
+  );
+});
+
 function findCommand(command) {
   const result = spawnSync(
     process.platform === "win32" ? "where.exe" : "which",

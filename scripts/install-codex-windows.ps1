@@ -217,6 +217,37 @@ function Get-CodexCommandStatus {
   }
 }
 
+function Install-OfficialCodexCli {
+  $installerUri = [Uri]"https://chatgpt.com/codex/install.ps1"
+  if ($installerUri.Scheme -ne "https" -or $installerUri.Host -ne "chatgpt.com") {
+    throw "URL cài Codex CLI chính thức không hợp lệ."
+  }
+
+  Write-Host "Đang cài Codex CLI standalone chính thức từ OpenAI..."
+  $previousNonInteractive = $env:CODEX_NON_INTERACTIVE
+  try {
+    $env:CODEX_NON_INTERACTIVE = "1"
+    $officialInstaller = Invoke-RestMethod `
+      -Method Get `
+      -Uri $installerUri.AbsoluteUri
+    if ([string]::IsNullOrWhiteSpace([string]$officialInstaller)) {
+      throw "Installer Codex CLI chính thức trả về nội dung rỗng."
+    }
+    Invoke-Expression ([string]$officialInstaller)
+  } finally {
+    if ($null -eq $previousNonInteractive) {
+      Remove-Item Env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue
+    } else {
+      $env:CODEX_NON_INTERACTIVE = $previousNonInteractive
+    }
+  }
+
+  $status = Get-CodexCommandStatus
+  if (-not $status.Healthy) {
+    throw "Không thể xác minh Codex CLI sau khi cài: $($status.Reason)"
+  }
+}
+
 function Test-GatewayHealth {
   param([string]$BaseUrl)
 
@@ -342,7 +373,7 @@ if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
   throw "API key của team không được để trống."
 }
 
-Write-Host "Đang xác minh Combo trên 9Router qua Gateway..."
+Write-Host "Đang xác minh Combo SIMI AI qua Gateway..."
 $headers = @{ Authorization = "Bearer $TeamApiKey" }
 try {
   $remoteConfig = Invoke-RestMethod -Method Get -Uri "$GatewayBaseUrl/codex/config" -Headers $headers
@@ -381,13 +412,9 @@ if ($missing.Count -gt 0) {
 }
 
 if (-not $SkipCodexInstall) {
-  if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
-    if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-      throw "Chưa có Node.js/npm. Hãy cài Node.js LTS rồi chạy lại installer."
-    }
-    Write-Host "Đang cài Codex CLI..."
-    npm install --global @openai/codex
-    if ($LASTEXITCODE -ne 0) { throw "Cài Codex CLI thất bại." }
+  $preInstallCodexStatus = Get-CodexCommandStatus
+  if (-not $preInstallCodexStatus.Healthy) {
+    Install-OfficialCodexCli
   }
 }
 

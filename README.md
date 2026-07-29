@@ -195,6 +195,10 @@ installer sẽ gỡ đúng package npm `@openai/codex` khi xác định được
 bằng standalone installer chính thức từ `https://chatgpt.com/codex/install.sh`.
 Installer chỉ cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
 
+Trên Windows, installer cài Codex CLI standalone bằng installer chính thức
+`https://chatgpt.com/codex/install.ps1`; máy người dùng không cần cài Node.js/npm trước.
+Installer chỉ tiếp tục cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
+
 Installer không tắt bảo vệ macOS, không chạy `xattr` để bỏ quarantine, không tắt
 Gatekeeper và không hướng dẫn bỏ qua cảnh báo malware. Nếu bản Codex chính thức vẫn bị
 macOS chặn, installer dừng và yêu cầu liên hệ IT.
