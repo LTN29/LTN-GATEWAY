@@ -16,6 +16,7 @@ test("bootstrap runs the downloaded installer in a process-scoped bypass", () =>
     /& \$powerShellExecutable[\s\S]*-ExecutionPolicy Bypass[\s\S]*-File \$tempInstaller/
   );
   assert.doesNotMatch(bootstrap, /^\s*& \$tempInstaller\s*$/m);
+  assert.doesNotMatch(bootstrap, /-NonInteractive/);
   assert.match(bootstrap, /\$LASTEXITCODE -ne 0/);
 });
 

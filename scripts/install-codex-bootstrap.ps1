@@ -31,7 +31,6 @@ try {
   & $powerShellExecutable `
     -NoLogo `
     -NoProfile `
-    -NonInteractive `
     -ExecutionPolicy Bypass `
     -File $tempInstaller
 
