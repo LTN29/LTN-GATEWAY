@@ -25,6 +25,12 @@ function normalizeUsageScope(value, fallback = "client") {
   throw new Error(`aiPolicy.usageScope không hợp lệ: ${value}`);
 }
 
+function normalizeMemoryMode(value, fallback = "full") {
+  const mode = String(value || fallback).trim().toLowerCase();
+  if (["full", "read_only", "none"].includes(mode)) return mode;
+  throw new Error(`memoryMode không hợp lệ: ${value}`);
+}
+
 export const config = {
   port: Number(process.env.PORT || 20129),
   host: process.env.HOST || "0.0.0.0",
@@ -333,6 +339,7 @@ export async function loadUsers({ force = false } = {}) {
       keyHash,
       displayName: String(item.displayName || userId),
       role: item.role ? String(item.role) : null,
+      memoryMode: normalizeMemoryMode(item.memoryMode, "full"),
       enabled: item.enabled !== false,
       memoryFile: safeRelativeMemoryFile(
         item.memoryFile || `users/${teamId}/${userId}.md`,

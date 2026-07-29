@@ -177,8 +177,13 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   }
 
   const originalMessages = responseInputMessages(payload.input);
-  const { systemContent } = await loadMemoryContext(team, principal);
-  const upstreamPayload = injectResponsesMemory(payload, systemContent);
+  const memoryDisabled = principal.memoryMode === "none";
+  const { systemContent } = memoryDisabled
+    ? { systemContent: "" }
+    : await loadMemoryContext(team, principal);
+  const upstreamPayload = memoryDisabled
+    ? payload
+    : injectResponsesMemory(payload, systemContent);
   route = await selectCodexRoute({
     team,
     principal,
@@ -246,7 +251,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       if (completed) {
         await route.confirm();
         shouldReleaseRoute = false;
-        scheduleMemoryExtraction({
+        if (principal.memoryMode === "full") scheduleMemoryExtraction({
           team,
           principal,
           rawKey,
@@ -307,16 +312,17 @@ async function handleChat(req, res, rawKey, principal, id) {
   }
 
   const originalMessages = structuredClone(payload.messages);
-  const { companyMemory, teamMemory, userMemory } = await loadMemoryContext(team, principal);
-
-  payload.messages = injectMemory(
-    payload.messages,
-    team,
-    companyMemory,
-    teamMemory,
-    userMemory,
-    principal
-  );
+  if (principal.memoryMode !== "none") {
+    const { companyMemory, teamMemory, userMemory } = await loadMemoryContext(team, principal);
+    payload.messages = injectMemory(
+      payload.messages,
+      team,
+      companyMemory,
+      teamMemory,
+      userMemory,
+      principal
+    );
+  }
 
   jsonLog("chat_started", {
     requestId: id,
@@ -356,7 +362,7 @@ async function handleChat(req, res, rawKey, principal, id) {
       assistantText = "";
     }
 
-    scheduleMemoryExtraction({
+    if (principal.memoryMode === "full") scheduleMemoryExtraction({
       team,
       principal,
       rawKey,

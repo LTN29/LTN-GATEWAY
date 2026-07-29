@@ -9,6 +9,7 @@
     "check": "node --check src/server.mjs",
     "test": "node --test \"test/**/*.test.mjs\"",
     "register-team": "node scripts/register-team.mjs",
+    "register-public-chatbot": "node scripts/register-public-chatbot.mjs",
     "sync-all": "node scripts/sync-all.mjs",
     "admin:dev": "npm --prefix admin-ui run dev",
     "admin:build": "npm --prefix admin-ui run build",

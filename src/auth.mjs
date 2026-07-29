@@ -17,6 +17,7 @@ function teamPrincipal(team) {
     team,
     displayName: team.displayName,
     role: null,
+    memoryMode: "full",
     enabled: team.enabled,
     aiPolicy: team.aiPolicy,
     memoryFile: null

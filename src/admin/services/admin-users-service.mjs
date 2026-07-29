@@ -94,6 +94,14 @@ function safeExternalApiKey(value) {
   return apiKey;
 }
 
+function safeMemoryMode(value, fallback = "full") {
+  const mode = String(value || fallback).trim().toLowerCase();
+  if (!["full", "read_only", "none"].includes(mode)) {
+    throw Object.assign(new Error("memoryMode không hợp lệ."), { statusCode: 400, code: "INVALID_MEMORY_MODE" });
+  }
+  return mode;
+}
+
 async function ensureUserMemory(memoryFile, userId, teamId, role) {
   const target = resolve(config.memoryDir, memoryFile);
   const rel = relative(config.memoryDir, target);
@@ -142,6 +150,7 @@ function publicUser(userId, user) {
     role: user.role || "",
     enabled: user.enabled !== false,
     memoryFile: user.memoryFile,
+    memoryMode: safeMemoryMode(user.memoryMode, "full"),
     aiPolicy: user.aiPolicy || { mode: "inherit" }
   };
 }
@@ -177,6 +186,7 @@ export async function createUser(input) {
   const teamId = safeTeamId(input.teamId || input.team);
   const displayName = safeText(input.displayName || userId, 120);
   const role = safeText(input.role || "", 120);
+  const memoryMode = safeMemoryMode(input.memoryMode, "full");
   const apiKey = safeExternalApiKey(input.apiKey);
   await ensureTeamEnabled(teamId);
   return withUsersLock(async () => {
@@ -189,10 +199,13 @@ export async function createUser(input) {
       keyHash: sha256(apiKey),
       enabled: true,
       memoryFile: `users/${teamId}/${userId}.md`,
+      memoryMode,
       aiPolicy: safePolicy(input.aiPolicy || { mode: input.policyMode || "inherit", premiumLimit: input.premiumLimit })
     };
     await writeUsersFile(parsed);
-    await ensureUserMemory(parsed.users[userId].memoryFile, userId, teamId, role);
+    if (memoryMode !== "none") {
+      await ensureUserMemory(parsed.users[userId].memoryFile, userId, teamId, role);
+    }
     return { user: publicUser(userId, parsed.users[userId]) };
   });
 }
@@ -213,6 +226,7 @@ export async function patchUser(userId, patch) {
       await ensureUserMemory(user.memoryFile, id, teamId, user.role || "");
     }
     if (patch.aiPolicy !== undefined) user.aiPolicy = normalizeAiPolicy(safePolicy(patch.aiPolicy), "user");
+    if (patch.memoryMode !== undefined) user.memoryMode = safeMemoryMode(patch.memoryMode);
     await writeUsersFile(parsed);
     return publicUser(id, user);
   });

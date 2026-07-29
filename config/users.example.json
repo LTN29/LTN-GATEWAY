@@ -8,8 +8,22 @@
       "keyHash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "enabled": true,
       "memoryFile": "users/SALES/sales-ngoc.md",
+      "memoryMode": "full",
       "aiPolicy": {
         "mode": "inherit"
+      }
+    },
+    "warranty-public-chatbot": {
+      "displayName": "Warranty Public Chatbot",
+      "teamId": "WARRANTY",
+      "role": "PUBLIC_CHATBOT_SERVICE",
+      "keyHash": "replace-with-sha256-of-a-dedicated-random-api-key",
+      "enabled": true,
+      "memoryFile": "users/WARRANTY/warranty-public-chatbot.md",
+      "memoryMode": "none",
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 200
       }
     }
   }
