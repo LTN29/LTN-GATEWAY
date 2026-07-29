@@ -50,7 +50,6 @@ function showToast(message, isError = false) {
 const navItems = [
   { href: "/admin", label: "Tổng quan", permission: "dashboard" },
   { href: "/admin/users", label: "Nhân viên", permission: "users" },
-  { href: "/admin/users/import", label: "Import CSV", permission: "usersWrite" },
   { href: "/admin/teams", label: "Bộ phận", permission: "teams" },
   { href: "/admin/usage", label: "Thống kê", permission: "usage" },
   { href: "/admin/memory/review", label: "Duyệt kiến thức", permission: "memory" },
@@ -159,7 +158,6 @@ async function refreshCsrf() {
 function routeTitle() {
   const path = location.pathname;
   if (path.match(/\/users\/[^/]+$/)) return "Chi tiết nhân viên";
-  if (path.includes("/users/import")) return "Import nhân viên";
   if (path.includes("/users")) return "Nhân viên";
   if (path.includes("/teams/")) return "Chi tiết bộ phận";
   if (path.includes("/teams")) return "Bộ phận";
@@ -351,7 +349,7 @@ async function pageUsers() {
         <select id="enabledFilter"><option value="">Tất cả trạng thái</option><option value="true" ${params.get("enabled") === "true" ? "selected" : ""}>Đang hoạt động</option><option value="false" ${params.get("enabled") === "false" ? "selected" : ""}>Đã khóa</option></select>
       </div>
       <div class="toolbarGroup">
-        ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button> <a class="pill secondary" href="/admin/users/import">Import hàng loạt</a>` : ""}
+        ${can("usersWrite") ? `<button class="pill" data-action="open-create-user">Tạo nhân viên mới</button>` : ""}
       </div>
     </div>
     ${table(["Mã nhân viên", "Tên", "Bộ phận", "Trạng thái", "Gói AI", "Lượt Premium", "Thao tác"], (users.items || []).map((u) => `
@@ -365,10 +363,6 @@ async function pageUsers() {
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
   `);
-}
-
-async function pageImport() {
-  render(`<div class="card"><h2>Import nhân viên bằng CSV</h2><p>Cột bắt buộc: userId, displayName, teamId, apiKey. API key chỉ được gửi qua HTTPS và không lưu trong trình duyệt.</p><textarea id="importCsv" rows="12" style="width:100%;font-family:monospace" placeholder="userId,displayName,teamId,apiKey\nsales-ngoc,Ngọc,SALES,sk-..."></textarea><div class="actions"><button class="pill" data-action="fill-import-template">Điền mẫu</button><button class="pill" data-action="validate-import">Xác thực dữ liệu</button><button class="pill danger" data-action="commit-import">Tiến hành Import</button></div><pre id="importResult" aria-live="polite"></pre></div>`);
 }
 
 async function pageUserDetail(userId) {
@@ -488,7 +482,6 @@ async function route() {
     const path = location.pathname;
     if (path === "/admin") await pageDashboard();
     else if (path === "/admin/users") await pageUsers();
-    else if (path === "/admin/users/import") await pageImport();
     else if (path.match(/^\/admin\/users\/[^/]+$/)) await pageUserDetail(decodeURIComponent(path.split("/").at(-1)));
     else if (path === "/admin/teams") await pageTeams();
     else if (path.match(/^\/admin\/teams\/[^/]+$/)) await pageTeamDetail(decodeURIComponent(path.split("/").at(-1)));
@@ -618,17 +611,6 @@ document.addEventListener("click", async (event) => {
       document.getElementById("dynamic-modal-container")?.remove();
       showToast("Đã cập nhật toàn bộ thông tin nhân viên.");
       await route();
-    } else if (action === "fill-import-template") {
-      const input = document.querySelector("#importCsv");
-      if (input) input.value = "userId,displayName,teamId,apiKey\nsales-ngoc,Ngọc,SALES,sk-your-key";
-    } else if (action === "validate-import" || action === "commit-import") {
-      const csv = document.querySelector("#importCsv")?.value || "";
-      if (!csv.trim()) throw new Error("Vui lòng nhập nội dung CSV.");
-      const endpoint = action === "validate-import" ? "/users/import/validate" : "/users/import/commit";
-      const result = await api(endpoint, { method: "POST", body: JSON.stringify({ csv }) });
-      const output = document.querySelector("#importResult");
-      if (output) output.textContent = JSON.stringify(result, null, 2);
-      if (action === "commit-import") await route();
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
       if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });

@@ -394,7 +394,7 @@ export async function handleAdminStatic(req, res) {
   const contentType = ext === ".js" ? "text/javascript; charset=utf-8" : ext === ".css" ? "text/css; charset=utf-8" : "text/html; charset=utf-8";
   res.writeHead(200, {
     "content-type": contentType,
-    "cache-control": pathUsed.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
+    "cache-control": pathUsed.endsWith("index.html") ? "no-store" : "public, max-age=31536000, immutable",
     "x-content-type-options": "nosniff"
   });
   res.end(body);

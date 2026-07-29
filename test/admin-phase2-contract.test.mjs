@@ -26,7 +26,6 @@ test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", a
   for (const marker of [
     "pageDashboard",
     "pageUsers",
-    "pageImport",
     "pageUsage",
     "pageReview",
     "pageMemoryFiles",
@@ -37,12 +36,12 @@ test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", a
     "editUserModalHtml",
     "save-edit-user",
     "create-user-from-form",
-    "fill-import-template",
     "oneTimeKey",
     "Không lưu API key"
   ]) {
     assert.match(source, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+  assert.doesNotMatch(source, /\/admin\/users\/import|Import CSV|pageImport|fill-import-template|validate-import|commit-import/);
   assert.doesNotMatch(source, /localStorage\.setItem|sessionStorage\.setItem|console\.log\(.*apiKey/i);
 });
 
