@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { config, loadTeams, normalizeAiPolicy } from "../../config.mjs";
-import { safePolicy, safeTeamId, safeText } from "../admin-validation.mjs";
+import { safePolicy, safeTeamId, safeText, sha256 } from "../admin-validation.mjs";
 
 async function sleep(ms) { await new Promise((resolve) => setTimeout(resolve, ms)); }
 async function chmodPrivate(path) { if (process.platform !== "win32") await chmod(path, 0o600); }
@@ -63,6 +63,37 @@ export async function getTeam(teamId) {
   return item;
 }
 
+export async function createTeam(input) {
+  const id = safeTeamId(input.teamId || input.code);
+  const displayName = safeText(input.displayName || id, 120);
+  const apiKey = String(input.apiKey || "").trim();
+  if (apiKey && (apiKey.length < 8 || apiKey.length > 512 || apiKey.includes("\0") || /[\r\n]/.test(apiKey))) {
+    throw Object.assign(new Error("API key bộ phận không hợp lệ."), { statusCode: 400, code: "INVALID_API_KEY" });
+  }
+  if (config.legacyTeamKeysEnabled && !apiKey) {
+    throw Object.assign(new Error("Chế độ legacy đang bật nên cần API key cho bộ phận."), { statusCode: 400, code: "TEAM_API_KEY_REQUIRED" });
+  }
+  return withTeamsLock(async () => {
+    const parsed = await readTeamsFile();
+    const teams = asArray(parsed);
+    if (teams.some((item) => String(item.code || "").toUpperCase() === id)) {
+      throw Object.assign(new Error("Bộ phận đã tồn tại."), { statusCode: 409, code: "TEAM_EXISTS" });
+    }
+    const team = {
+      code: id,
+      displayName,
+      enabled: input.enabled !== false,
+      ...(apiKey ? { keyHash: sha256(apiKey) } : {}),
+      memoryFile: `${id}.md`,
+      aiPolicy: normalizeAiPolicy(safePolicy(input.aiPolicy || { mode: "inherit" }), "client")
+    };
+    if (Array.isArray(parsed.teams)) parsed.teams.push(team);
+    else parsed.teams[id] = team;
+    await writeTeamsFile(parsed);
+    return getTeam(id);
+  });
+}
+
 export async function patchTeam(teamId, patch) {
   const id = safeTeamId(teamId);
   return withTeamsLock(async () => {
@@ -77,5 +108,29 @@ export async function patchTeam(teamId, patch) {
     else parsed.teams[id] = team;
     await writeTeamsFile(parsed);
     return getTeam(id);
+  });
+}
+
+export async function deleteTeam(teamId) {
+  const id = safeTeamId(teamId);
+  return withTeamsLock(async () => {
+    const usersRaw = await readFile(config.usersFile, "utf8").then(JSON.parse).catch(() => ({ users: {} }));
+    const memberCount = Object.values(usersRaw.users || {})
+      .filter((user) => String(user.teamId || "").toUpperCase() === id).length;
+    if (memberCount > 0) {
+      throw Object.assign(new Error(`Không thể xóa bộ phận đang có ${memberCount} nhân viên.`), {
+        statusCode: 409,
+        code: "TEAM_HAS_MEMBERS"
+      });
+    }
+    const parsed = await readTeamsFile();
+    const teams = asArray(parsed);
+    const index = teams.findIndex((item) => String(item.code || "").toUpperCase() === id);
+    if (index < 0) throw Object.assign(new Error("Không tìm thấy bộ phận."), { statusCode: 404, code: "TEAM_NOT_FOUND" });
+    teams.splice(index, 1);
+    if (Array.isArray(parsed.teams)) parsed.teams = teams;
+    else delete parsed.teams[id];
+    await writeTeamsFile(parsed);
+    return { deleted: true, teamId: id };
   });
 }

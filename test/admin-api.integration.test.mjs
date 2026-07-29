@@ -161,6 +161,27 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, csrf, origin: "https://evil.example", body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
 
+    const createdTeam = await request(port, "/admin/api/v1/teams", {
+      method: "POST",
+      token: adminToken,
+      csrf,
+      body: { teamId: "CSKH", displayName: "Chăm sóc khách hàng", apiKey: "legacy-cskh-test-key", aiPolicy: { mode: "limited_daily", premiumLimit: 5 } }
+    });
+    assert.equal(createdTeam.status, 201);
+    assert.equal(createdTeam.json.data.teamId, "CSKH");
+    const patchedTeam = await request(port, "/admin/api/v1/teams/CSKH", {
+      method: "PATCH",
+      token: adminToken,
+      csrf,
+      body: { displayName: "CSKH", enabled: false, aiPolicy: { mode: "free_only" } }
+    });
+    assert.equal(patchedTeam.status, 200);
+    assert.equal(patchedTeam.json.data.displayName, "CSKH");
+    assert.equal(patchedTeam.json.data.enabled, false);
+    const deletedTeam = await request(port, "/admin/api/v1/teams/CSKH", { method: "DELETE", token: adminToken, csrf });
+    assert.equal(deletedTeam.status, 200);
+    assert.equal((await request(port, "/admin/api/v1/teams/CSKH", { token: adminToken })).status, 404);
+
     const routerApiKey = "sk-9router-sales-ngoc-test-key";
     const usersLock = `${usersFile}.lock`;
     await mkdir(usersLock, { recursive: true });
@@ -192,6 +213,12 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
     const rotatedUsersText = await readFile(usersFile, "utf8");
     assert.match(rotatedUsersText, new RegExp(hash(updatedKey)));
     assert.doesNotMatch(rotatedUsersText, new RegExp(updatedKey));
+
+    const blockedTeamDelete = await request(port, "/admin/api/v1/teams/SALES", { method: "DELETE", token: adminToken, csrf });
+    assert.equal(blockedTeamDelete.status, 409);
+    const deletedUser = await request(port, "/admin/api/v1/users/sales-ngoc", { method: "DELETE", token: adminToken, csrf });
+    assert.equal(deletedUser.status, 200);
+    assert.equal((await request(port, "/admin/api/v1/users/sales-ngoc", { token: adminToken })).status, 404);
 
     const managerCsrf = (await request(port, "/admin/api/v1/csrf", { token: managerToken })).json.data.token;
     const companyApprove = await request(port, "/admin/api/v1/memory/review/company-candidate/approve", {

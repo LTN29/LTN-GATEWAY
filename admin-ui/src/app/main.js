@@ -5,7 +5,8 @@ const state = {
   admin: null,
   oneTimeKey: null,
   cachedTeams: null,
-  editingUser: null
+  editingUser: null,
+  editingTeam: null
 };
 
 let progressInterval;
@@ -67,6 +68,7 @@ function can(permission) {
   if (!state.admin) return false;
   if (hasRole("SUPER_ADMIN")) return true;
   if (permission === "usersWrite") return hasRole("IT_ADMIN");
+  if (permission === "teamsWrite") return hasRole("IT_ADMIN");
   if (permission === "sync" || permission === "system" || permission === "audit") return hasRole("IT_ADMIN") || hasRole("AUDITOR");
   return true;
 }
@@ -132,7 +134,7 @@ async function api(path, init = {}) {
       const code = payload.error?.code;
       if (response.status === 403) throw new Error("Bạn không có quyền thực hiện thao tác này.");
       if (response.status === 401) throw new Error("Phiên Cloudflare Access không hợp lệ hoặc đã hết hạn.");
-      if (response.status === 409) throw new Error("Dữ liệu đã thay đổi hoặc đang bị xử lý bởi người khác.");
+      if (response.status === 409) throw new Error(payload.error?.message || "Dữ liệu đã thay đổi hoặc đang bị xử lý bởi người khác.");
       if (response.status === 429) throw new Error("Bạn thao tác quá nhanh. Vui lòng thử lại sau.");
       if (response.status >= 500) throw new Error(`Có lỗi hệ thống. Mã yêu cầu: ${payload.requestId || "unknown"}.`);
       throw new Error(payload.error?.message || code || "Admin API lỗi.");
@@ -303,6 +305,32 @@ function editUserModalHtml(user, teams) {
   `;
 }
 
+function teamModalHtml(team = null) {
+  if (!can("teamsWrite")) return "";
+  const editing = Boolean(team);
+  const mode = team?.aiPolicy?.mode || "inherit";
+  const premiumLimit = team?.aiPolicy?.premiumLimit ?? "";
+  return `
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" style="max-width: 720px; width: 92vw;">
+        <h2 id="team-modal-title">${editing ? "Chỉnh sửa bộ phận" : "Tạo bộ phận mới"}</h2>
+        <p>${editing ? "Cập nhật tên, trạng thái và chính sách AI của bộ phận." : "Mã bộ phận sẽ được viết hoa và không thể đổi sau khi tạo."}</p>
+        <div class="formGrid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+          <label>Mã bộ phận<input id="teamCode" value="${escapeHtml(team?.teamId || "")}" ${editing ? "disabled" : ""} placeholder="Ví dụ: SALES" /></label>
+          <label>Tên bộ phận<input id="teamDisplayName" value="${escapeHtml(team?.displayName || "")}" placeholder="Ví dụ: Kinh doanh" /></label>
+          <label>Trạng thái<select id="teamEnabled"><option value="true" ${team?.enabled !== false ? "selected" : ""}>Hoạt động</option><option value="false" ${team?.enabled === false ? "selected" : ""}>Đã khóa</option></select></label>
+          <label>Chính sách AI<select id="teamPolicyMode"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Kế thừa mặc định</option><option value="limited_daily" ${mode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${mode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${mode === "free_only" ? "selected" : ""}>Chỉ Free</option></select></label>
+          <label>Giới hạn Premium/ngày<input id="teamPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
+          ${editing ? "" : `<label style="grid-column: 1 / -1;">API key bộ phận (nếu đang dùng legacy key)<input id="teamApiKey" type="password" autocomplete="new-password" placeholder="Bắt buộc khi LTN_LEGACY_TEAM_KEYS_ENABLED=true" /></label>`}
+        </div>
+        <div class="actions" style="margin-top: 24px; justify-content: flex-end;">
+          ${button("Hủy", "close-team-modal", true)}
+          ${button(editing ? "Lưu thay đổi" : "Tạo bộ phận", editing ? "save-edit-team" : "create-team-from-form")}
+        </div>
+      </div>
+    </div>`;
+}
+
 async function pageDashboard() {
   const [dashboard, timeseries, teams] = await Promise.all([
     api("/dashboard"),
@@ -360,7 +388,7 @@ async function pageUsers() {
         <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
         <td>${escapeHtml(formatPolicy(u.aiPolicy?.mode))}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
-        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)}` : ""}</td>
+        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)} ${button("Xóa", `delete-user:${u.userId}`, true)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
   `);
 }
@@ -382,7 +410,22 @@ async function pageUserDetail(userId) {
 
 async function pageTeams() {
   const teams = await api("/teams");
-  render(table(["Bộ phận", "Tên", "Trạng thái", "Nhân viên", "Gói AI", "Lượt Premium"], (teams.items || []).map((t) => `<tr><td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td><td>${escapeHtml(t.displayName)}</td><td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td><td>${t.memberCount}</td><td>${escapeHtml(formatPolicy(t.aiPolicy?.mode))}</td><td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td></tr>`)));
+  state.cachedTeams = teams;
+  render(`
+    <div class="toolbar">
+      <div></div>
+      <div class="toolbarGroup">${can("teamsWrite") ? `<button class="pill" data-action="open-create-team">Tạo bộ phận mới</button>` : ""}</div>
+    </div>
+    ${table(["Bộ phận", "Tên", "Trạng thái", "Nhân viên", "Gói AI", "Lượt Premium", "Thao tác"], (teams.items || []).map((t) => `
+      <tr>
+        <td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td>
+        <td>${escapeHtml(t.displayName)}</td>
+        <td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td>
+        <td>${t.memberCount}</td>
+        <td>${escapeHtml(formatPolicy(t.aiPolicy?.mode))}</td>
+        <td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td>
+        <td class="actions">${can("teamsWrite") ? `${button("Chỉnh sửa", `edit-team:${t.teamId}`)} ${button("Xóa", `delete-team:${t.teamId}`, true)}` : ""}</td>
+      </tr>`), "Chưa có bộ phận.")}`);
 }
 
 async function pageTeamDetail(teamId) {
@@ -611,9 +654,67 @@ document.addEventListener("click", async (event) => {
       document.getElementById("dynamic-modal-container")?.remove();
       showToast("Đã cập nhật toàn bộ thông tin nhân viên.");
       await route();
+    } else if (action.startsWith("delete-user:")) {
+      const userId = action.slice("delete-user:".length);
+      if (!confirm(`Xóa vĩnh viễn nhân viên ${userId}? Hồ sơ bộ nhớ cá nhân của nhân viên cũng sẽ bị xóa.`)) return;
+      await api(`/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+      showToast(`Đã xóa nhân viên ${userId}.`);
+      if (location.pathname !== "/admin/users") history.pushState(null, "", "/admin/users");
+      await route();
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
-      if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
+      if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) {
+        await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
+        await route();
+      }
+    } else if (action === "open-create-team") {
+      document.getElementById("dynamic-modal-container")?.remove();
+      const div = document.createElement("div");
+      div.id = "dynamic-modal-container";
+      div.innerHTML = teamModalHtml();
+      document.body.appendChild(div);
+      document.querySelector("#teamCode")?.focus();
+      return;
+    } else if (action.startsWith("edit-team:")) {
+      const teamId = action.slice("edit-team:".length);
+      state.editingTeam = await api(`/teams/${encodeURIComponent(teamId)}`);
+      document.getElementById("dynamic-modal-container")?.remove();
+      const div = document.createElement("div");
+      div.id = "dynamic-modal-container";
+      div.innerHTML = teamModalHtml(state.editingTeam);
+      document.body.appendChild(div);
+      document.querySelector("#teamDisplayName")?.focus();
+      return;
+    } else if (action === "close-team-modal") {
+      state.editingTeam = null;
+      document.getElementById("dynamic-modal-container")?.remove();
+      return;
+    } else if (action === "create-team-from-form" || action === "save-edit-team") {
+      const editing = action === "save-edit-team";
+      const teamId = (editing ? state.editingTeam?.teamId : document.querySelector("#teamCode")?.value || "").trim().toUpperCase();
+      const displayName = document.querySelector("#teamDisplayName")?.value.trim();
+      const enabled = document.querySelector("#teamEnabled")?.value === "true";
+      const mode = document.querySelector("#teamPolicyMode")?.value || "inherit";
+      const premiumLimit = document.querySelector("#teamPremiumLimit")?.value.trim();
+      const apiKey = document.querySelector("#teamApiKey")?.value.trim() || "";
+      if (!teamId || !displayName) throw new Error("Mã bộ phận và Tên bộ phận không được để trống.");
+      const aiPolicy = { mode };
+      if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
+      await api(editing ? `/teams/${encodeURIComponent(teamId)}` : "/teams", {
+        method: editing ? "PATCH" : "POST",
+        body: JSON.stringify({ teamId, displayName, enabled, aiPolicy, ...(apiKey ? { apiKey } : {}) })
+      });
+      state.editingTeam = null;
+      document.getElementById("dynamic-modal-container")?.remove();
+      showToast(editing ? `Đã cập nhật bộ phận ${teamId}.` : `Đã tạo bộ phận ${teamId}.`);
+      await route();
+    } else if (action.startsWith("delete-team:")) {
+      const teamId = action.slice("delete-team:".length);
+      if (!confirm(`Xóa vĩnh viễn bộ phận ${teamId}? Chỉ có thể xóa khi bộ phận không còn nhân viên.`)) return;
+      await api(`/teams/${encodeURIComponent(teamId)}`, { method: "DELETE" });
+      showToast(`Đã xóa bộ phận ${teamId}.`);
+      if (location.pathname !== "/admin/teams") history.pushState(null, "", "/admin/teams");
+      await route();
     } else if (action.startsWith("approve:") || action.startsWith("reject:")) {
       const [mode, id] = action.split(":");
       const note = prompt("Ghi chú?") || "";

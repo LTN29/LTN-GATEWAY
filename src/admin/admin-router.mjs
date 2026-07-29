@@ -7,8 +7,8 @@ import { authenticateAdmin } from "./admin-auth.mjs";
 import { issueCsrfToken, verifyCsrfToken } from "./admin-csrf.mjs";
 import { requirePermission, visibleTeamIds } from "./admin-rbac.mjs";
 import { getAdminAudit, listAdminAudit, writeAdminAudit } from "./admin-audit.mjs";
-import { createUser, getUser, importUsersCsv, listUsers, patchUser, rotateUserKey, setUserEnabled, validateUsersCsv } from "./services/admin-users-service.mjs";
-import { getTeam, listTeams, patchTeam } from "./services/admin-teams-service.mjs";
+import { createUser, deleteUser, getUser, importUsersCsv, listUsers, patchUser, rotateUserKey, setUserEnabled, validateUsersCsv } from "./services/admin-users-service.mjs";
+import { createTeam, deleteTeam, getTeam, listTeams, patchTeam } from "./services/admin-teams-service.mjs";
 import { usageDevices, usageExport, usageSummary, usageTeam, usageTeams, usageTimeseries, usageUser, usageUsers } from "./services/admin-usage-service.mjs";
 import { approveReviewCandidate, getMemoryFile, getMemoryVersion, getReviewCandidate, listMemoryFiles, listMemoryVersions, listReviewCandidates, readMemoryAudit, rejectReviewCandidate, rollbackMemoryFile } from "./services/admin-memory-service.mjs";
 import { listSyncOutbox, retryAllSync, retrySyncItem } from "./services/admin-sync-service.mjs";
@@ -200,6 +200,11 @@ export async function handleAdminApi(req, res) {
       requirePermission(admin, "users:write");
       const userId = decodeURIComponent(path.split("/").at(-1));
       sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "USER_UPDATED", "USER", userId, body.teamId, () => patchUser(userId, body)), requestId);
+    } else if (/^\/admin\/api\/v1\/users\/[^/]+$/.test(path) && req.method === "DELETE") {
+      requirePermission(admin, "users:write");
+      const userId = decodeURIComponent(path.split("/").at(-1));
+      const user = await getUser(userId);
+      sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "USER_DELETED", "USER", userId, user.teamId, () => deleteUser(userId)), requestId);
     } else if (/^\/admin\/api\/v1\/users\/[^/]+\/enable$/.test(path) && req.method === "POST") {
       requirePermission(admin, "users:write");
       const userId = decodeURIComponent(path.split("/").at(-2));
@@ -215,6 +220,10 @@ export async function handleAdminApi(req, res) {
     } else if (req.method === "GET" && path === "/admin/api/v1/teams") {
       requirePermission(admin, "teams:read");
       sendAdminJson(res, 200, { items: await listTeams() }, requestId);
+    } else if (req.method === "POST" && path === "/admin/api/v1/teams") {
+      requirePermission(admin, "teams:write");
+      const teamId = String(body.teamId || body.code || "").toUpperCase();
+      sendAdminJson(res, 201, await guardedWrite(req, admin, requestId, "TEAM_CREATED", "TEAM", teamId, teamId, () => createTeam(body)), requestId);
     } else if (/^\/admin\/api\/v1\/teams\/[^/]+$/.test(path) && req.method === "GET") {
       const teamId = decodeURIComponent(path.split("/").at(-1)).toUpperCase();
       requirePermission(admin, "teams:read", { teamId });
@@ -231,6 +240,10 @@ export async function handleAdminApi(req, res) {
       const teamId = decodeURIComponent(path.split("/").at(-1)).toUpperCase();
       requirePermission(admin, "teams:write", { teamId });
       sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "TEAM_UPDATED", "TEAM", teamId, teamId, () => patchTeam(teamId, body)), requestId);
+    } else if (/^\/admin\/api\/v1\/teams\/[^/]+$/.test(path) && req.method === "DELETE") {
+      const teamId = decodeURIComponent(path.split("/").at(-1)).toUpperCase();
+      requirePermission(admin, "teams:write", { teamId });
+      sendAdminJson(res, 200, await guardedWrite(req, admin, requestId, "TEAM_DELETED", "TEAM", teamId, teamId, () => deleteTeam(teamId)), requestId);
     } else if (req.method === "GET" && path === "/admin/api/v1/usage/summary") {
       requirePermission(admin, "usage:read", { teamId: query.teamId || null });
       sendAdminJson(res, 200, await usageSummary(scopedQuery(admin, query)), requestId);

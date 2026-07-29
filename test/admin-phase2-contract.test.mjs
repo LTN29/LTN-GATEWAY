@@ -26,6 +26,11 @@ test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", a
   for (const marker of [
     "pageDashboard",
     "pageUsers",
+    "open-create-user",
+    "delete-user:",
+    "open-create-team",
+    "edit-team:",
+    "delete-team:",
     "pageUsage",
     "pageReview",
     "pageMemoryFiles",

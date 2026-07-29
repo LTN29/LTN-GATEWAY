@@ -257,6 +257,19 @@ export async function rotateUserKey(userId, input = {}) {
   });
 }
 
+export async function deleteUser(userId) {
+  const id = safeUserId(userId);
+  return withUsersLock(async () => {
+    const parsed = await readUsersFile();
+    const user = parsed.users[id];
+    if (!user) throw Object.assign(new Error("Không tìm thấy nhân viên."), { statusCode: 404, code: "USER_NOT_FOUND" });
+    delete parsed.users[id];
+    await writeUsersFile(parsed);
+    if (user.memoryFile) await rm(userMemoryPath(user.memoryFile), { force: true });
+    return { deleted: true, userId: id };
+  });
+}
+
 export async function validateUsersCsv(csvText) {
   const rows = parseCsv(csvText);
   const [header, ...dataRows] = rows;
