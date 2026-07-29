@@ -22,6 +22,8 @@ for (const route of [
 for (const marker of [
   "oneTimeKey",
   "createUserModalHtml",
+  "editUserModalHtml",
+  "save-edit-user",
   "create-user-from-form",
   "fill-import-template",
   "validate-import",

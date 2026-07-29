@@ -34,6 +34,8 @@ test("Admin Phase 2 UI uses real pages and keeps one-time key in memory only", a
     "pageSystem",
     "pageAudit",
     "createUserModalHtml",
+    "editUserModalHtml",
+    "save-edit-user",
     "create-user-from-form",
     "fill-import-template",
     "oneTimeKey",

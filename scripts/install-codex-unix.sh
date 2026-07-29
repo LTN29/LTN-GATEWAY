@@ -15,7 +15,6 @@ OS_NAME=""
 AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
-REMOTE_MODELS_FILE=""
 MODE="${1:-}"
 CODEX_CMD_PATH=""
 CODEX_INSTALL_KIND="missing"
@@ -27,9 +26,6 @@ CODEX_HEALTH_OUTPUT=""
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
     rm -f "${REMOTE_CONFIG_FILE}"
-  fi
-  if [ -n "${REMOTE_MODELS_FILE}" ] && [ -f "${REMOTE_MODELS_FILE}" ]; then
-    rm -f "${REMOTE_MODELS_FILE}"
   fi
 }
 trap cleanup EXIT HUP INT TERM
@@ -89,14 +85,7 @@ new_uuid() {
     tr '[:upper:]' '[:lower:]' < /proc/sys/kernel/random/uuid
     return
   fi
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - <<'PY'
-import uuid
-print(uuid.uuid4())
-PY
-    return
-  fi
-  die "Không tạo được UUID an toàn. Hãy cài uuidgen hoặc python3."
+  die "Không tạo được UUID an toàn trên hệ điều hành này."
 }
 
 get_or_create_client_id() {
@@ -171,63 +160,6 @@ curl_with_auth() {
   status=$?
   rm -f "${curl_config}"
   return "${status}"
-}
-
-json_value() {
-  local file="$1"
-  local path="$2"
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$file" "$path" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    data = json.load(f)
-value = data
-for part in sys.argv[2].split("."):
-    if not isinstance(value, dict) or part not in value:
-        sys.exit(0)
-    value = value[part]
-if value is None:
-    sys.exit(0)
-print(value)
-PY
-    return
-  fi
-  if command -v node >/dev/null 2>&1; then
-    node -e 'const fs=require("fs"); let v=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); for (const p of process.argv[2].split(".")) { if (!v || typeof v !== "object" || !(p in v)) process.exit(0); v=v[p]; } if (v != null) console.log(v);' "$file" "$path"
-    return
-  fi
-  die "Cần python3 hoặc node để đọc phản hồi JSON từ Gateway."
-}
-
-combo_exists() {
-  local file="$1"
-  local combo_id="$2"
-  if command -v python3 >/dev/null 2>&1; then
-    python3 - "$file" "$combo_id" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as f:
-    data = json.load(f)
-combo_id = sys.argv[2]
-found = False
-for item in data.get("data", []):
-    if item.get("id") == combo_id:
-        found = True
-        owned_by = item.get("owned_by")
-        if owned_by is not None and owned_by != "combo":
-            print("bad_owner")
-            sys.exit(2)
-if not found:
-    print("missing")
-    sys.exit(1)
-print("ok")
-PY
-    return $?
-  fi
-  if command -v node >/dev/null 2>&1; then
-    node -e 'const fs=require("fs"); const data=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const id=process.argv[2]; let found=false; for (const item of data.data || []) { if (item.id===id) { found=true; if (item.owned_by != null && item.owned_by !== "combo") { console.log("bad_owner"); process.exit(2); } } } if (!found) { console.log("missing"); process.exit(1); } console.log("ok");' "$file" "$combo_id"
-    return $?
-  fi
-  die "Cần python3 hoặc node để xác minh Combo trong GET /v1/models."
 }
 
 validate_combo_syntax() {
@@ -427,19 +359,19 @@ ensure_codex_cli_healthy() {
 }
 
 fetch_and_validate_gateway() {
-  local config_file models_file routing_mode premium_combo free_combo result
+  local config_file protocol_version routing_mode premium_combo free_combo
   config_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-config.XXXXXX")"
-  models_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-models.XXXXXX")"
   REMOTE_CONFIG_FILE="${config_file}"
-  REMOTE_MODELS_FILE="${models_file}"
-  curl_with_auth "${GATEWAY_BASE_URL%/}/codex/config" "${config_file}" ||
-    die_code 30 "Gateway khong truy cap duoc hoac API key khong hop le khi goi /v1/codex/config."
-  curl_with_auth "${GATEWAY_BASE_URL%/}/models" "${models_file}" ||
-    die_code 30 "Gateway khong truy cap duoc hoac API key khong hop le khi goi /v1/models."
+  echo "Đang xác minh Combo SIMI AI qua Gateway..."
+  curl_with_auth "${GATEWAY_BASE_URL%/}/codex/installer-config" "${config_file}" ||
+    die_code 30 "Gateway không truy cập được, API key không hợp lệ hoặc Combo chưa được cấu hình."
 
-  routing_mode="$(json_value "${config_file}" "routing.mode")"
-  premium_combo="$(json_value "${config_file}" "combos.premium")"
-  free_combo="$(json_value "${config_file}" "combos.free")"
+  protocol_version="$(sed -n '1p' "${config_file}" | tr -d '\r')"
+  routing_mode="$(sed -n '2p' "${config_file}" | tr -d '\r')"
+  premium_combo="$(sed -n '3p' "${config_file}" | tr -d '\r')"
+  free_combo="$(sed -n '4p' "${config_file}" | tr -d '\r')"
+  [ "${protocol_version}" = "LTN_CODEX_INSTALLER_V1" ] ||
+    die_code 30 "Phản hồi cấu hình installer từ Gateway không hợp lệ."
 
   case "${routing_mode}" in
     premium_always)
@@ -461,20 +393,8 @@ ${free_combo}"
       ;;
   esac
 
-  printf '%s\n' "${REQUIRED_COMBOS}" | while IFS= read -r combo_id; do
-    [ -n "${combo_id}" ] || continue
-    result="$(combo_exists "${models_file}" "${combo_id}")" || {
-      case "$?" in
-        2) die "Model '${combo_id}' tồn tại nhưng owned_by không phải combo." ;;
-        *) die "Thiếu Combo trên 9Router: ${combo_id}" ;;
-      esac
-    }
-    [ "${result}" = "ok" ] || die "Combo không hợp lệ: ${combo_id}"
-  done
-
-  rm -f "${config_file}" "${models_file}"
+  rm -f "${config_file}"
   REMOTE_CONFIG_FILE=""
-  REMOTE_MODELS_FILE=""
 }
 
 gateway_health_status() {

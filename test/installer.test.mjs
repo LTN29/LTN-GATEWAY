@@ -108,7 +108,10 @@ test("public bootstrap is pipeline-safe and cleans its fixed HTTPS download", as
   assert.match(script, /Host -ne "ai\.simi\.vn"/);
   assert.match(script, /MaximumRedirection 0/);
   assert.match(script, /Join-Path \$env:TEMP/);
-  assert.match(script, /& \$tempInstaller/);
+  assert.match(script, /& \$powerShellExecutable/);
+  assert.match(script, /-ExecutionPolicy Bypass/);
+  assert.match(script, /-File \$tempInstaller/);
+  assert.doesNotMatch(script, /^\s*& \$tempInstaller\s*$/m);
   assert.match(script, /finally/);
   assert.match(script, /Remove-Item -LiteralPath \$tempInstaller/);
   assert.doesNotMatch(script, /TeamApiKey|LTN_TEAM_API_KEY/);

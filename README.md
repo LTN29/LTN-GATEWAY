@@ -194,6 +194,8 @@ Trên macOS/Linux, installer tự kiểm tra Codex CLI trước khi hỏi API ke
 installer sẽ gỡ đúng package npm `@openai/codex` khi xác định được nguồn, rồi cài lại
 bằng standalone installer chính thức từ `https://chatgpt.com/codex/install.sh`.
 Installer chỉ cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
+Máy người dùng không cần cài Node.js, npm, Python hoặc jq; Gateway tự đọc JSON và
+xác minh Combo trước khi trả cấu hình văn bản tối giản cho installer.
 
 Trên Windows, installer cài Codex CLI standalone bằng installer chính thức
 `https://chatgpt.com/codex/install.ps1`; máy người dùng không cần cài Node.js/npm trước.

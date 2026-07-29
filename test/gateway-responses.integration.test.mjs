@@ -410,6 +410,16 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       }
     });
 
+    const installerConfig = await fetch(`${baseUrl}/v1/codex/installer-config`, {
+      headers: { authorization: `Bearer ${validKey}` }
+    });
+    assert.equal(installerConfig.status, 200);
+    assert.match(installerConfig.headers.get("content-type"), /^text\/plain/);
+    assert.equal(
+      await installerConfig.text(),
+      "LTN_CODEX_INSTALLER_V1\nlimited_daily\nSIMI-GPT\nSIMI-FREE\n"
+    );
+
     const response = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
       headers: {

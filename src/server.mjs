@@ -146,6 +146,63 @@ async function proxyModels(req, res, rawKey, principal, id) {
   });
 }
 
+function assertInstallerComboId(value, name) {
+  if (typeof value !== "string" || value.length === 0) {
+    const error = new Error(`Thiếu Combo ID ${name}.`);
+    error.statusCode = 503;
+    throw error;
+  }
+  if (value.length > 200 || /[\r\n]/.test(value)) {
+    const error = new Error(`Combo ID ${name} không hợp lệ.`);
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
+async function installerConfigForPrincipal(rawKey, principal, id) {
+  const codexConfig = codexConfigForPrincipal(principal);
+  const mode = codexConfig.routing?.mode || "";
+  const premium = codexConfig.combos?.premium || "";
+  const free = codexConfig.combos?.free || "";
+  const required = mode === "premium_always"
+    ? [["combos.premium", premium]]
+    : mode === "free_only"
+      ? [["combos.free", free]]
+      : [["combos.premium", premium], ["combos.free", free]];
+
+  for (const [name, comboId] of required) {
+    assertInstallerComboId(comboId, name);
+  }
+
+  const upstream = await upstreamFetch("/v1/models", {
+    rawKey,
+    requestId: id
+  });
+  if (!upstream.ok) {
+    const error = new Error(`Không xác minh được Combo qua /v1/models: HTTP ${upstream.status}.`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  const payload = await upstream.json();
+  const models = Array.isArray(payload?.data) ? payload.data : [];
+  for (const [, comboId] of required) {
+    const matches = models.filter((item) => item?.id === comboId);
+    if (matches.length === 0) {
+      const error = new Error(`Thiếu Combo trên 9Router: ${comboId}`);
+      error.statusCode = 503;
+      throw error;
+    }
+    if (matches.some((item) => item.owned_by != null && item.owned_by !== "combo")) {
+      const error = new Error(`Model '${comboId}' tồn tại nhưng owned_by không phải combo.`);
+      error.statusCode = 503;
+      throw error;
+    }
+  }
+
+  return ["LTN_CODEX_INSTALLER_V1", mode, premium, free, ""].join("\n");
+}
+
 async function serveInstallerFile(res, path, contentType = "text/plain; charset=utf-8") {
   const body = await readFile(path);
   res.writeHead(200, {
@@ -541,6 +598,7 @@ export function createGatewayServer() {
   const supported =
     (req.method === "GET" && pathname === "/v1/models") ||
     (req.method === "GET" && pathname === "/v1/codex/config") ||
+    (req.method === "GET" && pathname === "/v1/codex/installer-config") ||
     (req.method === "POST" && pathname === "/v1/chat/completions") ||
     (req.method === "POST" && pathname === "/v1/responses");
 
@@ -603,6 +661,17 @@ export function createGatewayServer() {
 
     if (req.method === "GET" && pathname === "/v1/codex/config") {
       sendJson(res, 200, codexConfigForPrincipal(principal));
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/v1/codex/installer-config") {
+      const body = await installerConfigForPrincipal(rawKey, principal, id);
+      res.writeHead(200, {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff"
+      });
+      res.end(body);
       return;
     }
 

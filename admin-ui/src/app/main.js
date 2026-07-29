@@ -4,7 +4,8 @@ const state = {
   csrfToken: "",
   admin: null,
   oneTimeKey: null,
-  cachedTeams: null
+  cachedTeams: null,
+  editingUser: null
 };
 
 let progressInterval;
@@ -275,6 +276,35 @@ function createUserModalHtml(teams) {
   ` : "";
 }
 
+function editUserModalHtml(user, teams) {
+  if (!can("usersWrite") || !user) return "";
+  const policyMode = user.aiPolicy?.mode || "inherit";
+  const premiumLimit = user.aiPolicy?.premiumLimit ?? "";
+  return `
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title" style="max-width: 760px; width: 92vw;">
+        <h2 id="edit-user-title">Chỉnh sửa nhân viên</h2>
+        <p>Cập nhật hồ sơ, bộ phận, trạng thái, chính sách AI hoặc API key. Để trống API key nếu muốn giữ nguyên key hiện tại.</p>
+        <div class="formGrid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+          <label>Mã nhân viên<input id="editUserId" value="${escapeHtml(user.userId)}" disabled /></label>
+          <label>Tên hiển thị<input id="editDisplayName" value="${escapeHtml(user.displayName)}" /></label>
+          <label>Bộ phận<select id="editTeamId">${teamOptions(teams, user.teamId)}</select></label>
+          <label>Vai trò<input id="editRole" value="${escapeHtml(user.role || "")}" placeholder="Ví dụ: Nhân viên kinh doanh" /></label>
+          <label>Trạng thái<select id="editEnabled"><option value="true" ${user.enabled ? "selected" : ""}>Hoạt động</option><option value="false" ${!user.enabled ? "selected" : ""}>Đã khóa</option></select></label>
+          <label>Chế độ bộ nhớ<select id="editMemoryMode"><option value="full" ${user.memoryMode === "full" ? "selected" : ""}>Đầy đủ</option><option value="read_only" ${user.memoryMode === "read_only" ? "selected" : ""}>Chỉ đọc</option><option value="none" ${user.memoryMode === "none" ? "selected" : ""}>Tắt</option></select></label>
+          <label>Chính sách AI<select id="editPolicyMode"><option value="inherit" ${policyMode === "inherit" ? "selected" : ""}>Kế thừa bộ phận</option><option value="limited_daily" ${policyMode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${policyMode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${policyMode === "free_only" ? "selected" : ""}>Chỉ Free</option></select></label>
+          <label>Giới hạn Premium/ngày<input id="editPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
+          <label style="grid-column: 1 / -1;">API key 9Router mới<input id="editApiKey" type="password" autocomplete="new-password" placeholder="Để trống để giữ nguyên key hiện tại" /></label>
+        </div>
+        <div class="actions" style="margin-top: 24px; justify-content: flex-end;">
+          ${button("Hủy", "close-edit-user", true)}
+          ${button("Lưu thay đổi", "save-edit-user")}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 async function pageDashboard() {
   const [dashboard, timeseries, teams] = await Promise.all([
     api("/dashboard"),
@@ -332,7 +362,7 @@ async function pageUsers() {
         <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
         <td>${escapeHtml(formatPolicy(u.aiPolicy?.mode))}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
-        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Cập nhật key", `rotate:${u.userId}`, true)}` : ""}</td>
+        <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)}` : ""}</td>
       </tr>`), "Chưa có nhân viên.")}
   `);
 }
@@ -540,6 +570,54 @@ document.addEventListener("click", async (event) => {
       document.getElementById("dynamic-modal-container")?.remove();
       showToast("Đã tạo nhân viên mới thành công.");
       await route();
+    } else if (action.startsWith("edit:")) {
+      const userId = action.slice("edit:".length);
+      state.editingUser = await api(`/users/${encodeURIComponent(userId)}`);
+      document.getElementById("dynamic-modal-container")?.remove();
+      const div = document.createElement("div");
+      div.id = "dynamic-modal-container";
+      div.innerHTML = editUserModalHtml(state.editingUser, state.cachedTeams || { items: [] });
+      document.body.appendChild(div);
+      document.querySelector("#editDisplayName")?.focus();
+      return;
+    } else if (action === "close-edit-user") {
+      state.editingUser = null;
+      document.getElementById("dynamic-modal-container")?.remove();
+      return;
+    } else if (action === "save-edit-user") {
+      const user = state.editingUser;
+      if (!user) throw new Error("Không tìm thấy nhân viên cần chỉnh sửa.");
+      const displayName = document.querySelector("#editDisplayName")?.value.trim();
+      const teamId = document.querySelector("#editTeamId")?.value.trim();
+      const role = document.querySelector("#editRole")?.value.trim() || "";
+      const enabled = document.querySelector("#editEnabled")?.value === "true";
+      const memoryMode = document.querySelector("#editMemoryMode")?.value || "full";
+      const policyMode = document.querySelector("#editPolicyMode")?.value || "inherit";
+      const premiumLimit = document.querySelector("#editPremiumLimit")?.value.trim();
+      const apiKey = document.querySelector("#editApiKey")?.value.trim();
+      if (!displayName || !teamId) throw new Error("Tên hiển thị và Bộ phận không được để trống.");
+      const aiPolicy = { mode: policyMode };
+      if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
+      await api(`/users/${encodeURIComponent(user.userId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ displayName, teamId, role, memoryMode, aiPolicy })
+      });
+      if (enabled !== user.enabled) {
+        await api(`/users/${encodeURIComponent(user.userId)}/${enabled ? "enable" : "disable"}`, {
+          method: "POST",
+          body: "{}"
+        });
+      }
+      if (apiKey) {
+        await api(`/users/${encodeURIComponent(user.userId)}/rotate-key`, {
+          method: "POST",
+          body: JSON.stringify({ apiKey })
+        });
+      }
+      state.editingUser = null;
+      document.getElementById("dynamic-modal-container")?.remove();
+      showToast("Đã cập nhật toàn bộ thông tin nhân viên.");
+      await route();
     } else if (action === "fill-import-template") {
       const input = document.querySelector("#importCsv");
       if (input) input.value = "userId,displayName,teamId,apiKey\nsales-ngoc,Ngọc,SALES,sk-your-key";
@@ -551,12 +629,6 @@ document.addEventListener("click", async (event) => {
       const output = document.querySelector("#importResult");
       if (output) output.textContent = JSON.stringify(result, null, 2);
       if (action === "commit-import") await route();
-    } else if (action.startsWith("rotate:")) {
-      const userId = action.split(":")[1];
-      const apiKey = prompt(`Nhập API key 9Router mới cho tài khoản ${userId}`);
-      if (apiKey && confirm(`Xác nhận cập nhật API Key cho ${userId}? Key cũ sẽ mất hiệu lực ngay lập tức.`)) {
-        await api(`/users/${encodeURIComponent(userId)}/rotate-key`, { method: "POST", body: JSON.stringify({ apiKey }) });
-      }
     } else if (action.startsWith("disable:") || action.startsWith("enable:")) {
       const [mode, userId] = action.split(":");
       if (confirm(`Bạn có chắc muốn ${mode === "disable" ? "khóa" : "mở khóa"} nhân viên ${userId}?`)) await api(`/users/${encodeURIComponent(userId)}/${mode}`, { method: "POST", body: "{}" });
