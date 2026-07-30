@@ -108,9 +108,9 @@ export const config = {
     0.9
   ),
   teamMemoryEnabled: bool(process.env.TEAM_MEMORY_ENABLED, true),
-  teamMemoryAutoUpdate: bool(process.env.TEAM_MEMORY_AUTO_UPDATE, false),
+  teamMemoryAutoUpdate: bool(process.env.TEAM_MEMORY_AUTO_UPDATE, true),
   companyMemoryEnabled: bool(process.env.COMPANY_MEMORY_ENABLED, true),
-  companyMemoryAutoUpdate: bool(process.env.COMPANY_MEMORY_AUTO_UPDATE, false),
+  companyMemoryAutoUpdate: bool(process.env.COMPANY_MEMORY_AUTO_UPDATE, true),
   memoryReviewQueueEnabled: bool(process.env.MEMORY_REVIEW_QUEUE_ENABLED, true),
   memoryReviewQueueFile: resolve(
     process.env.MEMORY_REVIEW_QUEUE_FILE || "./data/memory-review-queue.jsonl"

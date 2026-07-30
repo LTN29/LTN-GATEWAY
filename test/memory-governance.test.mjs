@@ -23,6 +23,10 @@ async function freshGovernance(root) {
   config.userMemoryEnabled = true;
   config.userMemoryAutoUpdate = true;
   config.userMemoryAutoUpdateMinConfidence = 0.9;
+  config.teamMemoryEnabled = true;
+  config.teamMemoryAutoUpdate = true;
+  config.companyMemoryEnabled = true;
+  config.companyMemoryAutoUpdate = true;
   config.memoryExtractionMinConfidence = 0.8;
   config.oneDrive.mode = "local";
   config.oneDrive.localDir = join(root, "sharepoint");
@@ -87,7 +91,31 @@ test("USER high confidence auto-updates with backup, audit and SharePoint mappin
   assert.match(await readFile(join(root, "sharepoint", "users", "SALES", "sales-ngoc.md"), "utf8"), /short customer-ready/);
 });
 
-test("TEAM and COMPANY candidates go to deduplicated review queue", async () => {
+test("USER recent work context auto-updates local memory and SharePoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ltn-memory-governance-"));
+  const governance = await freshGovernance(root);
+  await mkdir(join(root, "memory", "users", "SALES"), { recursive: true });
+  await writeFile(join(root, "memory", "users", "SALES", "sales-ngoc.md"), "# Hồ sơ công việc\n", "utf8");
+
+  const result = await governance.processValidatedCandidate(
+    governance.validateMemoryCandidate(candidate({
+      category: "context",
+      summary: "Đang tìm cách lưu trữ và truy vấn nhanh tập dữ liệu khoảng một triệu dòng.",
+      normalizedKey: "recent-work-context",
+      durability: "medium_term",
+      confidence: 0.85,
+      sourceType: "inferred_from_context",
+      reason: "substantive current work"
+    }), principal()),
+    principal()
+  );
+
+  assert.equal(result.action, "user_auto_update");
+  assert.match(await readFile(join(root, "memory", "users", "SALES", "sales-ngoc.md"), "utf8"), /Ngữ cảnh gần đây/);
+  assert.match(await readFile(join(root, "sharepoint", "users", "SALES", "sales-ngoc.md"), "utf8"), /một triệu dòng/);
+});
+
+test("TEAM and COMPANY work knowledge auto-updates local memory and SharePoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "ltn-memory-governance-"));
   const governance = await freshGovernance(root);
   const teamCandidate = governance.validateMemoryCandidate(candidate({
@@ -99,12 +127,10 @@ test("TEAM and COMPANY candidates go to deduplicated review queue", async () => 
     targetTeamId: "SALES"
   }), principal());
 
-  await governance.processValidatedCandidate(teamCandidate, principal());
-  await governance.processValidatedCandidate(teamCandidate, principal());
-
-  const queue = await readFile(join(root, "memory-review-queue.jsonl"), "utf8");
-  assert.equal(queue.match(/dealer-quote\.manager-approval/g).length, 1);
-  assert.match(queue, /"sourceCount":2/);
+  const teamResult = await governance.processValidatedCandidate(teamCandidate, principal());
+  assert.equal(teamResult.action, "team_auto_update");
+  assert.match(await readFile(join(root, "memory", "SALES.md"), "utf8"), /manager approval/);
+  assert.match(await readFile(join(root, "sharepoint", "teams", "SALES.md"), "utf8"), /manager approval/);
 
   const companyCandidate = governance.validateMemoryCandidate(candidate({
     scope: "COMPANY",
@@ -114,8 +140,10 @@ test("TEAM and COMPANY candidates go to deduplicated review queue", async () => 
     targetUserId: null,
     targetTeamId: null
   }), principal());
-  await governance.processValidatedCandidate(companyCandidate, principal());
-  assert.match(await readFile(join(root, "memory-review-queue.jsonl"), "utf8"), /"scope":"COMPANY"/);
+  const companyResult = await governance.processValidatedCandidate(companyCandidate, principal());
+  assert.equal(companyResult.action, "company_auto_update");
+  assert.match(await readFile(join(root, "memory", "COMPANY.md"), "utf8"), /24 months/);
+  assert.match(await readFile(join(root, "sharepoint", "COMPANY.md"), "utf8"), /24 months/);
 });
 
 test("sensitive candidates are not auto-written and queue only blocked metadata", async () => {

@@ -64,6 +64,10 @@ function userMemoryTemplate(principal) {
     "",
     "-",
     "",
+    "# Ngữ cảnh gần đây",
+    "",
+    "-",
+    "",
     "# Lịch sử cập nhật",
     ""
   ].join("\n");

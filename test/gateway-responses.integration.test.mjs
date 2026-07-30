@@ -469,7 +469,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     await waitFor(async () => {
       try {
-        return (await readFile(join(root, "memory-review-queue.jsonl"), "utf8"))
+        return (await readFile(join(memoryDir, "IT.md"), "utf8"))
           .includes("it.confirmed-durable-workflow");
       } catch {
         return false;
@@ -477,8 +477,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     });
 
     assert.equal(extractionCalls, 1);
-    assert.doesNotMatch(await readFile(join(memoryDir, "IT.md"), "utf8"), /confirmed durable workflow/);
-    assert.match(await readFile(join(root, "memory-review-queue.jsonl"), "utf8"), /"scope":"TEAM"/);
+    assert.match(await readFile(join(memoryDir, "IT.md"), "utf8"), /confirmed durable workflow/);
+    assert.match(await readFile(join(syncDir, "teams", "IT.md"), "utf8"), /confirmed durable workflow/);
 
     const streamed = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",

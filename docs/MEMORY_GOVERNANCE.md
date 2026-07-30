@@ -24,7 +24,7 @@ Extractor lỗi, timeout hoặc SharePoint sync lỗi không được làm hỏn
 - `TEAM`: quy trình/phê duyệt/chính sách/mẫu nội dung dùng chung trong một phòng ban.
 - `COMPANY`: chính sách, thương hiệu, sản phẩm, bảo hành hoặc quyết định áp dụng toàn công ty.
 
-TEAM và COMPANY luôn qua review queue trong pilot. Không bật auto-write cho hai scope này.
+Kiến thức công việc không nhạy cảm, đủ độ tin cậy và có giá trị từ trung hạn trở lên được tự ghi vào đúng scope. Bộ trích xuất phải phân biệt rõ dữ liệu cá nhân, kiến thức bộ phận và kiến thức áp dụng toàn công ty.
 
 ## USER auto-update
 
@@ -39,7 +39,15 @@ USER chỉ tự ghi khi đủ điều kiện:
 - `targetUserId` khớp user hiện tại;
 - không xung đột normalizedKey với TEAM/COMPANY.
 
-Nếu không đủ điều kiện, candidate không auto-write; TEAM/COMPANY vào queue, USER có thể bị queue để admin xem.
+Nếu không đủ điều kiện tự ghi, candidate có thể vào queue để admin xem. Nội dung nhạy cảm luôn bị chặn và không được ghi vào memory.
+
+## TEAM và COMPANY auto-update
+
+- `TEAM`: tự ghi vào `memory/{TEAM}.md` khi là kiến thức phục vụ công việc của bộ phận.
+- `COMPANY`: tự ghi vào `memory/COMPANY.md` khi nội dung được xác định rõ là áp dụng toàn công ty.
+- Chỉ nhận nguồn do người dùng nói rõ hoặc được suy ra từ ngữ cảnh công việc; không tự lưu câu trả lời do assistant tạo ra.
+- Candidate `temporary`, độ tin cậy thấp hoặc nội dung nhạy cảm không được tự ghi.
+- Mỗi `normalizedKey` được cập nhật tại chỗ để tránh tích lũy bản ghi trùng.
 
 ## Review queue
 
@@ -119,10 +127,10 @@ USER_MEMORY_ENABLED=true
 USER_MEMORY_AUTO_UPDATE=true
 USER_MEMORY_AUTO_UPDATE_MIN_CONFIDENCE=0.95
 TEAM_MEMORY_ENABLED=true
-TEAM_MEMORY_AUTO_UPDATE=false
+TEAM_MEMORY_AUTO_UPDATE=true
 COMPANY_MEMORY_ENABLED=true
-COMPANY_MEMORY_AUTO_UPDATE=false
+COMPANY_MEMORY_AUTO_UPDATE=true
 MEMORY_REVIEW_QUEUE_ENABLED=true
 ```
 
-Chỉ bật cho 3-5 user pilot, kiểm tra queue/status hằng ngày. Không bật `TEAM_MEMORY_AUTO_UPDATE=true` hoặc `COMPANY_MEMORY_AUTO_UPDATE=true` trong pilot.
+Theo dõi audit, sync outbox và chất lượng phân loại scope trong giai đoạn pilot.

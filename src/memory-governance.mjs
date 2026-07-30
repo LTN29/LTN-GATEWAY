@@ -25,6 +25,7 @@ export const VALID_CATEGORIES = new Set([
   "troubleshooting",
   "template",
   "responsibility",
+  "context",
   "other"
 ]);
 export const VALID_DURABILITY = new Set(["temporary", "medium_term", "long_term"]);
@@ -162,6 +163,7 @@ function sectionFor(candidate) {
       product: "Quy tắc riêng",
       decision: "Quy tắc riêng",
       troubleshooting: "Quy trình cá nhân",
+      context: "Ngữ cảnh gần đây",
       other: "Quy tắc riêng"
     }[candidate.category];
   }
@@ -204,6 +206,8 @@ function defaultMemoryContent(scope, title = "") {
 ## Quy trình cá nhân
 
 ## Mẫu yêu cầu hiệu quả
+
+## Ngữ cảnh gần đây
 
 ## Quy tắc riêng
 
@@ -610,12 +614,23 @@ export async function processValidatedCandidate(candidate, principal) {
       await enqueueReviewCandidate(candidate, principal, `conflict_with_${conflict.priority.toLowerCase()}`);
       return { action: "conflict_queued" };
     }
+    const longTermEligible =
+      candidate.durability === "long_term" &&
+      candidate.sourceType === "explicit_user_statement";
+    const recentContextEligible =
+      candidate.category === "context" &&
+      candidate.normalizedKey === "recent-work-context" &&
+      candidate.durability === "medium_term" &&
+      ["explicit_user_statement", "inferred_from_context"].includes(candidate.sourceType);
     if (
       config.userMemoryEnabled &&
       config.userMemoryAutoUpdate &&
-      candidate.confidence >= config.userMemoryAutoUpdateMinConfidence &&
-      candidate.durability === "long_term" &&
-      candidate.sourceType === "explicit_user_statement" &&
+      candidate.confidence >= (
+        recentContextEligible
+          ? config.memoryExtractionMinConfidence
+          : config.userMemoryAutoUpdateMinConfidence
+      ) &&
+      (longTermEligible || recentContextEligible) &&
       candidate.targetUserId === principal.userId
     ) {
       jsonLog("user_memory_update_started", {
@@ -638,7 +653,33 @@ export async function processValidatedCandidate(candidate, principal) {
     return { action: "queued" };
   }
   if (candidate.scope === "TEAM" || candidate.scope === "COMPANY") {
-    await enqueueReviewCandidate(candidate, principal);
+    const enabled = candidate.scope === "TEAM"
+      ? config.teamMemoryEnabled && config.teamMemoryAutoUpdate
+      : config.companyMemoryEnabled && config.companyMemoryAutoUpdate;
+    const workKnowledgeEligible =
+      candidate.durability !== "temporary" &&
+      ["explicit_user_statement", "inferred_from_context"].includes(candidate.sourceType);
+    if (enabled && workKnowledgeEligible) {
+      const scopeName = candidate.scope.toLowerCase();
+      jsonLog(`${scopeName}_memory_update_started`, {
+        teamId: candidate.targetTeamId || null,
+        normalizedKey: candidate.normalizedKey
+      });
+      await writeMemoryFileWithGovernance({
+        targetRelativeFile: targetRelativeFileForCandidate(candidate, principal),
+        candidate,
+        actor: "system",
+        auditAction: candidate.action === "remove"
+          ? `${scopeName}_auto_remove`
+          : `${scopeName}_auto_update`
+      });
+      jsonLog(`${scopeName}_memory_updated`, {
+        teamId: candidate.targetTeamId || null,
+        normalizedKey: candidate.normalizedKey
+      });
+      return { action: `${scopeName}_auto_update` };
+    }
+    await enqueueReviewCandidate(candidate, principal, "not_auto_eligible");
     return { action: "queued" };
   }
   return { action: "none" };
