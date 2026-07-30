@@ -93,6 +93,7 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /# END LTN CODEX MANAGED/);
   assert.match(script, /http_headers = \{ "X-LTN-Client-ID" = "\$\{client_id\}" \}/);
   assert.match(script, /\[model_providers\.ltn_gateway\.auth\]/);
+  assert.match(script, /name = "SIMI Gateway"/);
   assert.match(script, /command = "\$\{escaped_helper\}"/);
   assert.match(script, /--install\|--repair\|--status\|--uninstall/);
   assert.match(script, /remove_managed_config/);

@@ -353,7 +353,7 @@ ensure_codex_cli_healthy() {
   if [ -n "${CODEX_HEALTH_OUTPUT}" ]; then
     echo "Chan doan: ${CODEX_HEALTH_OUTPUT}" >&2
   fi
-  echo "LTN Gateway chua duoc cau hinh. Khong co API key nao duoc thay doi." >&2
+  echo "SIMI Gateway chua duoc cau hinh. Khong co API key nao duoc thay doi." >&2
   echo "Neu macOS van chan ban Codex chinh thuc, vui long lien he IT. Installer khong tat Gatekeeper va khong bo qua canh bao malware." >&2
   exit 21
 }
@@ -494,7 +494,7 @@ model = "${escaped_model}"
 model_provider = "ltn_gateway"
 
 [model_providers.ltn_gateway]
-name = "LTN Gateway"
+name = "SIMI Gateway"
 base_url = "${escaped_base}"
 wire_api = "responses"
 http_headers = { "X-LTN-Client-ID" = "${client_id}" }
@@ -545,7 +545,7 @@ install_or_repair() {
   detect_arch
   require_basic_dependencies
   ensure_codex_cli_healthy
-  echo "[6/6] Cau hinh LTN Gateway..."
+  echo "[6/6] Cau hinh SIMI Gateway..."
   read_team_key
   fetch_and_validate_gateway
   client_id="$(get_or_create_client_id)"

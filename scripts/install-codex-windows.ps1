@@ -90,6 +90,39 @@ function Confirm-TeamApiKey {
   return $trimmed
 }
 
+function Read-TeamApiKey {
+  Write-Host "Chọn cách nhập API key:"
+  Write-Host "  1. Lấy từ Clipboard (khuyến nghị)"
+  Write-Host "  2. Gõ tay, ký tự được ẩn"
+  $inputMode = Read-Host "Nhập 1-2, mặc định 1"
+  if ([string]::IsNullOrWhiteSpace($inputMode)) { $inputMode = "1" }
+
+  if ($inputMode -eq "1") {
+    try {
+      $clipboardKey = Get-Clipboard -Raw -ErrorAction Stop
+    } catch {
+      throw "Không đọc được Clipboard. Hãy chạy lại, chọn cách 2 và gõ API key. Chi tiết: $($_.Exception.Message)"
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$clipboardKey)) {
+      throw "Clipboard không có API key. Hãy sao chép key trước rồi chạy lại installer."
+    }
+    Write-Host "Đã nhận API key từ Clipboard."
+    return [string]$clipboardKey
+  }
+
+  if ($inputMode -ne "2") {
+    throw "Lựa chọn không hợp lệ. Chỉ nhập 1 hoặc 2."
+  }
+
+  $secureKey = Read-Host "Gõ API key của team" -AsSecureString
+  $keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr)
+  }
+}
+
 function Confirm-ClientId {
   param([AllowNull()][string]$ClientId)
 
@@ -308,12 +341,12 @@ function Show-InstallerStatus {
     $configText = [IO.File]::ReadAllText($ConfigPath)
     $hasLtnProvider = $configText -match '(?m)^\s*\[model_providers\.ltn_gateway\]\s*$'
     $modelLine = [regex]::Match($configText, '(?m)^\s*model\s*=\s*"([^"]+)"\s*$')
-    Write-Host "  LTN Gateway config: $(if ($hasLtnProvider) { "có" } else { "chưa có" })"
+    Write-Host "  SIMI Gateway config: $(if ($hasLtnProvider) { "có" } else { "chưa có" })"
     if ($modelLine.Success) {
       Write-Host "  Model mặc định: $($modelLine.Groups[1].Value)"
     }
   } else {
-    Write-Host "  LTN Gateway config: chưa có"
+    Write-Host "  SIMI Gateway config: chưa có"
   }
 
   $keyConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User"))
@@ -345,7 +378,7 @@ function Invoke-LtnUninstall {
   [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $null, "User")
   Remove-Item Env:LTN_TEAM_API_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
-  Write-Host "Đã gỡ cấu hình LTN Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
+  Write-Host "Đã gỡ cấu hình SIMI Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
 }
 
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
@@ -383,13 +416,7 @@ if ($gatewayUri.Scheme -ne "https" -and $gatewayUri.Host -notin @("localhost", "
 }
 
 if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
-  $secureKey = Read-Host "API key của team" -AsSecureString
-  $keyPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-  try {
-    $TeamApiKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPtr)
-  } finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($keyPtr)
-  }
+  $TeamApiKey = Read-TeamApiKey
 }
 
 $TeamApiKey = Confirm-TeamApiKey $TeamApiKey
@@ -458,7 +485,7 @@ model = "$escapedModel"
 model_provider = "ltn_gateway"
 
 [model_providers.ltn_gateway]
-name = "LTN Gateway"
+name = "SIMI Gateway"
 base_url = "$escapedBaseUrl"
 env_key = "LTN_TEAM_API_KEY"
 wire_api = "responses"

@@ -55,6 +55,7 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
     /SetEnvironmentVariable\("LTN_CLIENT_ID", \$null, "User"\)/
   );
   assert.match(script, /Get-OrCreateClientId/);
+  assert.match(script, /name = "SIMI Gateway"/);
   assert.match(script, /NewGuid\(\)/);
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
@@ -62,7 +63,7 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
 
 test("Windows installer status and uninstall modes do not prompt for API key", async () => {
   const script = await readFile(installerUrl, "utf8");
-  const promptIndex = script.indexOf('Read-Host "API key của team"');
+  const promptIndex = script.indexOf("$TeamApiKey = Read-TeamApiKey");
   const statusIndex = script.indexOf('$Mode -eq "status"');
   const uninstallIndex = script.indexOf('$Mode -eq "uninstall"');
 
@@ -71,6 +72,7 @@ test("Windows installer status and uninstall modes do not prompt for API key", a
   assert.ok(promptIndex > 0);
   assert.ok(statusIndex < promptIndex);
   assert.ok(uninstallIndex < promptIndex);
+  assert.match(script, /Get-Clipboard -Raw -ErrorAction Stop/);
   assert.match(script, /\$Mode -in @\("auto", "profiles"\)/);
 });
 

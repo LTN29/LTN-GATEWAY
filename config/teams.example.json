@@ -45,6 +45,17 @@
       }
     },
     {
+      "code": "ACCOUNTING",
+      "displayName": "Kế Toán",
+      "memoryFile": "ACCOUNTING.md",
+      "enabled": true,
+      "aiPolicy": {
+        "mode": "limited_daily",
+        "premiumLimit": 3,
+        "usageScope": "user"
+      }
+    },
+    {
       "code": "WARRANTY",
       "displayName": "Bảo hành",
       "memoryFile": "WARRANTY.md",

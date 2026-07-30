@@ -205,6 +205,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     "Bearer team-test-key"
   );
   assert.match(output.config, /model = "SIMI-AI"/);
+  assert.match(output.config, /name = "SIMI Gateway"/);
   assert.match(
     output.config,
     /env_http_headers = \{ "X-LTN-Client-ID" = "LTN_CLIENT_ID" \}/
