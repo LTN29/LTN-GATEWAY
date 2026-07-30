@@ -737,6 +737,10 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+if (location.pathname === "/admin/") {
+  history.replaceState(null, "", `/admin${location.search}${location.hash}`);
+}
+
 window.addEventListener("popstate", () => {
   route();
 });

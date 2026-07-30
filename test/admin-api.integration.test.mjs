@@ -151,9 +151,12 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
 
     const adminRoot = await request(port, "/", { origin: "" });
     assert.equal(adminRoot.status, 302);
-    assert.equal(adminRoot.headers.location, "/admin/");
+    assert.equal(adminRoot.headers.location, "/admin");
     assert.equal((await request(port, "/", { host: "ai.simi.vn", origin: "" })).status, 404);
-    const adminUi = await request(port, "/admin/", { origin: "" });
+    const adminSlash = await request(port, "/admin/?from=login", { origin: "" });
+    assert.equal(adminSlash.status, 308);
+    assert.equal(adminSlash.headers.location, "/admin?from=login");
+    const adminUi = await request(port, "/admin", { origin: "" });
     assert.equal(adminUi.status, 200);
     assert.match(adminUi.text, /admin-ui-ok/);
 

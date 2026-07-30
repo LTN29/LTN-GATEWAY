@@ -464,7 +464,17 @@ export function createGatewayServer() {
 
   if (config.adminUiEnabled && pathname === "/" && isConfiguredAdminHost(req)) {
     res.writeHead(302, {
-      location: "/admin/",
+      location: `/admin${parsedUrl.search}`,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff"
+    });
+    res.end();
+    return;
+  }
+
+  if (config.adminUiEnabled && pathname === "/admin/" && isConfiguredAdminHost(req)) {
+    res.writeHead(308, {
+      location: `/admin${parsedUrl.search}`,
       "cache-control": "no-store",
       "x-content-type-options": "nosniff"
     });
