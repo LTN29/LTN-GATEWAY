@@ -76,6 +76,7 @@ function runProcess(command, args, options) {
 async function runInstallerWithCombo({
   premiumCombo = "SIMI-AI",
   freeCombo = "SIMI-FREE",
+  teamApiKey = "team-test-key",
   models = [
     { id: "SIMI-AI", owned_by: "combo" },
     { id: "SIMI-FREE", owned_by: "combo" }
@@ -151,7 +152,7 @@ async function runInstallerWithCombo({
       "-GatewayBaseUrl",
       `http://127.0.0.1:${gatewayPort}/v1`,
       "-TeamApiKey",
-      "team-test-key",
+      teamApiKey,
       "-Mode",
       mode,
       "-SkipCodexInstall"
@@ -213,6 +214,40 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     `${output.result.stdout}\n${output.result.stderr}`,
     /team-test-key/
   );
+});
+
+test("Windows installer trims clipboard whitespace from the team API key", async (t) => {
+  const output = await runInstallerWithCombo({
+    teamApiKey: "  team-test-key\r\n"
+  });
+  if (output.skipped) {
+    t.skip(output.skipped);
+    return;
+  }
+
+  assert.equal(output.result.status, 0, output.result.stderr || output.result.stdout);
+  assert.equal(
+    output.requests.find((request) => request.url === "/v1/codex/config")
+      ?.authorization,
+    "Bearer team-test-key"
+  );
+});
+
+test("Windows installer rejects control characters inside the team API key", async (t) => {
+  const output = await runInstallerWithCombo({
+    teamApiKey: "team-test\u0001key"
+  });
+  if (output.skipped) {
+    t.skip(output.skipped);
+    return;
+  }
+
+  assert.notEqual(output.result.status, 0);
+  assert.match(
+    `${output.result.stdout}\n${output.result.stderr}`,
+    /ký tự điều khiển không hợp lệ/
+  );
+  assert.equal(output.requests.length, 0);
 });
 
 test("Windows installer accepts model item without owned_by but warns", async (t) => {

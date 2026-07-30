@@ -67,6 +67,29 @@ function Confirm-ComboIdSyntax {
   return $trimmed
 }
 
+function Confirm-TeamApiKey {
+  param([AllowNull()][string]$ApiKey)
+
+  if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+    throw "API key của team không được để trống."
+  }
+
+  # Clipboard input can include a trailing CR/LF. Trim it before constructing
+  # the Authorization header, then reject any control character left inside.
+  $trimmed = $ApiKey.Trim()
+  if ([string]::IsNullOrWhiteSpace($trimmed)) {
+    throw "API key của team không được để trống."
+  }
+  if ($trimmed.Length -gt 4096) {
+    throw "API key của team quá dài."
+  }
+  if ($trimmed -match '[\x00-\x1F\x7F]') {
+    throw "API key của team chứa ký tự điều khiển không hợp lệ. Hãy sao chép lại key trên một dòng."
+  }
+
+  return $trimmed
+}
+
 function Confirm-ClientId {
   param([AllowNull()][string]$ClientId)
 
@@ -369,9 +392,7 @@ if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
   }
 }
 
-if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
-  throw "API key của team không được để trống."
-}
+$TeamApiKey = Confirm-TeamApiKey $TeamApiKey
 
 Write-Host "Đang xác minh Combo SIMI AI qua Gateway..."
 $headers = @{ Authorization = "Bearer $TeamApiKey" }
