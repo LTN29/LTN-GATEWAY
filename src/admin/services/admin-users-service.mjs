@@ -212,23 +212,67 @@ export async function createUser(input) {
 
 export async function patchUser(userId, patch) {
   const id = safeUserId(userId);
+  const nextId = patch.userId === undefined ? id : safeUserId(patch.userId);
   return withUsersLock(async () => {
     const parsed = await readUsersFile();
     const user = parsed.users[id];
     if (!user) throw Object.assign(new Error("Không tìm thấy nhân viên."), { statusCode: 404, code: "USER_NOT_FOUND" });
+    if (nextId !== id && parsed.users[nextId]) {
+      throw Object.assign(new Error("Mã nhân viên đã tồn tại."), { statusCode: 409, code: "USER_EXISTS" });
+    }
     if (patch.displayName !== undefined) user.displayName = safeText(patch.displayName, 120);
     if (patch.role !== undefined) user.role = safeText(patch.role, 120);
+    let nextTeamId = user.teamId;
     if (patch.teamId !== undefined) {
-      const teamId = safeTeamId(patch.teamId);
-      await ensureTeamEnabled(teamId);
-      user.teamId = teamId;
-      user.memoryFile = `users/${teamId}/${id}.md`;
-      await ensureUserMemory(user.memoryFile, id, teamId, user.role || "");
+      nextTeamId = safeTeamId(patch.teamId);
+      await ensureTeamEnabled(nextTeamId);
     }
     if (patch.aiPolicy !== undefined) user.aiPolicy = normalizeAiPolicy(safePolicy(patch.aiPolicy), "user");
     if (patch.memoryMode !== undefined) user.memoryMode = safeMemoryMode(patch.memoryMode);
-    await writeUsersFile(parsed);
-    return publicUser(id, user);
+
+    const oldMemoryFile = user.memoryFile;
+    const nextMemoryFile = `users/${nextTeamId}/${nextId}.md`;
+    const memoryChanged = Boolean(oldMemoryFile && oldMemoryFile !== nextMemoryFile);
+    if (memoryChanged) {
+      const oldMemoryPath = userMemoryPath(oldMemoryFile);
+      const nextMemoryPath = userMemoryPath(nextMemoryFile);
+      await mkdir(dirname(nextMemoryPath), { recursive: true });
+      try {
+        await readFile(nextMemoryPath);
+        throw Object.assign(new Error("Hồ sơ bộ nhớ của mã nhân viên mới đã tồn tại."), {
+          statusCode: 409,
+          code: "USER_MEMORY_EXISTS"
+        });
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      try {
+        await rename(oldMemoryPath, nextMemoryPath);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+        await ensureUserMemory(nextMemoryFile, nextId, nextTeamId, user.role || "");
+      }
+    }
+
+    user.teamId = nextTeamId;
+    user.memoryFile = nextMemoryFile;
+    if (nextId !== id) {
+      parsed.users[nextId] = user;
+      delete parsed.users[id];
+    }
+    try {
+      await writeUsersFile(parsed);
+    } catch (error) {
+      if (memoryChanged) {
+        await mkdir(dirname(userMemoryPath(oldMemoryFile)), { recursive: true });
+        await rename(userMemoryPath(nextMemoryFile), userMemoryPath(oldMemoryFile)).catch(() => {});
+      }
+      throw error;
+    }
+    if (user.memoryMode !== "none") {
+      await ensureUserMemory(user.memoryFile, nextId, nextTeamId, user.role || "");
+    }
+    return publicUser(nextId, user);
   });
 }
 

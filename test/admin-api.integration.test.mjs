@@ -217,11 +217,26 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
     assert.match(rotatedUsersText, new RegExp(hash(updatedKey)));
     assert.doesNotMatch(rotatedUsersText, new RegExp(updatedKey));
 
+    const renamed = await request(port, "/admin/api/v1/users/sales-ngoc", {
+      method: "PATCH",
+      token: adminToken,
+      csrf,
+      body: { userId: "sales-ngoc-new", displayName: "Ngọc", teamId: "SALES" }
+    });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.data.userId, "sales-ngoc-new");
+    assert.equal((await request(port, "/admin/api/v1/users/sales-ngoc", { token: adminToken })).status, 404);
+    assert.equal((await request(port, "/admin/api/v1/users/sales-ngoc-new", { token: adminToken })).status, 200);
+    const renamedUsers = JSON.parse(await readFile(usersFile, "utf8"));
+    assert.equal(renamedUsers.users["sales-ngoc"], undefined);
+    assert.equal(renamedUsers.users["sales-ngoc-new"].keyHash, hash(updatedKey));
+    assert.match(await readFile(join(memoryDir, "users", "SALES", "sales-ngoc-new.md"), "utf8"), /Hồ sơ/);
+
     const blockedTeamDelete = await request(port, "/admin/api/v1/teams/SALES", { method: "DELETE", token: adminToken, csrf });
     assert.equal(blockedTeamDelete.status, 409);
-    const deletedUser = await request(port, "/admin/api/v1/users/sales-ngoc", { method: "DELETE", token: adminToken, csrf });
+    const deletedUser = await request(port, "/admin/api/v1/users/sales-ngoc-new", { method: "DELETE", token: adminToken, csrf });
     assert.equal(deletedUser.status, 200);
-    assert.equal((await request(port, "/admin/api/v1/users/sales-ngoc", { token: adminToken })).status, 404);
+    assert.equal((await request(port, "/admin/api/v1/users/sales-ngoc-new", { token: adminToken })).status, 404);
 
     const managerCsrf = (await request(port, "/admin/api/v1/csrf", { token: managerToken })).json.data.token;
     const companyApprove = await request(port, "/admin/api/v1/memory/review/company-candidate/approve", {

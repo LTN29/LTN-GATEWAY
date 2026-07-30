@@ -286,7 +286,7 @@ function editUserModalHtml(user, teams) {
         <h2 id="edit-user-title">Chỉnh sửa nhân viên</h2>
         <p>Cập nhật hồ sơ, bộ phận, trạng thái, chính sách AI hoặc API key. Để trống API key nếu muốn giữ nguyên key hiện tại.</p>
         <div class="formGrid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
-          <label>Mã nhân viên<input id="editUserId" value="${escapeHtml(user.userId)}" disabled /></label>
+          <label>Mã nhân viên<input id="editUserId" value="${escapeHtml(user.userId)}" /></label>
           <label>Tên hiển thị<input id="editDisplayName" value="${escapeHtml(user.displayName)}" /></label>
           <label>Bộ phận<select id="editTeamId">${teamOptions(teams, user.teamId)}</select></label>
           <label>Vai trò<input id="editRole" value="${escapeHtml(user.role || "")}" placeholder="Ví dụ: Nhân viên kinh doanh" /></label>
@@ -623,6 +623,7 @@ document.addEventListener("click", async (event) => {
     } else if (action === "save-edit-user") {
       const user = state.editingUser;
       if (!user) throw new Error("Không tìm thấy nhân viên cần chỉnh sửa.");
+      const userId = document.querySelector("#editUserId")?.value.trim();
       const displayName = document.querySelector("#editDisplayName")?.value.trim();
       const teamId = document.querySelector("#editTeamId")?.value.trim();
       const role = document.querySelector("#editRole")?.value.trim() || "";
@@ -631,21 +632,22 @@ document.addEventListener("click", async (event) => {
       const policyMode = document.querySelector("#editPolicyMode")?.value || "inherit";
       const premiumLimit = document.querySelector("#editPremiumLimit")?.value.trim();
       const apiKey = document.querySelector("#editApiKey")?.value.trim();
-      if (!displayName || !teamId) throw new Error("Tên hiển thị và Bộ phận không được để trống.");
+      if (!userId || !displayName || !teamId) throw new Error("Mã nhân viên, Tên hiển thị và Bộ phận không được để trống.");
       const aiPolicy = { mode: policyMode };
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
-      await api(`/users/${encodeURIComponent(user.userId)}`, {
+      const updatedUser = await api(`/users/${encodeURIComponent(user.userId)}`, {
         method: "PATCH",
-        body: JSON.stringify({ displayName, teamId, role, memoryMode, aiPolicy })
+        body: JSON.stringify({ userId, displayName, teamId, role, memoryMode, aiPolicy })
       });
+      const updatedUserId = updatedUser.userId;
       if (enabled !== user.enabled) {
-        await api(`/users/${encodeURIComponent(user.userId)}/${enabled ? "enable" : "disable"}`, {
+        await api(`/users/${encodeURIComponent(updatedUserId)}/${enabled ? "enable" : "disable"}`, {
           method: "POST",
           body: "{}"
         });
       }
       if (apiKey) {
-        await api(`/users/${encodeURIComponent(user.userId)}/rotate-key`, {
+        await api(`/users/${encodeURIComponent(updatedUserId)}/rotate-key`, {
           method: "POST",
           body: JSON.stringify({ apiKey })
         });

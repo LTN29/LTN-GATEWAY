@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const source = await readFile(resolve(root, "src/app/main.js"), "utf8");
 if (!source.includes("x-ltn-csrf-token")) throw new Error("CSRF header missing");
+if (source.includes('id="editUserId" value="${escapeHtml(user.userId)}" disabled')) {
+  throw new Error("Admin must be able to edit the employee ID");
+}
+if (!source.includes("const updatedUserId = updatedUser.userId")) {
+  throw new Error("Follow-up user actions must use the renamed employee ID");
+}
 if (!source.includes('location.pathname === "/admin/"') || !source.includes('history.replaceState(null, "", `/admin${location.search}${location.hash}`)')) {
   throw new Error("Admin trailing-slash canonicalization missing");
 }
