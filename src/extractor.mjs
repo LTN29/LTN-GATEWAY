@@ -29,6 +29,53 @@ function latestConversation(messages, assistantText) {
   return redactSensitiveContent(useful.join("\n\n")).slice(0, 28000);
 }
 
+function messageText(message) {
+  if (typeof message?.content === "string") return message.content;
+  if (!Array.isArray(message?.content)) return "";
+  return message.content
+    .map((part) => part?.text || part?.content || "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function persistRecentUserContext(principal, messages, requestId) {
+  if (principal?.principalType !== "user" || !principal.memoryFile) return;
+  const latestUserMessage = [...(messages || [])]
+    .reverse()
+    .find((message) => message?.role === "user");
+  const text = messageText(latestUserMessage).replace(/\s+/g, " ").trim();
+  if (!text || text.length < 8) return;
+
+  try {
+    const candidate = validateMemoryCandidate({
+      scope: "USER",
+      category: "context",
+      summary: `Yêu cầu công việc gần đây: ${text.slice(0, 800)}`,
+      normalizedKey: "recent-work-context",
+      targetUserId: principal.userId,
+      targetTeamId: principal.teamId,
+      durability: "medium_term",
+      confidence: 1,
+      sensitivity: "none",
+      sourceType: "explicit_user_statement",
+      action: "upsert",
+      reason: "deterministic recent work context"
+    }, principal);
+    await processValidatedCandidate(candidate, principal);
+    jsonLog("recent_user_context_persisted", {
+      requestId,
+      userId: principal.userId,
+      teamId: principal.teamId
+    });
+  } catch (error) {
+    jsonLog("recent_user_context_failed", {
+      requestId,
+      userId: principal.userId,
+      error: redactSecrets(error?.message || String(error))
+    });
+  }
+}
+
 function extractorPrompt(principal, conversation) {
   const teamId = principal?.teamId || principal?.team?.code || "";
   const userId = principal?.principalType === "user" ? principal.userId : null;
@@ -90,6 +137,8 @@ function parseExtractorJson(text) {
 async function runExtraction({ team, principal, rawKey, originalMessages, assistantText, requestId }) {
   const conversation = latestConversation(originalMessages, assistantText);
   if (!conversation.trim()) return;
+
+  await persistRecentUserContext(principal, originalMessages, requestId);
 
   jsonLog("memory_extraction_started", {
     requestId,

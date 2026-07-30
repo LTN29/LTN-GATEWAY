@@ -115,6 +115,21 @@ test("USER recent work context auto-updates local memory and SharePoint", async 
   assert.match(await readFile(join(root, "sharepoint", "users", "SALES", "sales-ngoc.md"), "utf8"), /một triệu dòng/);
 });
 
+test("recent work context is persisted even without an extractor candidate", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ltn-memory-governance-"));
+  await freshGovernance(root);
+  const { persistRecentUserContext } = await import(`../src/extractor.mjs?test=${Date.now()}-${Math.random()}`);
+
+  await persistRecentUserContext(principal(), [{
+    role: "user",
+    content: "Hãy giúp tôi tối ưu truy vấn báo cáo bán hàng đang chạy chậm."
+  }], "recent-context-test");
+
+  const memory = await readFile(join(root, "memory", "users", "SALES", "sales-ngoc.md"), "utf8");
+  assert.match(memory, /Ngữ cảnh gần đây/);
+  assert.match(memory, /tối ưu truy vấn báo cáo bán hàng/);
+});
+
 test("TEAM and COMPANY work knowledge auto-updates local memory and SharePoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "ltn-memory-governance-"));
   const governance = await freshGovernance(root);
