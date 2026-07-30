@@ -6,7 +6,8 @@ const state = {
   oneTimeKey: null,
   cachedTeams: null,
   editingUser: null,
-  editingTeam: null
+  editingTeam: null,
+  pendingReviewItems: []
 };
 
 let progressInterval;
@@ -480,7 +481,11 @@ async function pageUsage() {
 async function pageReview() {
   const status = new URLSearchParams(location.search).get("status") || "pending";
   const data = await api(`/memory/review${qs({ status })}`);
-  render(`<div class="toolbar"><a class="pill" href="/admin/memory/review?status=pending">Chờ duyệt</a><a class="pill" href="/admin/memory/review?status=approved">Đã duyệt</a><a class="pill" href="/admin/memory/review?status=rejected">Bị từ chối</a></div>${table(["Phạm vi", "Bộ phận", "Khóa (Key)", "Tóm tắt", "Độ tin cậy", "Thao tác"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Duyệt", `approve:${c.id}`)} ${button("Từ chối", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có dữ liệu chờ duyệt.")}`);
+  state.pendingReviewItems = status === "pending" ? (data.items || []) : [];
+  const bulkApprove = state.pendingReviewItems.length
+    ? button(`Duyệt hàng loạt (${state.pendingReviewItems.length})`, "approve-all-review")
+    : "";
+  render(`<div class="toolbar"><div class="toolbarGroup"><a class="pill" href="/admin/memory/review?status=pending">Chờ duyệt</a><a class="pill" href="/admin/memory/review?status=approved">Đã duyệt</a><a class="pill" href="/admin/memory/review?status=rejected">Bị từ chối</a></div><div class="toolbarGroup">${bulkApprove}</div></div>${table(["Phạm vi", "Bộ phận", "Khóa (Key)", "Tóm tắt", "Độ tin cậy", "Thao tác"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Duyệt", `approve:${c.id}`)} ${button("Từ chối", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có dữ liệu chờ duyệt.")}`);
 }
 
 async function pageMemoryFiles() {
@@ -717,6 +722,34 @@ document.addEventListener("click", async (event) => {
       showToast(`Đã xóa bộ phận ${teamId}.`);
       if (location.pathname !== "/admin/teams") history.pushState(null, "", "/admin/teams");
       await route();
+    } else if (action === "approve-all-review") {
+      const items = [...state.pendingReviewItems];
+      if (!items.length) {
+        showToast("Không còn dữ liệu chờ duyệt.");
+        return;
+      }
+      if (!confirm(`Duyệt toàn bộ ${items.length} mục đang chờ? Các mục sẽ được ghi vào đúng phạm vi USER, TEAM hoặc COMPANY.`)) return;
+      let approved = 0;
+      const failed = [];
+      for (const item of items) {
+        try {
+          await api(`/memory/review/${encodeURIComponent(item.id)}/approve`, {
+            method: "POST",
+            body: JSON.stringify({ note: "Duyệt hàng loạt từ Admin Console" })
+          });
+          approved += 1;
+        } catch (error) {
+          failed.push({ id: item.id, message: error.message });
+        }
+      }
+      state.pendingReviewItems = [];
+      if (failed.length) {
+        showToast(`Đã duyệt ${approved}/${items.length} mục; ${failed.length} mục lỗi. Mục lỗi đầu tiên: ${failed[0].message}`, true);
+      } else {
+        showToast(`Đã duyệt thành công ${approved} mục.`);
+      }
+      await route();
+      return;
     } else if (action.startsWith("approve:") || action.startsWith("reject:")) {
       const [mode, id] = action.split(":");
       const note = prompt("Ghi chú?") || "";
