@@ -448,7 +448,7 @@ async function pageTeams() {
       <tr>
         <td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td>
         <td>${escapeHtml(t.displayName)}</td>
-        <td>${t.outsideControl ? "Ngoài vòng kiểm soát" : (t.enabled ? "Hoạt động" : "Đã khóa")}</td>
+        <td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td>
         <td>${t.memberCount}</td>
         <td>${escapeHtml(formatPolicy(t.aiPolicy?.mode))}</td>
         <td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td>
