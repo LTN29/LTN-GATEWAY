@@ -27,6 +27,7 @@ import {
   selectCodexRoute
 } from "./codex-routing.mjs";
 import { recordUserAnalytics } from "./user-analytics-store.mjs";
+import { isOutsideControlPrincipal } from "./principal-control.mjs";
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import {
   sendJson,
@@ -53,6 +54,42 @@ const codexUnixBootstrapPath = fileURLToPath(
 const codexUnixFullInstallerPath = fileURLToPath(
   new URL("../scripts/install-codex-unix.sh", import.meta.url)
 );
+const managedSkillNames = [
+  "9router",
+  "9router-chat",
+  "9router-image",
+  "9router-video",
+  "9router-tts",
+  "9router-stt",
+  "9router-embeddings",
+  "9router-web-search",
+  "9router-web-fetch"
+];
+const managedSkillPaths = new Map(managedSkillNames.map((name) => [
+  `/install/skills/${name}/SKILL.md`,
+  fileURLToPath(new URL(`../vendor/9router-skills/${name}/SKILL.md`, import.meta.url))
+]));
+
+const capabilityPostPaths = new Set([
+  "/v1/messages",
+  "/v1/images/generations",
+  "/v1/images/edits",
+  "/v1/audio/speech",
+  "/v1/audio/transcriptions",
+  "/v1/embeddings",
+  "/v1/search",
+  "/v1/web/fetch",
+  "/v1/videos/generations",
+  "/v1/videos/edits",
+  "/v1/videos/extensions"
+]);
+
+function isCapabilityGetPath(pathname) {
+  return /^\/v1\/models\/(?:image|tts|embedding|web|stt|image-to-text)$/.test(pathname) ||
+    pathname === "/v1/models/info" ||
+    pathname === "/v1/audio/voices" ||
+    /^\/v1\/videos\/[^/]+$/.test(pathname);
+}
 
 function copyHeaders(upstream, res) {
   const blocked = new Set([
@@ -142,6 +179,49 @@ async function proxyModels(req, res, rawKey, principal, id) {
   jsonLog("models_completed", {
     requestId: id,
     team: team.code,
+    status: upstream.status
+  });
+}
+
+async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
+  const signal = clientAbortSignal(req, res);
+  const body = req.method === "GET"
+    ? undefined
+    : await readBody(req, config.maxCapabilityBodyBytes);
+  const connectionId = String(req.headers["x-connection-id"] || "").trim();
+  if (connectionId.length > 256 || /[\r\n]/.test(connectionId)) {
+    const error = new Error("X-Connection-ID không hợp lệ.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const upstream = await upstreamFetch(upstreamPath, {
+    method: req.method,
+    rawKey,
+    requestId: id,
+    accept: req.headers.accept || "*/*",
+    contentType: req.method === "GET"
+      ? null
+      : String(req.headers["content-type"] || "application/json"),
+    extraHeaders: connectionId ? { "x-connection-id": connectionId } : {},
+    signal,
+    body
+  });
+
+  copyHeaders(upstream, res);
+  res.statusCode = upstream.status;
+  if (!upstream.body) {
+    res.end();
+  } else {
+    Readable.fromWeb(upstream.body).pipe(res);
+  }
+
+  jsonLog("capability_completed", {
+    requestId: id,
+    team: principal.team.code,
+    principalType: principal.principalType,
+    userId: principal.userId,
+    path: upstreamPath.split("?")[0],
     status: upstream.status
   });
 }
@@ -237,7 +317,8 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   }
 
   const originalMessages = responseInputMessages(payload.input);
-  const memoryDisabled = principal.memoryMode === "none";
+  const outsideControl = isOutsideControlPrincipal(principal);
+  const memoryDisabled = outsideControl || principal.memoryMode === "none";
   const { systemContent } = memoryDisabled
     ? { systemContent: "" }
     : await loadMemoryContext(team, principal);
@@ -311,7 +392,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       if (completed) {
         await route.confirm();
         shouldReleaseRoute = false;
-        if (principal.memoryMode === "full") scheduleMemoryExtraction({
+        if (!outsideControl && principal.memoryMode === "full") scheduleMemoryExtraction({
           team,
           principal,
           rawKey,
@@ -322,16 +403,18 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       }
     }
 
-    await recordUserAnalytics({
-      date: localDate(),
-      principal,
-      routeTier: route.routeTier,
-      selectedCombo: route.selectedCombo,
-      status: upstream.status,
-      latencyMs: Date.now() - startedAt,
-      usage: responseUsage,
-      clientIdHashPrefix: route.clientIdHashPrefix
-    });
+    if (!outsideControl) {
+      await recordUserAnalytics({
+        date: localDate(),
+        principal,
+        routeTier: route.routeTier,
+        selectedCombo: route.selectedCombo,
+        status: upstream.status,
+        latencyMs: Date.now() - startedAt,
+        usage: responseUsage,
+        clientIdHashPrefix: route.clientIdHashPrefix
+      });
+    }
 
     jsonLog("responses_completed", {
       requestId: id,
@@ -351,6 +434,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
 
 async function handleChat(req, res, rawKey, principal, id) {
   const team = principal.team;
+  const outsideControl = isOutsideControlPrincipal(principal);
   const signal = clientAbortSignal(req, res);
   const raw = await readBody(req);
   let payload;
@@ -372,7 +456,7 @@ async function handleChat(req, res, rawKey, principal, id) {
   }
 
   const originalMessages = structuredClone(payload.messages);
-  if (principal.memoryMode !== "none") {
+  if (!outsideControl && principal.memoryMode !== "none") {
     const { companyMemory, teamMemory, userMemory } = await loadMemoryContext(team, principal);
     payload.messages = injectMemory(
       payload.messages,
@@ -422,7 +506,7 @@ async function handleChat(req, res, rawKey, principal, id) {
       assistantText = "";
     }
 
-    if (principal.memoryMode === "full") scheduleMemoryExtraction({
+    if (!outsideControl && principal.memoryMode === "full") scheduleMemoryExtraction({
       team,
       principal,
       rawKey,
@@ -570,6 +654,27 @@ export function createGatewayServer() {
     return;
   }
 
+  if (req.method === "GET" && !hasQuery && managedSkillPaths.has(pathname)) {
+    try {
+      await serveInstallerFile(
+        res,
+        managedSkillPaths.get(pathname),
+        "text/markdown; charset=utf-8"
+      );
+    } catch (error) {
+      jsonLog("installer_skill_download_failed", {
+        path: pathname,
+        error: error?.message || String(error)
+      });
+      sendJson(
+        res,
+        500,
+        openAiError("Không thể tải Codex skill", "gateway_error")
+      );
+    }
+    return;
+  }
+
   if (req.method === "GET" && pathname === "/health") {
     let teams = 0;
     try {
@@ -610,10 +715,12 @@ export function createGatewayServer() {
 
   const supported =
     (req.method === "GET" && pathname === "/v1/models") ||
+    (req.method === "GET" && isCapabilityGetPath(pathname)) ||
     (req.method === "GET" && pathname === "/v1/codex/config") ||
     (req.method === "GET" && pathname === "/v1/codex/installer-config") ||
     (req.method === "POST" && pathname === "/v1/chat/completions") ||
-    (req.method === "POST" && pathname === "/v1/responses");
+    (req.method === "POST" && pathname === "/v1/responses") ||
+    (req.method === "POST" && capabilityPostPaths.has(pathname));
 
   if (!supported) {
     sendJson(res, 404, openAiError("Không tìm thấy route", "not_found_error"));
@@ -688,8 +795,21 @@ export function createGatewayServer() {
       return;
     }
 
-    if (req.method === "GET") {
+    if (req.method === "GET" && pathname === "/v1/models") {
       await proxyModels(req, res, rawKey, principal, id);
+      return;
+    }
+
+    if ((req.method === "GET" && isCapabilityGetPath(pathname)) ||
+        (req.method === "POST" && capabilityPostPaths.has(pathname))) {
+      await proxyCapability(
+        req,
+        res,
+        rawKey,
+        principal,
+        id,
+        `${pathname}${parsedUrl.search}`
+      );
       return;
     }
 

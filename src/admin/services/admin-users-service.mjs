@@ -3,6 +3,7 @@ import { dirname, relative, resolve } from "node:path";
 import { config, loadTeams, normalizeAiPolicy } from "../../config.mjs";
 import { sha256, safePolicy, safeTeamId, safeText, safeUserId, parseCsv, csvEscape } from "../admin-validation.mjs";
 import { jsonLog } from "../../utils.mjs";
+import { isOutsideControlPrincipal } from "../../principal-control.mjs";
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -143,6 +144,11 @@ function userMemoryPath(memoryFile) {
 }
 
 function publicUser(userId, user) {
+  const outsideControl = isOutsideControlPrincipal({
+    principalType: "user",
+    teamId: user.teamId,
+    role: user.role
+  });
   return {
     userId,
     displayName: user.displayName || userId,
@@ -151,6 +157,7 @@ function publicUser(userId, user) {
     enabled: user.enabled !== false,
     memoryFile: user.memoryFile,
     memoryMode: safeMemoryMode(user.memoryMode, "full"),
+    outsideControl,
     aiPolicy: user.aiPolicy || { mode: "inherit" }
   };
 }
@@ -187,6 +194,7 @@ export async function createUser(input) {
   const displayName = safeText(input.displayName || userId, 120);
   const role = safeText(input.role || "", 120);
   const memoryMode = safeMemoryMode(input.memoryMode, "full");
+  const outsideControl = isOutsideControlPrincipal({ principalType: "user", teamId, role });
   const apiKey = safeExternalApiKey(input.apiKey);
   await ensureTeamEnabled(teamId);
   return withUsersLock(async () => {
@@ -203,7 +211,7 @@ export async function createUser(input) {
       aiPolicy: safePolicy(input.aiPolicy || { mode: input.policyMode || "inherit", premiumLimit: input.premiumLimit })
     };
     await writeUsersFile(parsed);
-    if (memoryMode !== "none") {
+    if (!outsideControl && memoryMode !== "none") {
       await ensureUserMemory(parsed.users[userId].memoryFile, userId, teamId, role);
     }
     return { user: publicUser(userId, parsed.users[userId]) };
@@ -233,7 +241,12 @@ export async function patchUser(userId, patch) {
     const oldMemoryFile = user.memoryFile;
     const nextMemoryFile = `users/${nextTeamId}/${nextId}.md`;
     const memoryChanged = Boolean(oldMemoryFile && oldMemoryFile !== nextMemoryFile);
-    if (memoryChanged) {
+    const outsideControl = isOutsideControlPrincipal({
+      principalType: "user",
+      teamId: nextTeamId,
+      role: user.role
+    });
+    if (memoryChanged && !outsideControl) {
       const oldMemoryPath = userMemoryPath(oldMemoryFile);
       const nextMemoryPath = userMemoryPath(nextMemoryFile);
       await mkdir(dirname(nextMemoryPath), { recursive: true });
@@ -263,13 +276,13 @@ export async function patchUser(userId, patch) {
     try {
       await writeUsersFile(parsed);
     } catch (error) {
-      if (memoryChanged) {
+      if (memoryChanged && !outsideControl) {
         await mkdir(dirname(userMemoryPath(oldMemoryFile)), { recursive: true });
         await rename(userMemoryPath(nextMemoryFile), userMemoryPath(oldMemoryFile)).catch(() => {});
       }
       throw error;
     }
-    if (user.memoryMode !== "none") {
+    if (!outsideControl && user.memoryMode !== "none") {
       await ensureUserMemory(user.memoryFile, nextId, nextTeamId, user.role || "");
     }
     return publicUser(nextId, user);
@@ -384,6 +397,12 @@ export async function importUsersCsv(csvText) {
       await writeUsersFile(parsed);
       for (const item of validation.preview) {
         const memoryFile = parsed.users[item.userId].memoryFile;
+        const outsideControl = isOutsideControlPrincipal({
+          principalType: "user",
+          teamId: item.teamId,
+          role: item.role
+        });
+        if (outsideControl) continue;
         const target = userMemoryPath(memoryFile);
         const existed = await readFile(target, "utf8").then(() => true).catch((error) => {
           if (error?.code === "ENOENT") return false;

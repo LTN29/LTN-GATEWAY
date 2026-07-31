@@ -22,6 +22,7 @@ CODEX_VERSION=""
 CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
+MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -59,7 +60,7 @@ detect_arch() {
 
 require_basic_dependencies() {
   local missing=""
-  for cmd in curl mktemp grep sed awk chmod mv rm mkdir tr; do
+  for cmd in curl mktemp grep sed awk chmod mv rm mkdir rmdir tr wc; do
     if ! command -v "${cmd}" >/dev/null 2>&1; then
       missing="${missing} ${cmd}"
     fi
@@ -282,7 +283,7 @@ cleanup_broken_npm_codex() {
   npm_root="$(npm root -g 2>/dev/null || true)"
   npm_prefix="$(npm prefix -g 2>/dev/null || true)"
   if [ -n "${npm_root}" ] && [ -d "${npm_root}/@openai/codex" ]; then
-    echo "[3/6] Go ban Codex npm bi hong..."
+    echo "[3/7] Go ban Codex npm bi hong..."
     npm uninstall -g @openai/codex >/dev/null
   fi
 
@@ -303,7 +304,7 @@ cleanup_broken_npm_codex() {
 }
 
 install_codex_cli_official() {
-  echo "[4/6] Cai Codex CLI chinh thuc..."
+  echo "[4/7] Cai Codex CLI chinh thuc..."
   if ! command -v curl >/dev/null 2>&1; then
     die_code 11 "Thieu curl de cai Codex CLI."
   fi
@@ -319,7 +320,7 @@ install_codex_cli_official() {
 }
 
 repair_codex_cli_once() {
-  echo "[2/6] Phat hien Codex CLI bi loi: ${CODEX_HEALTH_REASON}"
+  echo "[2/7] Phat hien Codex CLI bi loi: ${CODEX_HEALTH_REASON}"
   case "${CODEX_HEALTH_REASON}" in
     missing_command|broken_symlink|missing_file|not_executable|vendor_missing|killed_9|version_failed|empty_version)
       cleanup_broken_npm_codex
@@ -332,7 +333,7 @@ repair_codex_cli_once() {
 }
 
 ensure_codex_cli_healthy() {
-  echo "[1/6] Kiem tra Codex CLI..."
+  echo "[1/7] Kiem tra Codex CLI..."
   if diagnose_codex_cli; then
     echo "Codex CLI: OK"
     echo "Codex version: ${CODEX_VERSION}"
@@ -341,7 +342,7 @@ ensure_codex_cli_healthy() {
 
   repair_codex_cli_once
 
-  echo "[5/6] Xac minh Codex CLI..."
+  echo "[5/7] Xac minh Codex CLI..."
   if diagnose_codex_cli; then
     echo "Codex CLI: OK"
     echo "Codex version: ${CODEX_VERSION}"
@@ -545,18 +546,53 @@ remove_managed_config() {
   mv "${tmp}" "${CONFIG_PATH}"
 }
 
+install_managed_9router_skills() {
+  local gateway_root skills_root skill_name skill_dir skill_path tmp skill_url
+  gateway_root="${GATEWAY_BASE_URL%/}"
+  gateway_root="${gateway_root%/v1}"
+  skills_root="${CODEX_HOME}/skills"
+  mkdir -p "${skills_root}"
+  chmod 700 "${skills_root}" 2>/dev/null || true
+
+  for skill_name in ${MANAGED_SKILL_NAMES}; do
+    skill_dir="${skills_root}/${skill_name}"
+    skill_path="${skill_dir}/SKILL.md"
+    tmp="${skill_dir}/SKILL.md.$$.$(date +%s).tmp"
+    skill_url="${gateway_root}/install/skills/${skill_name}/SKILL.md"
+    mkdir -p "${skill_dir}"
+    chmod 700 "${skill_dir}" 2>/dev/null || true
+    if ! curl --fail --silent --show-error --max-redirs 0 \
+      --output "${tmp}" "${skill_url}"; then
+      rm -f "${tmp}"
+      die_code 31 "Khong the tai skill ${skill_name} tu Gateway."
+    fi
+    if [ "$(wc -c < "${tmp}" | tr -d ' ')" -gt 262144 ] ||
+       ! grep -Eq "^name:[[:space:]]*${skill_name}[[:space:]]*$" "${tmp}" ||
+       ! grep -Eq '^---[[:space:]]*$' "${tmp}"; then
+      rm -f "${tmp}"
+      die_code 31 "Noi dung skill ${skill_name} tu Gateway khong hop le."
+    fi
+    chmod 600 "${tmp}"
+    mv "${tmp}" "${skill_path}"
+    chmod 600 "${skill_path}"
+  done
+  echo "Da cai/cap nhat 9 skill 9Router."
+}
+
 install_or_repair() {
   local client_id
   ensure_dirs
   detect_arch
   require_basic_dependencies
   ensure_codex_cli_healthy
-  echo "[6/6] Cau hinh SIMI Gateway..."
+  echo "[6/7] Cau hinh SIMI Gateway..."
   read_team_key
   fetch_and_validate_gateway
   client_id="$(get_or_create_client_id)"
   store_credential
   merge_config "${client_id}"
+  echo "[7/7] Cai full skill 9Router..."
+  install_managed_9router_skills
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."
@@ -583,7 +619,7 @@ install_or_repair() {
 }
 
 status() {
-  local client_id redacted
+  local client_id redacted skill_name skill_count
   ensure_dirs
   echo "OS: ${OS_NAME}"
   detect_arch
@@ -624,14 +660,26 @@ status() {
   else
     echo "Credential: chưa có hoặc không đọc được"
   fi
+  skill_count=0
+  for skill_name in ${MANAGED_SKILL_NAMES}; do
+    if [ -f "${CODEX_HOME}/skills/${skill_name}/SKILL.md" ]; then
+      skill_count=$((skill_count + 1))
+    fi
+  done
+  echo "9Router skills: ${skill_count}/9"
   gateway_health_status
 }
 
 uninstall_ltn() {
-  local account
+  local account skill_name skill_dir
   account="$(id -un)"
   remove_managed_config
   rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}"
+  for skill_name in ${MANAGED_SKILL_NAMES}; do
+    skill_dir="${CODEX_HOME}/skills/${skill_name}"
+    rm -f "${skill_dir}/SKILL.md"
+    rmdir "${skill_dir}" 2>/dev/null || true
+  done
   if [ "${OS_NAME}" = "macos" ]; then
     /usr/bin/security delete-generic-password -a "${account}" -s "${KEYCHAIN_SERVICE}" >/dev/null 2>&1 || true
   elif command -v secret-tool >/dev/null 2>&1; then

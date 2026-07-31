@@ -2,6 +2,7 @@ import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs
 import { dirname } from "node:path";
 import { config, loadTeams, normalizeAiPolicy } from "../../config.mjs";
 import { safePolicy, safeTeamId, safeText, sha256 } from "../admin-validation.mjs";
+import { isOutsideControlPrincipal } from "../../principal-control.mjs";
 
 async function sleep(ms) { await new Promise((resolve) => setTimeout(resolve, ms)); }
 async function chmodPrivate(path) { if (process.platform !== "win32") await chmod(path, 0o600); }
@@ -51,6 +52,10 @@ export async function listTeams() {
     displayName: team.displayName,
     enabled: team.enabled,
     memoryFile: team.memoryFile,
+    outsideControl: isOutsideControlPrincipal({
+      principalType: "team",
+      teamId: team.code
+    }),
     aiPolicy: team.aiPolicy || { mode: "inherit" },
     memberCount: Object.values(usersRaw.users || {}).filter((user) => String(user.teamId).toUpperCase() === team.code).length
   }));

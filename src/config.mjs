@@ -129,6 +129,7 @@ export const config = {
   memoryMaxFileBytes: number(process.env.MEMORY_MAX_FILE_BYTES || 262144, 262144),
   memoryBackupLimit: number(process.env.MEMORY_BACKUP_LIMIT || 20, 20),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),
+  maxCapabilityBodyBytes: Number(process.env.MAX_CAPABILITY_BODY_BYTES || 32_000_000),
   maxContextChars: Number(process.env.MAX_CONTEXT_CHARS || 24_000),
   maxCaptureBytes: Number(process.env.MAX_CAPTURE_BYTES || 8_000_000),
   maxMemoryChars: Number(process.env.MAX_MEMORY_CHARS || 16_000),

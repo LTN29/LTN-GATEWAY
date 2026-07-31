@@ -283,18 +283,22 @@ function editUserModalHtml(user, teams) {
   if (!can("usersWrite") || !user) return "";
   const policyMode = user.aiPolicy?.mode || "inherit";
   const premiumLimit = user.aiPolicy?.premiumLimit ?? "";
+  const outsideControlNote = user.outsideControl
+    ? `<p class="status">Ngoài vòng kiểm soát: không nạp/lưu MD và không ghi analytics nội dung sử dụng.</p>`
+    : "";
   return `
     <div class="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title" style="max-width: 760px; width: 92vw;">
         <h2 id="edit-user-title">Chỉnh sửa nhân viên</h2>
         <p>Cập nhật hồ sơ, bộ phận, trạng thái, chính sách AI hoặc API key. Để trống API key nếu muốn giữ nguyên key hiện tại.</p>
+        ${outsideControlNote}
         <div class="formGrid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
           <label>Mã nhân viên<input id="editUserId" value="${escapeHtml(user.userId)}" /></label>
           <label>Tên hiển thị<input id="editDisplayName" value="${escapeHtml(user.displayName)}" /></label>
           <label>Bộ phận<select id="editTeamId">${teamOptions(teams, user.teamId)}</select></label>
           <label>Vai trò<input id="editRole" value="${escapeHtml(user.role || "")}" placeholder="Ví dụ: Nhân viên kinh doanh" /></label>
           <label>Trạng thái<select id="editEnabled"><option value="true" ${user.enabled ? "selected" : ""}>Hoạt động</option><option value="false" ${!user.enabled ? "selected" : ""}>Đã khóa</option></select></label>
-          <label>Chế độ bộ nhớ<select id="editMemoryMode"><option value="full" ${user.memoryMode === "full" ? "selected" : ""}>Đầy đủ</option><option value="read_only" ${user.memoryMode === "read_only" ? "selected" : ""}>Chỉ đọc</option><option value="none" ${user.memoryMode === "none" ? "selected" : ""}>Tắt</option></select></label>
+          <label>Chế độ bộ nhớ<select id="editMemoryMode" ${user.outsideControl ? "disabled" : ""}><option value="full" ${user.memoryMode === "full" ? "selected" : ""}>Đầy đủ</option><option value="read_only" ${user.memoryMode === "read_only" ? "selected" : ""}>Chỉ đọc</option><option value="none" ${user.memoryMode === "none" ? "selected" : ""}>Tắt</option></select></label>
           <label>Chính sách AI<select id="editPolicyMode"><option value="inherit" ${policyMode === "inherit" ? "selected" : ""}>Kế thừa bộ phận</option><option value="limited_daily" ${policyMode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${policyMode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${policyMode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${policyMode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="editPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
           <label style="grid-column: 1 / -1;">API key 9Router mới<input id="editApiKey" type="password" autocomplete="new-password" placeholder="Để trống để giữ nguyên key hiện tại" /></label>
@@ -326,11 +330,15 @@ function teamModalHtml(team = null, combos = []) {
   const premiumCombo = team?.aiPolicy?.premiumCombo || "";
   const freeCombo = team?.aiPolicy?.freeCombo || "";
   const testCombo = team?.aiPolicy?.testCombo || "";
+  const outsideControlNote = team?.outsideControl
+    ? `<p class="status">Ngoài vòng kiểm soát: tin nhắn không dùng memory, không lưu MD và không ghi user analytics.</p>`
+    : "";
   return `
     <div class="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" style="max-width: 720px; width: 92vw;">
         <h2 id="team-modal-title">${editing ? "Chỉnh sửa bộ phận" : "Tạo bộ phận mới"}</h2>
         <p>${editing ? "Cập nhật tên, trạng thái và chính sách AI của bộ phận." : "Mã bộ phận sẽ được viết hoa và không thể đổi sau khi tạo."}</p>
+        ${outsideControlNote}
         <div class="formGrid" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
           <label>Mã bộ phận<input id="teamCode" value="${escapeHtml(team?.teamId || "")}" ${editing ? "disabled" : ""} placeholder="Ví dụ: SALES" /></label>
           <label>Tên bộ phận<input id="teamDisplayName" value="${escapeHtml(team?.displayName || "")}" placeholder="Ví dụ: Kinh doanh" /></label>
@@ -405,7 +413,7 @@ async function pageUsers() {
         <td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td>
         <td>${escapeHtml(u.displayName)}</td>
         <td>${escapeHtml(u.teamId)}</td>
-        <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
+        <td><span class="status">${u.outsideControl ? "Ngoài vòng kiểm soát" : (u.enabled ? "Hoạt động" : "Đã khóa")}</span></td>
         <td>${escapeHtml(formatPolicy(u.aiPolicy?.mode))}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)} ${button("Xóa", `delete-user:${u.userId}`, true)}` : ""}</td>
@@ -421,7 +429,7 @@ async function pageUserDetail(userId) {
   ]);
   render(`
     <div class="twoCol">
-      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p></div>
+      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p>${user.outsideControl ? '<p class="status">Ngoài vòng kiểm soát</p>' : ""}</div>
       <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}${metric("Thiết bị", usage.devices)}</div>
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
@@ -440,7 +448,7 @@ async function pageTeams() {
       <tr>
         <td><a href="/admin/teams/${encodeURIComponent(t.teamId)}">${escapeHtml(t.teamId)}</a></td>
         <td>${escapeHtml(t.displayName)}</td>
-        <td>${t.enabled ? "Hoạt động" : "Đã khóa"}</td>
+        <td>${t.outsideControl ? "Ngoài vòng kiểm soát" : (t.enabled ? "Hoạt động" : "Đã khóa")}</td>
         <td>${t.memberCount}</td>
         <td>${escapeHtml(formatPolicy(t.aiPolicy?.mode))}</td>
         <td>${escapeHtml(t.aiPolicy?.premiumLimit ?? "")}</td>
@@ -450,7 +458,7 @@ async function pageTeams() {
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.outsideControl ? "Ngoài vòng kiểm soát" : (team.enabled ? "Hoạt động" : "Đã khóa")}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.outsideControl ? "Ngoài vòng kiểm soát" : (u.enabled ? "Hoạt động" : "Đã khóa")}</td></tr>`))}`);
 }
 
 async function pageUsage() {

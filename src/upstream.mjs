@@ -5,6 +5,8 @@ export async function upstreamFetch(path, {
   rawKey,
   body,
   accept = "*/*",
+  contentType = "application/json",
+  extraHeaders = {},
   requestId,
   signal
 } = {}) {
@@ -18,8 +20,9 @@ export async function upstreamFetch(path, {
     return await fetch(`${config.upstreamBaseUrl}${path}`, {
       method,
       headers: {
+        ...extraHeaders,
         authorization: `Bearer ${rawKey}`,
-        "content-type": "application/json",
+        ...(contentType ? { "content-type": contentType } : {}),
         accept,
         "x-request-id": requestId
       },

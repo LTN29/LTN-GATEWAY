@@ -19,6 +19,10 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   assert.match(script, /owned_by/);
   assert.match(script, /env_key = "LTN_TEAM_API_KEY"/);
   assert.match(script, /env_http_headers = \{ "X-LTN-Client-ID" = "LTN_CLIENT_ID" \}/);
+  assert.match(script, /function Install-Managed9RouterSkills/);
+  assert.match(script, /install\/skills\/\$skillName\/SKILL\.md/);
+  assert.match(script, /NINEROUTER_URL/);
+  assert.match(script, /NINEROUTER_KEY/);
   assert.doesNotMatch(script, /combo\/ltn-code-(?:auto|fast|default|power)/);
   assert.doesNotMatch(script, /\^combo\//);
   assert.doesNotMatch(script, /combo\/\$|combo\/\$\{|combo\/\$comboId/);
@@ -59,6 +63,8 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /NewGuid\(\)/);
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
+  assert.match(script, /9router-web-fetch/);
+  assert.match(script, /9Router skills:/);
 });
 
 test("Windows installer status and uninstall modes do not prompt for API key", async () => {

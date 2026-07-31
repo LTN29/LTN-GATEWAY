@@ -98,6 +98,10 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /command = "\$\{escaped_helper\}"/);
   assert.match(script, /--install\|--repair\|--status\|--uninstall/);
   assert.match(script, /remove_managed_config/);
+  assert.match(script, /install_managed_9router_skills\(\)/);
+  assert.match(script, /install\/skills\/\$\{skill_name\}\/SKILL\.md/);
+  assert.match(script, /MANAGED_SKILL_NAMES=/);
+  assert.match(script, /9Router skills: \$\{skill_count\}\/9/);
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);
   assert.doesNotMatch(script, /MS_CLIENT_SECRET|Cloudflare token/i);
   assert.doesNotMatch(script, /config[\\/]teams\.json/i);

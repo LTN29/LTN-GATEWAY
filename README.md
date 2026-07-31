@@ -218,6 +218,25 @@ qua `secret-tool`; nếu máy không có Secret Service khả dụng thì lưu k
 Installer tạo client ID một lần tại `~/.codex/ltn-client-id`, giữ lại khi repair, xóa khi
 uninstall, và ghi `http_headers` để Codex gửi `X-LTN-Client-ID` cho Gateway.
 
+Mỗi lần `Install/Update` hoặc `Repair`, installer cũng tự cài/cập nhật bộ 9Router
+skills vào `~/.codex/skills/`: Entry, Chat, Image, Video, TTS, STT, Embeddings,
+Web Search và Web Fetch. Skill được tải từ chính `ai.simi.vn`, được kiểm tra tên
+trước khi thay atomically và không yêu cầu nhân viên tải trực tiếp từ GitHub.
+`Status` hiển thị số lượng `9Router skills: 9/9`; `Uninstall` chỉ xóa các file
+skill do installer quản lý.
+
+Các capability đi qua Gateway bằng cùng API key cá nhân/team:
+
+```text
+Codex skill → https://ai.simi.vn/v1/{capability}
+            → LTN Gateway
+            → 9Router 127.0.0.1:20128
+```
+
+Gateway chỉ whitelist các route cần thiết: model discovery, image/video,
+TTS/STT, embeddings, web search/fetch và chat. `router.simi.vn` vẫn là Dashboard
+admin được Cloudflare Access bảo vệ.
+
 Trước khi ghi cấu hình, installer gọi `GET /v1/models` bằng API key team và
 dừng với lỗi rõ ràng nếu thiếu Combo. Installer không tải hoặc cho nhân viên
 chọn danh sách model con.
@@ -338,6 +357,11 @@ node scripts/generate-user-coaching.mjs --user sales-ngoc --days 7
 ```
 
 Memory user được nạp theo thứ tự `COMPANY.md → TEAM.md → USER.md`. Nếu USER.md chưa tồn tại, Gateway tạo template an toàn trong `memory/users/<TEAM>/<userId>.md`.
+
+Tài khoản thuộc bộ phận `IT` (hoặc user có `role` là `IT`/`IT_ADMIN`) được đánh dấu
+**Ngoài vòng kiểm soát**: vẫn xác thực và định tuyến theo Combo/Policy đã chọn, nhưng
+không nạp memory, không tạo/cập nhật USER.md, không chạy memory extraction và không
+ghi user analytics. Log vận hành tối thiểu không chứa nội dung tin nhắn vẫn được giữ.
 
 TEAM/COMPANY memory candidate nên đi qua review queue trong pilot:
 

@@ -113,6 +113,13 @@ async function runInstallerWithCombo({
       return;
     }
 
+    const skillMatch = req.url.match(/^\/install\/skills\/([^/]+)\/SKILL\.md$/);
+    if (skillMatch) {
+      res.writeHead(200, { "content-type": "text/markdown; charset=utf-8" });
+      res.end(`---\nname: ${skillMatch[1]}\ndescription: Test skill\n---\n# Test\n`);
+      return;
+    }
+
     res.writeHead(404, { "content-type": "application/json" });
     res.end("{}");
   });
@@ -130,6 +137,14 @@ async function runInstallerWithCombo({
     .replace(
       '[Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $clientId, "User")',
       "$null = $clientId"
+    )
+    .replace(
+      '[Environment]::SetEnvironmentVariable("NINEROUTER_URL", $gatewayRoot, "User")',
+      "$null = $gatewayRoot"
+    )
+    .replace(
+      '[Environment]::SetEnvironmentVariable("NINEROUTER_KEY", $TeamApiKey, "User")',
+      "$null = $TeamApiKey"
     )
     .replace(
       '[Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "User")',
@@ -203,6 +218,12 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     output.requests.find((request) => request.url === "/v1/models")
       ?.authorization,
     "Bearer team-test-key"
+  );
+  assert.equal(
+    output.requests.filter((request) =>
+      /^\/install\/skills\/[^/]+\/SKILL\.md$/.test(request.url)
+    ).length,
+    9
   );
   assert.match(output.config, /model = "SIMI-AI"/);
   assert.match(output.config, /name = "SIMI Gateway"/);

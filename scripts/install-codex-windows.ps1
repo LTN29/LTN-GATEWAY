@@ -316,6 +316,56 @@ function Test-GatewayHealth {
   }
 }
 
+function Install-Managed9RouterSkills {
+  param(
+    [string]$CodexHome,
+    [string]$GatewayBaseUrl
+  )
+
+  $skillNames = @(
+    "9router",
+    "9router-chat",
+    "9router-image",
+    "9router-video",
+    "9router-tts",
+    "9router-stt",
+    "9router-embeddings",
+    "9router-web-search",
+    "9router-web-fetch"
+  )
+  $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
+  $skillsRoot = Join-Path $CodexHome "skills"
+  New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
+
+  foreach ($skillName in $skillNames) {
+    $skillDir = Join-Path $skillsRoot $skillName
+    $skillPath = Join-Path $skillDir "SKILL.md"
+    $tempPath = Join-Path $skillDir ("SKILL.md.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
+    $skillUri = [Uri]("$gatewayRoot/install/skills/$skillName/SKILL.md")
+    New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+    try {
+      Invoke-WebRequest `
+        -UseBasicParsing `
+        -Uri $skillUri.AbsoluteUri `
+        -OutFile $tempPath `
+        -MaximumRedirection 0
+      $skillText = [IO.File]::ReadAllText($tempPath)
+      if ($skillText.Length -gt 262144 -or
+          $skillText -notmatch "(?m)^name:\s*$([regex]::Escape($skillName))\s*$" -or
+          $skillText -notmatch "(?m)^---\s*$") {
+        throw "Nội dung skill '$skillName' không hợp lệ."
+      }
+      Move-Item -LiteralPath $tempPath -Destination $skillPath -Force
+    } finally {
+      if (Test-Path -LiteralPath $tempPath) {
+        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  Write-Host "Đã cài/cập nhật $($skillNames.Count) skill 9Router."
+}
+
 function Show-InstallerStatus {
   param(
     [string]$ConfigPath,
@@ -355,6 +405,13 @@ function Show-InstallerStatus {
   Write-Host "  Client ID: $(if ($clientConfigured) { "đã tạo" } else { "chưa tạo" })"
   Write-Host "  Gateway health: $(Test-GatewayHealth -BaseUrl $GatewayBaseUrl)"
   Write-Host "  Wrapper dir: $BinDir"
+  $skillsRoot = Join-Path (Split-Path -Parent $ConfigPath) "skills"
+  $skillCount = @(
+    "9router", "9router-chat", "9router-image", "9router-video",
+    "9router-tts", "9router-stt", "9router-embeddings",
+    "9router-web-search", "9router-web-fetch"
+  ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
+  Write-Host "  9Router skills: $skillCount/9"
 }
 
 function Invoke-LtnUninstall {
@@ -374,8 +431,26 @@ function Invoke-LtnUninstall {
       Remove-Item -LiteralPath $wrapperPath -Force
     }
   }
+  $skillsRoot = Join-Path (Split-Path -Parent $ConfigPath) "skills"
+  foreach ($skillName in @(
+    "9router", "9router-chat", "9router-image", "9router-video",
+    "9router-tts", "9router-stt", "9router-embeddings",
+    "9router-web-search", "9router-web-fetch"
+  )) {
+    $skillDir = Join-Path $skillsRoot $skillName
+    $skillPath = Join-Path $skillDir "SKILL.md"
+    if (Test-Path -LiteralPath $skillPath) {
+      Remove-Item -LiteralPath $skillPath -Force
+    }
+    if ((Test-Path -LiteralPath $skillDir) -and
+        -not (Get-ChildItem -LiteralPath $skillDir -Force | Select-Object -First 1)) {
+      Remove-Item -LiteralPath $skillDir -Force
+    }
+  }
   [Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $null, "User")
   [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $null, "User")
+  [Environment]::SetEnvironmentVariable("NINEROUTER_URL", $null, "User")
+  [Environment]::SetEnvironmentVariable("NINEROUTER_KEY", $null, "User")
   Remove-Item Env:LTN_TEAM_API_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
   Write-Host "Đã gỡ cấu hình SIMI Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
@@ -472,6 +547,7 @@ if (-not $SkipCodexInstall) {
 }
 
 New-Item -ItemType Directory -Force -Path $codexHome, $binDir | Out-Null
+Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
 
 $existingConfig = ""
 if (Test-Path $configPath) {
@@ -504,6 +580,11 @@ $env:LTN_TEAM_API_KEY = $TeamApiKey
 $clientId = Get-OrCreateClientId
 [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $clientId, "User")
 $env:LTN_CLIENT_ID = $clientId
+$gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
+[Environment]::SetEnvironmentVariable("NINEROUTER_URL", $gatewayRoot, "User")
+[Environment]::SetEnvironmentVariable("NINEROUTER_KEY", $TeamApiKey, "User")
+$env:NINEROUTER_URL = $gatewayRoot
+$env:NINEROUTER_KEY = $TeamApiKey
 
 $installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""

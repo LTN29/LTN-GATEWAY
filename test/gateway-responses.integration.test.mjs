@@ -60,17 +60,17 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
   await writeFile(teamsFile, JSON.stringify({
     teams: [
       {
-        code: "IT",
-        displayName: "IT",
+        code: "SALES",
+        displayName: "Sales",
         keyHash: hash(validKey),
-        memoryFile: "IT.md",
+        memoryFile: "SALES.md",
         enabled: true
       },
       {
-        code: "SALES",
-        displayName: "Sales",
+        code: "DISABLED",
+        displayName: "Disabled",
         keyHash: hash(disabledKey),
-        memoryFile: "SALES.md",
+        memoryFile: "DISABLED.md",
         enabled: false
       }
     ]
@@ -80,8 +80,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     `# COMPANY\nCompany fact\n${"C".repeat(500)}`
   );
   await writeFile(
-    join(memoryDir, "IT.md"),
-    `# IT\nTeam fact\n${"T".repeat(500)}`
+    join(memoryDir, "SALES.md"),
+    `# SALES\nTeam fact\n${"T".repeat(500)}`
   );
 
   const upstreamRequests = [];
@@ -147,10 +147,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
               candidates: [{
                 scope: "TEAM",
                 category: "workflow",
-                summary: "IT team uses the confirmed durable workflow.",
-                normalizedKey: "it.confirmed-durable-workflow",
+                summary: "Sales team uses the confirmed durable workflow.",
+                normalizedKey: "sales.confirmed-durable-workflow",
                 targetUserId: null,
-                targetTeamId: "IT",
+                targetTeamId: "SALES",
                 durability: "long_term",
                 confidence: 0.96,
                 sensitivity: "none",
@@ -313,6 +313,23 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.doesNotMatch(unixFullInstaller.body, /config[\\/]teams\.json/i);
 
+    const imageSkill = await rawGet(
+      gatewayPort,
+      "/install/skills/9router-image/SKILL.md"
+    );
+    assert.equal(imageSkill.status, 200);
+    assert.match(imageSkill.headers["content-type"], /^text\/markdown/);
+    assert.match(imageSkill.body, /^---\r?\nname: 9router-image/m);
+    assert.match(imageSkill.body, /https:\/\/ai\.simi\.vn/);
+    assert.equal(
+      (await rawGet(gatewayPort, "/install/skills/unknown/SKILL.md")).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(gatewayPort, "/install/skills/9router-image/SKILL.md?other=1")).status,
+      404
+    );
+
     assert.equal(
       (await rawGet(gatewayPort, "/install/other.ps1")).status,
       404
@@ -399,7 +416,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     });
     assert.equal(codexConfig.status, 200);
     assert.deepEqual(await codexConfig.json(), {
-      team: "IT",
+      team: "SALES",
       routing: {
         mode: "limited_daily",
         premiumLimit: 3,
@@ -459,7 +476,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(routed.body.instructions, /Company fact/);
     assert.match(routed.body.instructions, /Team fact/);
     assert.match(routed.body.instructions, /Keep client instruction/);
-    assert.match(routed.body.instructions, /team IT \(IT\)/);
+    assert.match(routed.body.instructions, /team Sales \(SALES\)/);
     assert.doesNotMatch(routed.body.instructions, /SALES\.md/);
     assert.ok(routed.body.instructions.length <= 1000);
     const companyContext = routed.body.instructions.match(
@@ -472,16 +489,16 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     await waitFor(async () => {
       try {
-        return (await readFile(join(memoryDir, "IT.md"), "utf8"))
-          .includes("it.confirmed-durable-workflow");
+        return (await readFile(join(memoryDir, "SALES.md"), "utf8"))
+          .includes("sales.confirmed-durable-workflow");
       } catch {
         return false;
       }
     });
 
     assert.equal(extractionCalls, 1);
-    assert.match(await readFile(join(memoryDir, "IT.md"), "utf8"), /confirmed durable workflow/);
-    assert.match(await readFile(join(syncDir, "teams", "IT.md"), "utf8"), /confirmed durable workflow/);
+    assert.match(await readFile(join(memoryDir, "SALES.md"), "utf8"), /confirmed durable workflow/);
+    assert.match(await readFile(join(syncDir, "teams", "SALES.md"), "utf8"), /confirmed durable workflow/);
 
     const streamed = await fetch(`${baseUrl}/v1/responses`, {
       method: "POST",
