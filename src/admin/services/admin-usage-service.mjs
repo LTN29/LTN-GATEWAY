@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { config } from "../../config.mjs";
+import { redactSecrets } from "../../utils.mjs";
 import { csvEscape, safeTeamId, safeUserId } from "../admin-validation.mjs";
 
 async function readJson(path, fallback) {
@@ -162,6 +163,35 @@ export async function usageUser(userId, query = {}) {
   const result = await usageUsers({ ...query, userId });
   const item = result.items.find((entry) => entry.userId === safeUserId(userId)) || finalizeMetric(emptyMetric({ userId: safeUserId(userId), teamId: null }));
   return item;
+}
+
+export async function usageUserErrors(userId, query = {}) {
+  const analytics = await readJson(config.userAnalyticsFile, { dailyUsers: {} });
+  const id = safeUserId(userId);
+  const items = [];
+  for (const record of analyticsRecords({ ...query, userId: id }, analytics)) {
+    for (const error of Array.isArray(record.recentErrors) ? record.recentErrors : []) {
+      items.push({
+        occurredAt: error.occurredAt || record.updatedAt || record.date,
+        status: Number(error.status) || 0,
+        code: redactSecrets(String(error.code || "UPSTREAM_ERROR")),
+        message: redactSecrets(String(error.message || "Không có nội dung lỗi.")),
+        requestId: String(error.requestId || ""),
+        endpoint: String(error.endpoint || ""),
+        routeTier: String(error.routeTier || ""),
+        selectedCombo: String(error.selectedCombo || ""),
+        latencyMs: Math.max(0, Number(error.latencyMs) || 0)
+      });
+    }
+  }
+  items.sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const page = pageArgs(query);
+  return {
+    items: items.slice(page.offset, page.offset + page.pageSize),
+    total: items.length,
+    page: page.page,
+    pageSize: page.pageSize
+  };
 }
 
 export async function usageTeams(query = {}) {

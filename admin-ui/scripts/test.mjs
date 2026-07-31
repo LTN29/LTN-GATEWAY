@@ -52,4 +52,7 @@ for (const removedMarker of [
 ]) {
   if (source.includes(removedMarker)) throw new Error(`Removed CSV import UI remains: ${removedMarker}`);
 }
+for (const paginationMarker of ["function pagination", 'params.set("pageSize", "20")', 'pagination(data, "/admin/audit")', 'pagination(data, "/admin/memory/review")', "Duyệt trang này"]) {
+  if (!source.includes(paginationMarker)) throw new Error(`Audit pagination marker missing: ${paginationMarker}`);
+}
 console.log("admin-ui tests completed");

@@ -20,6 +20,8 @@ function average(previousAverage, previousCount, nextValue) {
   return Math.round((((previousAverage || 0) * previousCount) + nextValue) / (previousCount + 1));
 }
 
+const MAX_RECENT_ERRORS_PER_USER_DAY = 50;
+
 async function readStore(path) {
   try {
     const raw = await readFile(path, "utf8");
@@ -77,7 +79,8 @@ export async function recordUserAnalytics({
   latencyMs,
   usage = null,
   analytics = null,
-  clientIdHashPrefix = null
+  clientIdHashPrefix = null,
+  errorDetail = null
 }) {
   if (!config.userAnalyticsEnabled || !principal?.userId) return;
 
@@ -92,7 +95,8 @@ export async function recordUserAnalytics({
       latencyMs,
       usage,
       analytics,
-      clientIdHashPrefix
+      clientIdHashPrefix,
+      errorDetail
     }));
   return analyticsWriteQueue;
 }
@@ -106,7 +110,8 @@ async function recordUserAnalyticsTransaction({
   latencyMs,
   usage,
   analytics,
-  clientIdHashPrefix
+  clientIdHashPrefix,
+  errorDetail
 }) {
   try {
     const store = await readStore(config.userAnalyticsFile);
@@ -129,7 +134,8 @@ async function recordUserAnalyticsTransaction({
       promptQuality: {},
       missingContext: {},
       clientIdHashes: {},
-      models: {}
+      models: {},
+      recentErrors: []
     };
 
     const previousCount = record.requests;
@@ -164,6 +170,24 @@ async function recordUserAnalyticsTransaction({
     }
     if (selectedCombo) {
       record.models[selectedCombo] = (record.models[selectedCombo] || 0) + 1;
+    }
+    if (status < 200 || status >= 300) {
+      if (!Array.isArray(record.recentErrors)) record.recentErrors = [];
+      const safeError = errorDetail && typeof errorDetail === "object" ? errorDetail : {};
+      record.recentErrors.push({
+        occurredAt: new Date().toISOString(),
+        status: Number(status) || 0,
+        code: redactSecrets(String(safeError.code || "UPSTREAM_ERROR")).slice(0, 120),
+        message: redactSecrets(String(safeError.message || `Yêu cầu thất bại với HTTP ${status}.`)).slice(0, 1000),
+        requestId: String(safeError.requestId || "").slice(0, 128),
+        endpoint: String(safeError.endpoint || "").slice(0, 160),
+        routeTier: String(routeTier || "").slice(0, 40),
+        selectedCombo: String(selectedCombo || "").slice(0, 160),
+        latencyMs: Math.max(0, Number(latencyMs) || 0)
+      });
+      if (record.recentErrors.length > MAX_RECENT_ERRORS_PER_USER_DAY) {
+        record.recentErrors.splice(0, record.recentErrors.length - MAX_RECENT_ERRORS_PER_USER_DAY);
+      }
     }
     record.updatedAt = new Date().toISOString();
     store.dailyUsers[key] = record;

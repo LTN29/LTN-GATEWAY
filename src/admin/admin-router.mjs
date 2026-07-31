@@ -9,7 +9,7 @@ import { requirePermission, visibleTeamIds } from "./admin-rbac.mjs";
 import { getAdminAudit, listAdminAudit, writeAdminAudit } from "./admin-audit.mjs";
 import { createUser, deleteUser, getUser, importUsersCsv, listUsers, patchUser, rotateUserKey, setUserEnabled, validateUsersCsv } from "./services/admin-users-service.mjs";
 import { createTeam, deleteTeam, getTeam, listTeams, patchTeam } from "./services/admin-teams-service.mjs";
-import { usageDevices, usageExport, usageSummary, usageTeam, usageTeams, usageTimeseries, usageUser, usageUsers } from "./services/admin-usage-service.mjs";
+import { usageDevices, usageExport, usageSummary, usageTeam, usageTeams, usageTimeseries, usageUser, usageUserErrors, usageUsers } from "./services/admin-usage-service.mjs";
 import { approveReviewCandidate, getMemoryFile, getMemoryVersion, getReviewCandidate, listMemoryFiles, listMemoryVersions, listReviewCandidates, readMemoryAudit, rejectReviewCandidate, rollbackMemoryFile } from "./services/admin-memory-service.mjs";
 import { listSyncOutbox, retryAllSync, retrySyncItem } from "./services/admin-sync-service.mjs";
 import { configSummary, dashboardSummary, systemHealth } from "./services/admin-system-service.mjs";
@@ -196,6 +196,11 @@ export async function handleAdminApi(req, res) {
       const user = await getUser(userId);
       requirePermission(admin, "usage:read", { teamId: user.teamId });
       sendAdminJson(res, 200, await usageDevices({ ...query, userId }), requestId);
+    } else if (/^\/admin\/api\/v1\/users\/[^/]+\/errors$/.test(path) && req.method === "GET") {
+      const userId = decodeURIComponent(path.split("/").at(-2));
+      const user = await getUser(userId);
+      requirePermission(admin, "usage:read", { teamId: user.teamId });
+      sendAdminJson(res, 200, await usageUserErrors(userId, query), requestId);
     } else if (/^\/admin\/api\/v1\/users\/[^/]+$/.test(path) && req.method === "PATCH") {
       requirePermission(admin, "users:write");
       const userId = decodeURIComponent(path.split("/").at(-1));
@@ -286,7 +291,7 @@ export async function handleAdminApi(req, res) {
       res.end(out);
     } else if (req.method === "GET" && path === "/admin/api/v1/memory/review") {
       requirePermission(admin, "memory:read", { teamId: query.teamId || null, scope: query.scope || null });
-      sendAdminJson(res, 200, { items: await listReviewCandidates(query) }, requestId);
+      sendAdminJson(res, 200, await listReviewCandidates(query), requestId);
     } else if (/^\/admin\/api\/v1\/memory\/review\/[^/]+$/.test(path) && req.method === "GET") {
       sendAdminJson(res, 200, await getReviewCandidate(decodeURIComponent(path.split("/").at(-1))), requestId);
     } else if (/^\/admin\/api\/v1\/memory\/review\/[^/]+\/approve$/.test(path) && req.method === "POST") {

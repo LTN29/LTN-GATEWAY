@@ -98,13 +98,17 @@ function candidateFromRecord(item, summaryOverride = "") {
   };
 }
 
-export async function listReviewCandidates({ scope = "", teamId = "", status = "pending" } = {}) {
-  return (await readJsonl(config.memoryReviewQueueFile)).filter((item) => {
+export async function listReviewCandidates({ scope = "", teamId = "", status = "pending", page = 1, pageSize = 20 } = {}) {
+  const items = (await readJsonl(config.memoryReviewQueueFile)).filter((item) => {
     if (scope && item.scope !== scope) return false;
     if (teamId && item.sourceTeamId !== teamId) return false;
     if (status && item.status !== status) return false;
     return true;
   });
+  const size = Math.min(100, Math.max(1, Number(pageSize) || 20));
+  const currentPage = Math.max(1, Number(page) || 1);
+  const offset = (currentPage - 1) * size;
+  return { items: items.slice(offset, offset + size), total: items.length, page: currentPage, pageSize: size };
 }
 
 export async function getReviewCandidate(id) {

@@ -236,8 +236,58 @@ function table(headers, rows, empty = "Không có dữ liệu.") {
   return `<div class="tableWrap"><table><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
 }
 
+function pagination({ page = 1, pageSize = 50, total = 0 }, path) {
+  const currentPage = Math.max(1, Number(page) || 1);
+  const size = Math.max(1, Number(pageSize) || 50);
+  const itemCount = Math.max(0, Number(total) || 0);
+  const totalPages = Math.max(1, Math.ceil(itemCount / size));
+  if (itemCount <= size) return "";
+
+  const pageHref = (targetPage) => {
+    const params = new URLSearchParams(location.search);
+    params.set("page", String(targetPage));
+    params.set("pageSize", String(size));
+    return `${path}?${params.toString()}`;
+  };
+  const firstItem = (currentPage - 1) * size + 1;
+  const lastItem = Math.min(currentPage * size, itemCount);
+  const pageNumbers = [];
+  const firstVisiblePage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+  const lastVisiblePage = Math.min(totalPages, firstVisiblePage + 4);
+  for (let pageNumber = firstVisiblePage; pageNumber <= lastVisiblePage; pageNumber += 1) {
+    pageNumbers.push(`<a class="paginationPage ${pageNumber === currentPage ? "active" : ""}" href="${pageHref(pageNumber)}" ${pageNumber === currentPage ? 'aria-current="page"' : ""}>${pageNumber}</a>`);
+  }
+
+  return `<nav class="pagination" aria-label="Phân trang">
+    <span class="paginationSummary">Hiển thị ${firstItem}–${lastItem} trong ${itemCount}</span>
+    <div class="paginationControls">
+      ${currentPage > 1 ? `<a class="paginationButton" href="${pageHref(currentPage - 1)}">Trước</a>` : '<span class="paginationButton disabled" aria-disabled="true">Trước</span>'}
+      ${pageNumbers.join("")}
+      ${currentPage < totalPages ? `<a class="paginationButton" href="${pageHref(currentPage + 1)}">Sau</a>` : '<span class="paginationButton disabled" aria-disabled="true">Sau</span>'}
+    </div>
+  </nav>`;
+}
+
 function button(label, action, danger = false) {
   return `<button class="${danger ? "danger" : ""}" data-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`;
+}
+
+function errorDetailsButton(userId, errorCount) {
+  const count = Math.max(0, Number(errorCount) || 0);
+  if (!count) return '<span class="mutedValue">—</span>';
+  return `<button class="errorDetailsButton" data-action="view-errors:${escapeHtml(userId)}" aria-label="Xem ${count} lỗi của ${escapeHtml(userId)}"><span class="errorDot" aria-hidden="true"></span>Xem lỗi (${escapeHtml(count)})</button>`;
+}
+
+function errorLogTable(errors) {
+  return table(
+    ["Thời gian", "HTTP", "Mã lỗi", "Thông báo", "Endpoint", "Model / tuyến", "Độ trễ", "Request ID"],
+    (errors.items || []).map((item) => `<tr><td class="nowrap">${escapeHtml(item.occurredAt || "")}</td><td><span class="httpStatus">${escapeHtml(item.status || "—")}</span></td><td><code>${escapeHtml(item.code || "UPSTREAM_ERROR")}</code></td><td class="errorMessage">${escapeHtml(item.message || "Không có nội dung lỗi.")}</td><td><code>${escapeHtml(item.endpoint || "—")}</code></td><td>${escapeHtml(item.selectedCombo || item.routeTier || "—")}</td><td class="nowrap">${escapeHtml(item.latencyMs || 0)} ms</td><td><code>${escapeHtml(item.requestId || "—")}</code></td></tr>`),
+    "Chưa có log chi tiết. Các lỗi phát sinh trước khi tính năng này được bật chỉ có số lượng tổng hợp."
+  );
+}
+
+function errorLogModalHtml(userId, errors) {
+  return `<div class="modalBackdrop" data-action="close-error-log"><div class="modal errorLogModal" role="dialog" aria-modal="true" aria-labelledby="error-log-title" data-modal-panel><div class="modalHeader"><div><span class="eyebrow">NHẬT KÝ LỖI</span><h2 id="error-log-title">${escapeHtml(userId)}</h2><p>${escapeHtml(errors.total || 0)} log gần nhất có nội dung chi tiết.</p></div><button class="iconButton" data-action="close-error-log" aria-label="Đóng">×</button></div><div class="errorLogContent">${errorLogTable(errors)}</div><p class="privacyNote">Log đã được lọc API key và không lưu prompt hoặc nội dung phản hồi thô.</p></div></div>`;
 }
 
 function oneTimeKeyModal() {
@@ -418,16 +468,18 @@ async function pageUsers() {
 }
 
 async function pageUserDetail(userId) {
-  const [user, usage, devices] = await Promise.all([
+  const [user, usage, devices, errors] = await Promise.all([
     api(`/users/${encodeURIComponent(userId)}`),
     api(`/users/${encodeURIComponent(userId)}/usage`),
-    api(`/users/${encodeURIComponent(userId)}/devices`)
+    api(`/users/${encodeURIComponent(userId)}/devices`),
+    api(`/users/${encodeURIComponent(userId)}/errors?page=1&pageSize=50`)
   ]);
   render(`
     <div class="twoCol">
       <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p></div>
       <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}${metric("Thiết bị", usage.devices)}</div>
     </div>
+    <div class="card errorLogCard"><div class="sectionHeading"><div><h2>Chi tiết lỗi</h2><p>Thông tin kỹ thuật để đối chiếu và tối ưu.</p></div><span class="errorTotal">${escapeHtml(usage.errors || 0)} lỗi</span></div>${errorLogTable(errors)}</div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
   `);
 }
@@ -492,7 +544,7 @@ async function pageUsage() {
     
     <div class="card" style="margin-bottom: 24px;">
       <h2>Top nhân viên</h2>
-      ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Test", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.test}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}
+      ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Test", "Lỗi", "Thiết bị", "Dùng lần cuối", "Chi tiết"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.test}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td><td>${errorDetailsButton(u.userId, u.errors)}</td></tr>`))}
     </div>
     
     <div class="card">
@@ -503,13 +555,17 @@ async function pageUsage() {
 }
 
 async function pageReview() {
-  const status = new URLSearchParams(location.search).get("status") || "pending";
-  const data = await api(`/memory/review${qs({ status })}`);
+  const params = new URLSearchParams(location.search);
+  const status = params.get("status") || "pending";
+  if (!params.has("page")) params.set("page", "1");
+  if (!params.has("pageSize")) params.set("pageSize", "20");
+  params.set("status", status);
+  const data = await api(`/memory/review?${params.toString()}`);
   state.pendingReviewItems = status === "pending" ? (data.items || []) : [];
   const bulkApprove = state.pendingReviewItems.length
-    ? button(`Duyệt hàng loạt (${state.pendingReviewItems.length})`, "approve-all-review")
+    ? button(`Duyệt trang này (${state.pendingReviewItems.length})`, "approve-all-review")
     : "";
-  render(`<div class="toolbar"><div class="toolbarGroup"><a class="pill" href="/admin/memory/review?status=pending">Chờ duyệt</a><a class="pill" href="/admin/memory/review?status=approved">Đã duyệt</a><a class="pill" href="/admin/memory/review?status=rejected">Bị từ chối</a></div><div class="toolbarGroup">${bulkApprove}</div></div>${table(["Phạm vi", "Bộ phận", "Khóa (Key)", "Tóm tắt", "Độ tin cậy", "Thao tác"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Duyệt", `approve:${c.id}`)} ${button("Từ chối", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có dữ liệu chờ duyệt.")}`);
+  render(`<div class="toolbar"><div class="toolbarGroup"><a class="pill" href="/admin/memory/review?status=pending">Chờ duyệt</a><a class="pill" href="/admin/memory/review?status=approved">Đã duyệt</a><a class="pill" href="/admin/memory/review?status=rejected">Bị từ chối</a></div><div class="toolbarGroup">${bulkApprove}</div></div>${table(["Phạm vi", "Bộ phận", "Khóa (Key)", "Tóm tắt", "Độ tin cậy", "Thao tác"], (data.items || []).map((c) => `<tr><td>${escapeHtml(c.scope)}</td><td>${escapeHtml(c.sourceTeamId || "")}</td><td>${escapeHtml(c.normalizedKey)}</td><td>${escapeHtml(c.summary)}</td><td>${escapeHtml(c.confidence)}</td><td class="actions">${status === "pending" ? `${button("Duyệt", `approve:${c.id}`)} ${button("Từ chối", `reject:${c.id}`, true)}` : ""}</td></tr>`), "Không có dữ liệu chờ duyệt.")}${pagination(data, "/admin/memory/review")}`);
 }
 
 async function pageMemoryFiles() {
@@ -534,8 +590,12 @@ async function pageSystem() {
 }
 
 async function pageAudit() {
-  const data = await api(`/audit${location.search}`);
+  const params = new URLSearchParams(location.search);
+  if (!params.has("page")) params.set("page", "1");
+  if (!params.has("pageSize")) params.set("pageSize", "20");
+  const data = await api(`/audit?${params.toString()}`);
   render(table(["Thời gian", "Quản trị viên", "Thao tác", "Mục tiêu", "Bộ phận", "Kết quả", "Yêu cầu"], (data.items || []).map((a) => `<tr><td>${escapeHtml(a.timestamp)}</td><td>${escapeHtml(a.adminEmail)}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.targetType)}:${escapeHtml(a.targetId)}</td><td>${escapeHtml(a.teamId || "")}</td><td>${escapeHtml(a.result)}</td><td>${escapeHtml(a.requestId)}</td></tr>`), "Chưa có nhật ký hoạt động."));
+  document.querySelector(".content").insertAdjacentHTML("beforeend", pagination(data, "/admin/audit"));
 }
 
 async function route() {
@@ -608,7 +668,26 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   const action = target.dataset.action;
   try {
-    if (action === "copy-key" && state.oneTimeKey) await navigator.clipboard.writeText(state.oneTimeKey);
+    if (action === "close-error-log") {
+      if (event.target.closest("[data-modal-panel]") && !event.target.closest(".iconButton")) return;
+      document.getElementById("error-log-modal-container")?.remove();
+      return;
+    } else if (action.startsWith("view-errors:")) {
+      const userId = action.slice("view-errors:".length);
+      target.disabled = true;
+      const errorParams = new URLSearchParams(location.search);
+      errorParams.set("page", "1");
+      errorParams.set("pageSize", "50");
+      const errors = await api(`/users/${encodeURIComponent(userId)}/errors?${errorParams.toString()}`);
+      document.getElementById("error-log-modal-container")?.remove();
+      const div = document.createElement("div");
+      div.id = "error-log-modal-container";
+      div.innerHTML = errorLogModalHtml(userId, errors);
+      document.body.appendChild(div);
+      document.querySelector("#error-log-modal-container .iconButton")?.focus();
+      target.disabled = false;
+      return;
+    } else if (action === "copy-key" && state.oneTimeKey) await navigator.clipboard.writeText(state.oneTimeKey);
     else if (action === "close-key") state.oneTimeKey = null;
     else if (action === "open-create-user") {
       const existing = document.getElementById("dynamic-modal-container");
@@ -804,6 +883,7 @@ document.addEventListener("click", async (event) => {
     showToast("Thao tác thành công.");
     await route();
   } catch (error) {
+    if (target instanceof HTMLButtonElement) target.disabled = false;
     showToast(error.message, true);
     finishProgress();
   }

@@ -55,6 +55,30 @@ const codexUnixBootstrapPath = fileURLToPath(
 const codexUnixFullInstallerPath = fileURLToPath(
   new URL("../scripts/install-codex-unix.sh", import.meta.url)
 );
+
+function upstreamErrorDetail(captured, requestId, endpoint, status) {
+  let code = "UPSTREAM_ERROR";
+  let message = `Yêu cầu thất bại với HTTP ${status}.`;
+  try {
+    const payload = JSON.parse(captured.toString("utf8"));
+    const error = payload?.error;
+    if (typeof error === "string") message = error;
+    else if (error && typeof error === "object") {
+      code = error.code || error.type || code;
+      message = error.message || message;
+    } else if (payload?.message) {
+      message = payload.message;
+    }
+  } catch {
+    // Do not persist raw non-JSON upstream bodies because they may contain user data.
+  }
+  return {
+    code: redactSecrets(String(code)),
+    message: redactSecrets(String(message)),
+    requestId,
+    endpoint
+  };
+}
 const managedSkillNames = [
   "9router",
   "9router-chat",
@@ -223,15 +247,17 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
   }
 
   if (!isOutsideControlPrincipal(principal)) {
+    const latencyMs = Date.now() - startedAt;
     await recordUserAnalytics({
       date: localDate(),
       principal,
       routeTier: "capability",
       selectedCombo: "",
       status: upstream.status,
-      latencyMs: Date.now() - startedAt,
+      latencyMs,
       usage: responseUsage,
-      clientIdHashPrefix: ""
+      clientIdHashPrefix: "",
+      errorDetail: upstream.ok ? null : upstreamErrorDetail(captured, id, upstreamPath.split("?")[0], upstream.status)
     });
   }
 
@@ -424,15 +450,17 @@ async function proxyResponses(req, res, rawKey, principal, id) {
     }
 
     if (!outsideControl) {
+      const latencyMs = Date.now() - startedAt;
       await recordUserAnalytics({
         date: localDate(),
         principal,
         routeTier: route.routeTier,
         selectedCombo: route.selectedCombo,
         status: upstream.status,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
         usage: responseUsage,
-        clientIdHashPrefix: route.clientIdHashPrefix
+        clientIdHashPrefix: route.clientIdHashPrefix,
+        errorDetail: upstream.ok ? null : upstreamErrorDetail(captured, id, "/v1/responses", upstream.status)
       });
     }
 

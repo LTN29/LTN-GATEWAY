@@ -29,11 +29,20 @@ if (!command || command === "--help") {
 }
 
 if (command === "list") {
-  const items = await listReviewCandidates({
+  const filters = {
     scope: argValue("scope").toUpperCase(),
     teamId: argValue("team").toUpperCase(),
-    status: argValue("status") || "pending"
-  });
+    status: argValue("status") || "pending",
+    pageSize: 100
+  };
+  const items = [];
+  let page = 1;
+  let result;
+  do {
+    result = await listReviewCandidates({ ...filters, page });
+    items.push(...result.items);
+    page += 1;
+  } while (items.length < result.total);
   for (const candidate of items) {
     console.log([
       candidate.id,
