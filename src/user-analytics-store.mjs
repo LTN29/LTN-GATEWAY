@@ -120,6 +120,7 @@ async function recordUserAnalyticsTransaction({
       errors: 0,
       premium: 0,
       free: 0,
+      test: 0,
       averageLatencyMs: 0,
       inputTokens: 0,
       outputTokens: 0,
@@ -137,6 +138,7 @@ async function recordUserAnalyticsTransaction({
     else record.errors += 1;
     if (routeTier === "premium") record.premium += 1;
     if (routeTier === "free") record.free += 1;
+    if (routeTier === "test") record.test = Number(record.test || 0) + 1;
     record.averageLatencyMs = average(record.averageLatencyMs, previousCount, latencyMs);
     if (usage) {
       record.inputTokens += Number(usage.input_tokens || usage.prompt_tokens || 0);

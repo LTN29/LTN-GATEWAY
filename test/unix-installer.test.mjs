@@ -77,7 +77,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /if curl --config "\$\{curl_config\}" --output "\$\{output\}" "\$\{url\}"; then/);
   assert.match(script, /status=\$\?/);
   assert.match(script, /\/codex\/installer-config/);
-  assert.match(script, /LTN_CODEX_INSTALLER_V1/);
+  assert.match(script, /LTN_CODEX_INSTALLER_V2/);
+  assert.match(script, /test_only/);
   assert.match(script, /Đang xác minh Combo SIMI AI qua Gateway/);
   assert.doesNotMatch(script, /command -v python3/);
   assert.doesNotMatch(script, /Cần python3 hoặc node/);

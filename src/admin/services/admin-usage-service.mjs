@@ -41,6 +41,7 @@ function mergeMetric(target, record) {
   target.errors += Number(record.errors || 0);
   target.premium += Number(record.premium || 0);
   target.free += Number(record.free || 0);
+  target.test += Number(record.test || 0);
   target.inputTokens += Number(record.inputTokens || 0);
   target.outputTokens += Number(record.outputTokens || 0);
   target.totalTokens += Number(record.totalTokens || 0);
@@ -58,6 +59,7 @@ function emptyMetric(extra = {}) {
     errors: 0,
     premium: 0,
     free: 0,
+    test: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -89,6 +91,7 @@ export async function usageSummary({ from = "", to = "", teamId = "", userId = "
     errors: 0,
     premium: 0,
     free: 0,
+    test: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -106,6 +109,7 @@ export async function usageSummary({ from = "", to = "", teamId = "", userId = "
     summary.errors += Number(record.errors || 0);
     summary.premium += Number(record.premium || 0);
     summary.free += Number(record.free || 0);
+    summary.test += Number(record.test || 0);
     summary.inputTokens += Number(record.inputTokens || 0);
     summary.outputTokens += Number(record.outputTokens || 0);
     summary.totalTokens += Number(record.totalTokens || 0);
@@ -128,10 +132,11 @@ export async function usageTimeseries({ from = "", to = "", teamId = "", teamIds
   for (const record of Object.values(analytics.dailyUsers || {})) {
     if (!inRange(record.date, from, to) || (teamId && record.teamId !== teamId)) continue;
     if (scopedTeamIds && !scopedTeamIds.has(record.teamId)) continue;
-    const item = byDate.get(record.date) || { date: record.date, requests: 0, premium: 0, free: 0, errors: 0 };
+    const item = byDate.get(record.date) || { date: record.date, requests: 0, premium: 0, free: 0, test: 0, errors: 0 };
     item.requests += Number(record.requests || 0);
     item.premium += Number(record.premium || 0);
     item.free += Number(record.free || 0);
+    item.test += Number(record.test || 0);
     item.errors += Number(record.errors || 0);
     byDate.set(record.date, item);
   }
@@ -178,7 +183,7 @@ export async function usageTeams(query = {}) {
 export async function usageTeam(teamId, query = {}) {
   const result = await usageTeams({ ...query, teamId });
   const id = safeTeamId(teamId);
-  return result.items.find((entry) => entry.teamId === id) || { teamId: id, requests: 0, success: 0, errors: 0, premium: 0, free: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, averageLatencyMs: 0, successRate: 0, devices: 0, users: 0, lastUsedAt: null };
+  return result.items.find((entry) => entry.teamId === id) || { teamId: id, requests: 0, success: 0, errors: 0, premium: 0, free: 0, test: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, averageLatencyMs: 0, successRate: 0, devices: 0, users: 0, lastUsedAt: null };
 }
 
 export async function usageDevices(query = {}) {
@@ -216,9 +221,9 @@ export async function usageDevices(query = {}) {
 
 export async function usageExport(query = {}) {
   const users = await usageUsers({ ...query, page: 1, pageSize: 100 });
-  const rows = [["userId", "teamId", "requests", "premium", "free", "success", "errors", "totalTokens", "averageLatencyMs", "devices", "lastUsedAt"]];
+  const rows = [["userId", "teamId", "requests", "premium", "free", "test", "success", "errors", "totalTokens", "averageLatencyMs", "devices", "lastUsedAt"]];
   for (const item of users.items) {
-    rows.push([item.userId, item.teamId, item.requests, item.premium, item.free, item.success, item.errors, item.totalTokens, item.averageLatencyMs, item.devices, item.lastUsedAt || ""]);
+    rows.push([item.userId, item.teamId, item.requests, item.premium, item.free, item.test, item.success, item.errors, item.totalTokens, item.averageLatencyMs, item.devices, item.lastUsedAt || ""]);
   }
   return "\uFEFF" + rows.map((row) => row.map(csvEscape).join(",")).join("\n") + "\n";
 }

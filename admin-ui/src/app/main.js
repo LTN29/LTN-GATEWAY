@@ -5,6 +5,7 @@ const state = {
   admin: null,
   oneTimeKey: null,
   cachedTeams: null,
+  codexCombos: [],
   editingUser: null,
   editingTeam: null,
   pendingReviewItems: []
@@ -90,6 +91,7 @@ function formatPolicy(mode) {
     case "limited_daily": return "Giới hạn (ngày)";
     case "premium_always": return "Luôn Premium";
     case "free_only": return "Chỉ Free";
+    case "test_only": return "Test";
     default: return mode || "Kế thừa";
   }
 }
@@ -265,7 +267,7 @@ function createUserModalHtml(teams) {
           <label>Tên hiển thị<input id="newDisplayName" placeholder="vd: Nguyễn Văn A" /></label>
           <label>Phòng ban (Team)<select id="newTeamId">${teamOptions(teams)}</select></label>
           <label>API Key (9Router)<input id="newApiKey" type="password" autocomplete="off" placeholder="Nhập API key từ hệ thống 9Router" /></label>
-          <label>Chính sách (Policy)<select id="newPolicyMode"><option value="inherit">Kế thừa phòng ban</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option></select></label>
+          <label>Chính sách (Policy)<select id="newPolicyMode"><option value="inherit">Kế thừa phòng ban</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option><option value="test_only">Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="Để trống = Mặc định theo team" /></label>
         </div>
         <div class="actions" style="margin-top: 24px; justify-content: flex-end; gap: 12px;">
@@ -293,7 +295,7 @@ function editUserModalHtml(user, teams) {
           <label>Vai trò<input id="editRole" value="${escapeHtml(user.role || "")}" placeholder="Ví dụ: Nhân viên kinh doanh" /></label>
           <label>Trạng thái<select id="editEnabled"><option value="true" ${user.enabled ? "selected" : ""}>Hoạt động</option><option value="false" ${!user.enabled ? "selected" : ""}>Đã khóa</option></select></label>
           <label>Chế độ bộ nhớ<select id="editMemoryMode"><option value="full" ${user.memoryMode === "full" ? "selected" : ""}>Đầy đủ</option><option value="read_only" ${user.memoryMode === "read_only" ? "selected" : ""}>Chỉ đọc</option><option value="none" ${user.memoryMode === "none" ? "selected" : ""}>Tắt</option></select></label>
-          <label>Chính sách AI<select id="editPolicyMode"><option value="inherit" ${policyMode === "inherit" ? "selected" : ""}>Kế thừa bộ phận</option><option value="limited_daily" ${policyMode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${policyMode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${policyMode === "free_only" ? "selected" : ""}>Chỉ Free</option></select></label>
+          <label>Chính sách AI<select id="editPolicyMode"><option value="inherit" ${policyMode === "inherit" ? "selected" : ""}>Kế thừa bộ phận</option><option value="limited_daily" ${policyMode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${policyMode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${policyMode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${policyMode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="editPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
           <label style="grid-column: 1 / -1;">API key 9Router mới<input id="editApiKey" type="password" autocomplete="new-password" placeholder="Để trống để giữ nguyên key hiện tại" /></label>
         </div>
@@ -306,11 +308,24 @@ function editUserModalHtml(user, teams) {
   `;
 }
 
-function teamModalHtml(team = null) {
+function comboOptions(items, selected) {
+  const values = [...new Set([
+    ...(items || []).map((item) => item.id).filter(Boolean),
+    selected
+  ].filter(Boolean))];
+  return `<option value="">Kế thừa Combo mặc định</option>${values.map((id) =>
+    `<option value="${escapeHtml(id)}" ${id === selected ? "selected" : ""}>${escapeHtml(id)}</option>`
+  ).join("")}`;
+}
+
+function teamModalHtml(team = null, combos = []) {
   if (!can("teamsWrite")) return "";
   const editing = Boolean(team);
   const mode = team?.aiPolicy?.mode || "inherit";
   const premiumLimit = team?.aiPolicy?.premiumLimit ?? "";
+  const premiumCombo = team?.aiPolicy?.premiumCombo || "";
+  const freeCombo = team?.aiPolicy?.freeCombo || "";
+  const testCombo = team?.aiPolicy?.testCombo || "";
   return `
     <div class="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" style="max-width: 720px; width: 92vw;">
@@ -320,8 +335,11 @@ function teamModalHtml(team = null) {
           <label>Mã bộ phận<input id="teamCode" value="${escapeHtml(team?.teamId || "")}" ${editing ? "disabled" : ""} placeholder="Ví dụ: SALES" /></label>
           <label>Tên bộ phận<input id="teamDisplayName" value="${escapeHtml(team?.displayName || "")}" placeholder="Ví dụ: Kinh doanh" /></label>
           <label>Trạng thái<select id="teamEnabled"><option value="true" ${team?.enabled !== false ? "selected" : ""}>Hoạt động</option><option value="false" ${team?.enabled === false ? "selected" : ""}>Đã khóa</option></select></label>
-          <label>Chính sách AI<select id="teamPolicyMode"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Kế thừa mặc định</option><option value="limited_daily" ${mode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${mode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${mode === "free_only" ? "selected" : ""}>Chỉ Free</option></select></label>
+          <label>Chính sách AI<select id="teamPolicyMode"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Kế thừa mặc định</option><option value="limited_daily" ${mode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${mode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${mode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${mode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="teamPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
+          <label>Combo Premium<select id="teamPremiumCombo">${comboOptions(combos, premiumCombo)}</select></label>
+          <label>Combo Free<select id="teamFreeCombo">${comboOptions(combos, freeCombo)}</select></label>
+          <label>Combo Test<select id="teamTestCombo">${comboOptions(combos, testCombo)}</select></label>
           ${editing ? "" : `<label style="grid-column: 1 / -1;">API key bộ phận (nếu đang dùng legacy key)<input id="teamApiKey" type="password" autocomplete="new-password" placeholder="Bắt buộc khi LTN_LEGACY_TEAM_KEYS_ENABLED=true" /></label>`}
         </div>
         <div class="actions" style="margin-top: 24px; justify-content: flex-end;">
@@ -346,6 +364,7 @@ async function pageDashboard() {
       ${metric("Lượt dùng", dashboard.usage.requests)}
       ${metric("Premium", dashboard.usage.premium)}
       ${metric("Free", dashboard.usage.free)}
+      ${metric("Test", dashboard.usage.test)}
       ${metric("Tỉ lệ thành công", `${dashboard.usage.successRate || 0}%`)}
       ${metric("Độ trễ trung bình", `${dashboard.usage.averageLatencyMs || 0}ms`)}
       ${metric("Chờ xử lý (Bộ phận)", dashboard.health.memoryPendingTeam)}
@@ -403,7 +422,7 @@ async function pageUserDetail(userId) {
   render(`
     <div class="twoCol">
       <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p></div>
-      <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Thiết bị", usage.devices)}</div>
+      <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}${metric("Thiết bị", usage.devices)}</div>
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
   `);
@@ -431,7 +450,7 @@ async function pageTeams() {
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
 }
 
 async function pageUsage() {
@@ -448,6 +467,7 @@ async function pageUsage() {
       ${metric("Lượt dùng", summary.requests)}
       ${metric("Premium", summary.premium)}
       ${metric("Free", summary.free)}
+      ${metric("Test", summary.test)}
       ${metric("Token", summary.totalTokens)}
       ${metric("Thành công", `${summary.successRate || 0}%`)}
       ${metric("Độ trễ TB", `${summary.averageLatencyMs || 0}ms`)}
@@ -468,7 +488,7 @@ async function pageUsage() {
     
     <div class="card" style="margin-bottom: 24px;">
       <h2>Top nhân viên</h2>
-      ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}
+      ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Test", "Lỗi", "Thiết bị", "Dùng lần cuối"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.test}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td></tr>`))}
     </div>
     
     <div class="card">
@@ -675,20 +695,27 @@ document.addEventListener("click", async (event) => {
         await route();
       }
     } else if (action === "open-create-team") {
+      const comboResult = await api("/codex/combos");
+      state.codexCombos = comboResult.items || [];
       document.getElementById("dynamic-modal-container")?.remove();
       const div = document.createElement("div");
       div.id = "dynamic-modal-container";
-      div.innerHTML = teamModalHtml();
+      div.innerHTML = teamModalHtml(null, state.codexCombos);
       document.body.appendChild(div);
       document.querySelector("#teamCode")?.focus();
       return;
     } else if (action.startsWith("edit-team:")) {
       const teamId = action.slice("edit-team:".length);
-      state.editingTeam = await api(`/teams/${encodeURIComponent(teamId)}`);
+      const [editingTeam, comboResult] = await Promise.all([
+        api(`/teams/${encodeURIComponent(teamId)}`),
+        api("/codex/combos")
+      ]);
+      state.editingTeam = editingTeam;
+      state.codexCombos = comboResult.items || [];
       document.getElementById("dynamic-modal-container")?.remove();
       const div = document.createElement("div");
       div.id = "dynamic-modal-container";
-      div.innerHTML = teamModalHtml(state.editingTeam);
+      div.innerHTML = teamModalHtml(state.editingTeam, state.codexCombos);
       document.body.appendChild(div);
       document.querySelector("#teamDisplayName")?.focus();
       return;
@@ -703,10 +730,16 @@ document.addEventListener("click", async (event) => {
       const enabled = document.querySelector("#teamEnabled")?.value === "true";
       const mode = document.querySelector("#teamPolicyMode")?.value || "inherit";
       const premiumLimit = document.querySelector("#teamPremiumLimit")?.value.trim();
+      const premiumCombo = document.querySelector("#teamPremiumCombo")?.value.trim();
+      const freeCombo = document.querySelector("#teamFreeCombo")?.value.trim();
+      const testCombo = document.querySelector("#teamTestCombo")?.value.trim();
       const apiKey = document.querySelector("#teamApiKey")?.value.trim() || "";
       if (!teamId || !displayName) throw new Error("Mã bộ phận và Tên bộ phận không được để trống.");
       const aiPolicy = { mode };
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
+      if (premiumCombo) aiPolicy.premiumCombo = premiumCombo;
+      if (freeCombo) aiPolicy.freeCombo = freeCombo;
+      if (testCombo) aiPolicy.testCombo = testCombo;
       await api(editing ? `/teams/${encodeURIComponent(teamId)}` : "/teams", {
         method: editing ? "PATCH" : "POST",
         body: JSON.stringify({ teamId, displayName, enabled, aiPolicy, ...(apiKey ? { apiKey } : {}) })

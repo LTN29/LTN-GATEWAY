@@ -130,6 +130,9 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
   process.env.MEMORY_BACKUP_DIR = join(root, "memory-backups");
   process.env.UPSTREAM_BASE_URL = "http://127.0.0.1:1";
   process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
+  process.env.CODEX_COMBO_PREMIUM = "SIMI-GPT";
+  process.env.CODEX_COMBO_FREE = "SIMI-FREE";
+  process.env.CODEX_COMBO_TEST = "SIMI-GEMINI";
 
   const { createGatewayServer } = await import(`../src/server.mjs?admin=${Date.now()}`);
   const server = createGatewayServer();
@@ -161,6 +164,13 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
     assert.match(adminUi.text, /admin-ui-ok/);
 
     const csrf = (await request(port, "/admin/api/v1/csrf", { token: adminToken })).json.data.token;
+    const comboList = await request(port, "/admin/api/v1/codex/combos", { token: adminToken });
+    assert.equal(comboList.status, 200);
+    assert.deepEqual(comboList.json.data.items, [
+      { key: "premium", id: "SIMI-GPT" },
+      { key: "free", id: "SIMI-FREE" },
+      { key: "test", id: "SIMI-GEMINI" }
+    ]);
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
     assert.equal((await request(port, "/admin/api/v1/users", { method: "POST", token: adminToken, csrf, origin: "https://evil.example", body: { userId: "sales-ngoc", teamId: "SALES" } })).status, 403);
 
@@ -168,10 +178,12 @@ test("Admin API validates Cloudflare JWT, CSRF, RBAC and pasted 9Router user key
       method: "POST",
       token: adminToken,
       csrf,
-      body: { teamId: "CSKH", displayName: "Chăm sóc khách hàng", apiKey: "legacy-cskh-test-key", aiPolicy: { mode: "limited_daily", premiumLimit: 5 } }
+      body: { teamId: "CSKH", displayName: "Chăm sóc khách hàng", apiKey: "legacy-cskh-test-key", aiPolicy: { mode: "test_only", premiumLimit: 5, testCombo: "SIMI-GEMINI" } }
     });
     assert.equal(createdTeam.status, 201);
     assert.equal(createdTeam.json.data.teamId, "CSKH");
+    assert.equal(createdTeam.json.data.aiPolicy.mode, "test_only");
+    assert.equal(createdTeam.json.data.aiPolicy.testCombo, "SIMI-GEMINI");
     const patchedTeam = await request(port, "/admin/api/v1/teams/CSKH", {
       method: "PATCH",
       token: adminToken,

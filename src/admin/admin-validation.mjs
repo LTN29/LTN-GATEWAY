@@ -33,7 +33,7 @@ export function safePolicy(value = {}) {
     throw Object.assign(new Error("aiPolicy phải là object."), { statusCode: 400, code: "INVALID_POLICY" });
   }
   const mode = String(value.mode || "inherit").trim();
-  if (!["premium_always", "limited_daily", "free_only", "inherit"].includes(mode)) {
+  if (!["premium_always", "limited_daily", "free_only", "test_only", "inherit"].includes(mode)) {
     throw Object.assign(new Error("policy mode không hợp lệ."), { statusCode: 400, code: "INVALID_POLICY" });
   }
   const policy = { mode };
@@ -43,6 +43,15 @@ export function safePolicy(value = {}) {
       throw Object.assign(new Error("premiumLimit không hợp lệ."), { statusCode: 400, code: "INVALID_POLICY" });
     }
     policy.premiumLimit = limit;
+  }
+  for (const field of ["premiumCombo", "freeCombo", "testCombo"]) {
+    if (value[field] !== undefined && value[field] !== null && value[field] !== "") {
+      const comboId = safeText(value[field], 200);
+      if (!comboId) {
+        throw Object.assign(new Error(`${field} không hợp lệ.`), { statusCode: 400, code: "INVALID_POLICY" });
+      }
+      policy[field] = comboId;
+    }
   }
   return policy;
 }

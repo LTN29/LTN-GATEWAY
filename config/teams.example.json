@@ -74,8 +74,7 @@
       "aiPolicy": {
         "mode": "premium_always",
         "premiumLimit": 0,
-        "usageScope": "user",
-        "premiumCombo": "SIMI-GEMINI"
+        "usageScope": "user"
       }
     }
   ]

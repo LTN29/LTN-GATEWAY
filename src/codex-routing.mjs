@@ -6,7 +6,7 @@ import {
   releaseDailyUsageSlot
 } from "./codex-usage-store.mjs";
 
-const VALID_MODES = new Set(["premium_always", "limited_daily", "free_only"]);
+const VALID_MODES = new Set(["premium_always", "limited_daily", "free_only", "test_only"]);
 const VALID_SCOPES = new Set(["client", "team", "user"]);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -79,7 +79,8 @@ export function resolveTeamCodexPolicy(team) {
     resetTimezone: config.codexUsageTimezone,
     combos: {
       premium: raw.premiumCombo || config.codexCombos.premium,
-      free: raw.freeCombo || config.codexCombos.free
+      free: raw.freeCombo || config.codexCombos.free,
+      test: raw.testCombo || config.codexCombos.test
     }
   };
 
@@ -87,6 +88,8 @@ export function resolveTeamCodexPolicy(team) {
     policy.combos.premium = validateComboId(policy.combos.premium, "premium");
   } else if (mode === "free_only") {
     policy.combos.free = validateComboId(policy.combos.free, "free");
+  } else if (mode === "test_only") {
+    policy.combos.test = validateComboId(policy.combos.test, "test");
   } else {
     policy.combos.premium = validateComboId(policy.combos.premium, "premium");
     policy.combos.free = validateComboId(policy.combos.free, "free");
@@ -105,6 +108,7 @@ export function resolvePrincipalCodexPolicy(principal) {
     const syntheticTeam = {
       ...principal.team,
       aiPolicy: {
+        ...(principal.team.aiPolicy || {}),
         ...userPolicy,
         usageScope: userPolicy.usageScope || "user"
       }
@@ -137,6 +141,7 @@ export function codexConfigForTeam(team) {
   const combos = {};
   if (policy.combos.premium) combos.premium = policy.combos.premium;
   if (policy.combos.free) combos.free = policy.combos.free;
+  if (policy.combos.test) combos.test = policy.combos.test;
 
   return {
     team: team.code,
@@ -149,6 +154,10 @@ export function codexConfigForPrincipal(principal) {
   const teamConfig = codexConfigForTeam(principal.team || principal);
   if (!principal || principal.principalType === "team") return teamConfig;
   const policy = resolvePrincipalCodexPolicy(principal);
+  const combos = {};
+  if (policy.combos.premium) combos.premium = policy.combos.premium;
+  if (policy.combos.free) combos.free = policy.combos.free;
+  if (policy.combos.test) combos.test = policy.combos.test;
   return {
     ...teamConfig,
     principalType: "user",
@@ -157,6 +166,7 @@ export function codexConfigForPrincipal(principal) {
     teamId: principal.teamId,
     teamDisplayName: principal.team.displayName,
     role: principal.role,
+    combos,
     routing: {
       ...teamConfig.routing,
       mode: policy.mode,
@@ -193,6 +203,19 @@ export async function selectCodexRoute({ team, principal, headers }) {
       limit: null,
       selectedCombo: policy.combos.free,
       premiumRemaining: 0,
+      clientIdHashPrefix: null,
+      confirm: async () => {},
+      release: async () => {}
+    };
+  }
+
+  if (policy.mode === "test_only") {
+    return {
+      routeTier: "test",
+      requestNumber: null,
+      limit: null,
+      selectedCombo: policy.combos.test,
+      premiumRemaining: null,
       clientIdHashPrefix: null,
       confirm: async () => {},
       release: async () => {}

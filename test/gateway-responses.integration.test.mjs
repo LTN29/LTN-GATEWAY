@@ -100,7 +100,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
         data: [
           { id: "regular-model", owned_by: "provider" },
           { id: "SIMI-GPT", owned_by: "combo" },
-          { id: "SIMI-FREE", owned_by: "combo" }
+          { id: "SIMI-FREE", owned_by: "combo" },
+          { id: "SIMI-GEMINI", owned_by: "combo" }
         ]
       }));
       return;
@@ -186,6 +187,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
   process.env.MAX_CONTEXT_CHARS = "200";
   process.env.CODEX_COMBO_PREMIUM = "SIMI-GPT";
   process.env.CODEX_COMBO_FREE = "SIMI-FREE";
+  process.env.CODEX_COMBO_TEST = "SIMI-GEMINI";
   process.env.CODEX_DEFAULT_POLICY = "limited_daily";
   process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "3";
   process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
@@ -406,7 +408,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       },
       combos: {
         premium: "SIMI-GPT",
-        free: "SIMI-FREE"
+        free: "SIMI-FREE",
+        test: "SIMI-GEMINI"
       }
     });
 
@@ -417,7 +420,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(installerConfig.headers.get("content-type"), /^text\/plain/);
     assert.equal(
       await installerConfig.text(),
-      "LTN_CODEX_INSTALLER_V1\nlimited_daily\nSIMI-GPT\nSIMI-FREE\n"
+      "LTN_CODEX_INSTALLER_V2\nlimited_daily\nSIMI-GPT\nSIMI-FREE\nSIMI-GEMINI\n"
     );
 
     const response = await fetch(`${baseUrl}/v1/responses`, {

@@ -359,7 +359,7 @@ ensure_codex_cli_healthy() {
 }
 
 fetch_and_validate_gateway() {
-  local config_file protocol_version routing_mode premium_combo free_combo
+  local config_file protocol_version routing_mode premium_combo free_combo test_combo
   config_file="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-config.XXXXXX")"
   REMOTE_CONFIG_FILE="${config_file}"
   echo "Đang xác minh Combo SIMI AI qua Gateway..."
@@ -370,7 +370,8 @@ fetch_and_validate_gateway() {
   routing_mode="$(sed -n '2p' "${config_file}" | tr -d '\r')"
   premium_combo="$(sed -n '3p' "${config_file}" | tr -d '\r')"
   free_combo="$(sed -n '4p' "${config_file}" | tr -d '\r')"
-  [ "${protocol_version}" = "LTN_CODEX_INSTALLER_V1" ] ||
+  test_combo="$(sed -n '5p' "${config_file}" | tr -d '\r')"
+  [ "${protocol_version}" = "LTN_CODEX_INSTALLER_V2" ] ||
     die_code 30 "Phản hồi cấu hình installer từ Gateway không hợp lệ."
 
   case "${routing_mode}" in
@@ -383,6 +384,11 @@ fetch_and_validate_gateway() {
       validate_combo_syntax "${free_combo}" "combos.free"
       DEFAULT_MODEL="${free_combo}"
       REQUIRED_COMBOS="${free_combo}"
+      ;;
+    test_only)
+      validate_combo_syntax "${test_combo}" "combos.test"
+      DEFAULT_MODEL="${test_combo}"
+      REQUIRED_COMBOS="${test_combo}"
       ;;
     *)
       validate_combo_syntax "${premium_combo}" "combos.premium"

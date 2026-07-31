@@ -164,11 +164,14 @@ async function installerConfigForPrincipal(rawKey, principal, id) {
   const mode = codexConfig.routing?.mode || "";
   const premium = codexConfig.combos?.premium || "";
   const free = codexConfig.combos?.free || "";
+  const test = codexConfig.combos?.test || "";
   const required = mode === "premium_always"
     ? [["combos.premium", premium]]
     : mode === "free_only"
       ? [["combos.free", free]]
-      : [["combos.premium", premium], ["combos.free", free]];
+      : mode === "test_only"
+        ? [["combos.test", test]]
+        : [["combos.premium", premium], ["combos.free", free]];
 
   for (const [name, comboId] of required) {
     assertInstallerComboId(comboId, name);
@@ -200,7 +203,7 @@ async function installerConfigForPrincipal(rawKey, principal, id) {
     }
   }
 
-  return ["LTN_CODEX_INSTALLER_V1", mode, premium, free, ""].join("\n");
+  return ["LTN_CODEX_INSTALLER_V2", mode, premium, free, test, ""].join("\n");
 }
 
 async function serveInstallerFile(res, path, contentType = "text/plain; charset=utf-8") {

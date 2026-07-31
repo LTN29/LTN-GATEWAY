@@ -145,6 +145,7 @@ Policy mặc định toàn hệ thống được cấu hình bằng biến môi 
 ```env
 CODEX_COMBO_PREMIUM=
 CODEX_COMBO_FREE=
+CODEX_COMBO_TEST=SIMI-GEMINI
 CODEX_DEFAULT_POLICY=limited_daily
 CODEX_DEFAULT_PREMIUM_LIMIT=3
 CODEX_USAGE_TIMEZONE=Asia/Ho_Chi_Minh
@@ -155,11 +156,12 @@ Mỗi team có thể override trong `config/teams.json` bằng `aiPolicy`:
 ```json
 {
   "aiPolicy": {
-    "mode": "premium_always|limited_daily|free_only|inherit",
+    "mode": "premium_always|limited_daily|free_only|test_only|inherit",
     "premiumLimit": 3,
     "usageScope": "client|team",
     "premiumCombo": "SIMI-GPT",
-    "freeCombo": "SIMI-FREE"
+    "freeCombo": "SIMI-FREE",
+    "testCombo": "SIMI-GEMINI"
   }
 }
 ```
@@ -244,6 +246,10 @@ Chọn chế độ:
   4. Uninstall
 Nhập 1-4:
 ```
+
+`CODEX_COMBO_TEST` đăng ký tier Test độc lập trong Admin Console. Team chỉ chuyển
+sang Combo này sau khi admin chọn policy `Test`; biến này không thay đổi hai tier
+Premium/Free hoặc policy mặc định.
 
 Chỉ `Install/Update` và `Repair` mới hỏi API key team. `Status` chỉ kiểm tra trạng thái.
 `Uninstall` xóa block LTN trong `~/.codex/config.toml`, helper token và client ID; không gỡ Codex CLI.

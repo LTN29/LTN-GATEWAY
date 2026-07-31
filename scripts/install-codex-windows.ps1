@@ -427,9 +427,10 @@ try {
   $remoteConfig = Invoke-RestMethod -Method Get -Uri "$GatewayBaseUrl/codex/config" -Headers $headers
   $comboPremium = [string](Get-ObjectPropertyValue -Object $remoteConfig.combos -Name "premium")
   $comboFree = [string](Get-ObjectPropertyValue -Object $remoteConfig.combos -Name "free")
+  $comboTest = [string](Get-ObjectPropertyValue -Object $remoteConfig.combos -Name "test")
   $routingMode = [string](Get-ObjectPropertyValue -Object $remoteConfig.routing -Name "mode")
 } catch {
-  throw "Gateway chưa cung cấp đủ cấu hình Codex Premium/Free. Admin cần cấu hình CODEX_COMBO_PREMIUM/CODEX_COMBO_FREE hoặc aiPolicy của team. Chi tiết: $($_.Exception.Message)"
+  throw "Gateway chưa cung cấp cấu hình Codex hợp lệ. Admin cần kiểm tra CODEX_COMBO_PREMIUM/CODEX_COMBO_FREE/CODEX_COMBO_TEST hoặc aiPolicy của team. Chi tiết: $($_.Exception.Message)"
 }
 
 $requiredCombos = if ($routingMode -eq "free_only") {
@@ -440,6 +441,10 @@ $requiredCombos = if ($routingMode -eq "free_only") {
   $comboPremium = Confirm-ComboIdSyntax -ComboId $comboPremium -Name "combos.premium"
   $defaultModel = $comboPremium
   @($comboPremium)
+} elseif ($routingMode -eq "test_only") {
+  $comboTest = Confirm-ComboIdSyntax -ComboId $comboTest -Name "combos.test"
+  $defaultModel = $comboTest
+  @($comboTest)
 } else {
   $comboPremium = Confirm-ComboIdSyntax -ComboId $comboPremium -Name "combos.premium"
   $comboFree = Confirm-ComboIdSyntax -ComboId $comboFree -Name "combos.free"

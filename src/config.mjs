@@ -13,7 +13,7 @@ function number(value, fallback) {
 
 function normalizePolicyMode(value, fallback = "inherit") {
   const mode = String(value || fallback).trim().toLowerCase();
-  if (["premium_always", "limited_daily", "free_only", "inherit"].includes(mode)) {
+  if (["premium_always", "limited_daily", "free_only", "test_only", "inherit"].includes(mode)) {
     return mode;
   }
   throw new Error(`aiPolicy.mode không hợp lệ: ${value}`);
@@ -49,7 +49,8 @@ export const config = {
   ),
   codexCombos: {
     premium: process.env.CODEX_COMBO_PREMIUM || "",
-    free: process.env.CODEX_COMBO_FREE || ""
+    free: process.env.CODEX_COMBO_FREE || "",
+    test: process.env.CODEX_COMBO_TEST || ""
   },
   codexDefaultPolicy: normalizePolicyMode(
     process.env.CODEX_DEFAULT_POLICY || "limited_daily",
@@ -212,6 +213,9 @@ export function normalizeAiPolicy(value, fallbackUsageScope = "client") {
   }
   if (value.freeCombo !== undefined && value.freeCombo !== null) {
     policy.freeCombo = String(value.freeCombo).trim();
+  }
+  if (value.testCombo !== undefined && value.testCombo !== null) {
+    policy.testCombo = String(value.testCombo).trim();
   }
 
   return policy;

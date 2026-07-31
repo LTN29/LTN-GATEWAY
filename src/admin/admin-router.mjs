@@ -220,6 +220,13 @@ export async function handleAdminApi(req, res) {
     } else if (req.method === "GET" && path === "/admin/api/v1/teams") {
       requirePermission(admin, "teams:read");
       sendAdminJson(res, 200, { items: await listTeams() }, requestId);
+    } else if (req.method === "GET" && path === "/admin/api/v1/codex/combos") {
+      requirePermission(admin, "teams:read");
+      const items = Object.entries(config.codexCombos)
+        .map(([key, id]) => ({ key, id: String(id || "").trim() }))
+        .filter((item) => item.id)
+        .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index);
+      sendAdminJson(res, 200, { items }, requestId);
     } else if (req.method === "POST" && path === "/admin/api/v1/teams") {
       requirePermission(admin, "teams:write");
       const teamId = String(body.teamId || body.code || "").toUpperCase();

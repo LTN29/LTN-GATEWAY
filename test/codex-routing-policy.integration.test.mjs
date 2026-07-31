@@ -75,6 +75,7 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
     management: "management-key",
     warranty: "warranty-key",
     cskh: "cskh-key",
+    test: "test-key",
     defaultTeam: "default-key",
     teamScope: "team-scope-key",
     override: "override-key"
@@ -90,6 +91,7 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
         usageScope: "client"
       }),
       team("CSKH", keys.cskh, { mode: "free_only" }),
+      team("TEST", keys.test, { mode: "test_only" }),
       team("DEFAULT", keys.defaultTeam),
       team("TEAM_SCOPE", keys.teamScope, {
         mode: "limited_daily",
@@ -155,6 +157,7 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
   process.env.MEMORY_UPDATE_ENABLED = "false";
   process.env.CODEX_COMBO_PREMIUM = "SIMI-GPT";
   process.env.CODEX_COMBO_FREE = "SIMI-FREE";
+  process.env.CODEX_COMBO_TEST = "SIMI-GEMINI";
   process.env.CODEX_DEFAULT_POLICY = "limited_daily";
   process.env.CODEX_DEFAULT_PREMIUM_LIMIT = "2";
   process.env.CODEX_USAGE_TIMEZONE = "Asia/Ho_Chi_Minh";
@@ -235,6 +238,11 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
     assert.equal(freeOnly.headers.get("x-ltn-route-tier"), "free");
     assert.equal(upstreamRequests.at(-1).body.model, "SIMI-FREE");
 
+    const testOnly = await postResponse(baseUrl, keys.test);
+    assert.equal(testOnly.status, 200);
+    assert.equal(testOnly.headers.get("x-ltn-route-tier"), "test");
+    assert.equal(upstreamRequests.at(-1).body.model, "SIMI-GEMINI");
+
     const defaultFirst = await postResponse(baseUrl, keys.defaultTeam, {
       clientId: fullClientId
     });
@@ -281,7 +289,8 @@ test("Codex routing applies per-team Premium/Free policy without trusting client
       },
       combos: {
         premium: "SIMI-GPT",
-        free: "SIMI-FREE"
+        free: "SIMI-FREE",
+        test: "SIMI-GEMINI"
       }
     });
 
