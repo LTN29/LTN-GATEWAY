@@ -283,9 +283,7 @@ function editUserModalHtml(user, teams) {
   if (!can("usersWrite") || !user) return "";
   const policyMode = user.aiPolicy?.mode || "inherit";
   const premiumLimit = user.aiPolicy?.premiumLimit ?? "";
-  const outsideControlNote = user.outsideControl
-    ? `<p class="status">Ngoài vòng kiểm soát: không nạp/lưu MD và không ghi analytics nội dung sử dụng.</p>`
-    : "";
+  const outsideControlNote = "";
   return `
     <div class="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-title" style="max-width: 760px; width: 92vw;">
@@ -330,9 +328,7 @@ function teamModalHtml(team = null, combos = []) {
   const premiumCombo = team?.aiPolicy?.premiumCombo || "";
   const freeCombo = team?.aiPolicy?.freeCombo || "";
   const testCombo = team?.aiPolicy?.testCombo || "";
-  const outsideControlNote = team?.outsideControl
-    ? `<p class="status">Ngoài vòng kiểm soát: tin nhắn không dùng memory, không lưu MD và không ghi user analytics.</p>`
-    : "";
+  const outsideControlNote = "";
   return `
     <div class="modalBackdrop">
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="team-modal-title" style="max-width: 720px; width: 92vw;">
@@ -413,7 +409,7 @@ async function pageUsers() {
         <td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td>
         <td>${escapeHtml(u.displayName)}</td>
         <td>${escapeHtml(u.teamId)}</td>
-        <td><span class="status">${u.outsideControl ? "Ngoài vòng kiểm soát" : (u.enabled ? "Hoạt động" : "Đã khóa")}</span></td>
+        <td><span class="status">${u.enabled ? "Hoạt động" : "Đã khóa"}</span></td>
         <td>${escapeHtml(formatPolicy(u.aiPolicy?.mode))}</td>
         <td>${escapeHtml(u.aiPolicy?.premiumLimit ?? "")}</td>
         <td class="actions">${can("usersWrite") ? `${button(u.enabled ? "Khóa" : "Mở khóa", `${u.enabled ? "disable" : "enable"}:${u.userId}`, !u.enabled)} ${button("Chỉnh sửa", `edit:${u.userId}`)} ${button("Xóa", `delete-user:${u.userId}`, true)}` : ""}</td>
@@ -429,7 +425,7 @@ async function pageUserDetail(userId) {
   ]);
   render(`
     <div class="twoCol">
-      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p>${user.outsideControl ? '<p class="status">Ngoài vòng kiểm soát</p>' : ""}</div>
+      <div class="card"><h2>${escapeHtml(user.displayName)}</h2><p>Mã nhân viên: ${escapeHtml(user.userId)}</p><p>Bộ phận: ${escapeHtml(user.teamId)}</p><p>Gói AI: ${escapeHtml(formatPolicy(user.aiPolicy?.mode))}</p></div>
       <div class="grid compact">${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}${metric("Thiết bị", usage.devices)}</div>
     </div>
     <div class="card"><h2>Thiết bị</h2>${table(["Mã thiết bị", "Lượt dùng", "Lần đầu", "Lần cuối", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.firstSeenAt)}</td><td>${escapeHtml(d.lastSeenAt)}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}</div>
@@ -458,7 +454,7 @@ async function pageTeams() {
 
 async function pageTeamDetail(teamId) {
   const [team, users, usage] = await Promise.all([api(`/teams/${teamId}`), api(`/teams/${teamId}/users`), api(`/teams/${teamId}/usage`)]);
-  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.outsideControl ? "Ngoài vòng kiểm soát" : (team.enabled ? "Hoạt động" : "Đã khóa")}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.outsideControl ? "Ngoài vòng kiểm soát" : (u.enabled ? "Hoạt động" : "Đã khóa")}</td></tr>`))}`);
+  render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
 }
 
 async function pageUsage() {
