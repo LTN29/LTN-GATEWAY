@@ -419,11 +419,24 @@ gateway_health_status() {
 }
 
 write_macos_helper() {
-  local account="$1"
-  cat > "${HELPER_PATH}" <<EOF
+  cat > "${HELPER_PATH}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-/usr/bin/security find-generic-password -a "${account}" -s "${KEYCHAIN_SERVICE}" -w
+if [ -n "${LTN_TEAM_API_KEY:-}" ]; then
+  printf '%s' "${LTN_TEAM_API_KEY}"
+  exit 0
+fi
+if [ -n "${NINEROUTER_KEY:-}" ]; then
+  printf '%s' "${NINEROUTER_KEY}"
+  exit 0
+fi
+security_command="${LTN_SECURITY_COMMAND:-/usr/bin/security}"
+if token="$("${security_command}" find-generic-password -s "LTN Codex Team Key" -w 2>/dev/null)" && [ -n "${token}" ]; then
+  printf '%s' "${token}"
+  exit 0
+fi
+echo "Khong tim thay LTN team token." >&2
+exit 1
 EOF
   chmod 700 "${HELPER_PATH}"
 }
@@ -431,16 +444,42 @@ EOF
 write_linux_helper() {
   local account="$1"
   if command -v secret-tool >/dev/null 2>&1 && secret-tool lookup service ltn-codex account "${account}" >/dev/null 2>&1; then
-    cat > "${HELPER_PATH}" <<EOF
+    cat > "${HELPER_PATH}" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-secret-tool lookup service ltn-codex account "${account}"
+if [ -n "${LTN_TEAM_API_KEY:-}" ]; then
+  printf '%s' "${LTN_TEAM_API_KEY}"
+  exit 0
+fi
+if [ -n "${NINEROUTER_KEY:-}" ]; then
+  printf '%s' "${NINEROUTER_KEY}"
+  exit 0
+fi
+if token="$(secret-tool lookup service ltn-codex 2>/dev/null)" && [ -n "${token}" ]; then
+  printf '%s' "${token}"
+  exit 0
+fi
+echo "Khong tim thay LTN team token." >&2
+exit 1
 EOF
   else
     cat > "${HELPER_PATH}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-cat "${LINUX_KEY_PATH}"
+if [ -n "\${LTN_TEAM_API_KEY:-}" ]; then
+  printf '%s' "\${LTN_TEAM_API_KEY}"
+  exit 0
+fi
+if [ -n "\${NINEROUTER_KEY:-}" ]; then
+  printf '%s' "\${NINEROUTER_KEY}"
+  exit 0
+fi
+if [ -r "${LINUX_KEY_PATH}" ]; then
+  cat "${LINUX_KEY_PATH}"
+  exit 0
+fi
+echo "Khong tim thay LTN team token." >&2
+exit 1
 EOF
   fi
   chmod 700 "${HELPER_PATH}"

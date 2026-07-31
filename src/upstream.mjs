@@ -30,6 +30,14 @@ export async function upstreamFetch(path, {
       signal: combinedSignal,
       redirect: "manual"
     });
+  } catch (error) {
+    if (controller.signal.aborted && !signal?.aborted) {
+      const timeoutError = new Error("9Router khong phan hoi trong thoi gian cho phep.");
+      timeoutError.statusCode = 504;
+      timeoutError.code = "UPSTREAM_TIMEOUT";
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

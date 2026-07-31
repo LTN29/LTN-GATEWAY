@@ -39,7 +39,8 @@ import {
 import {
   getBearerToken,
   jsonLog,
-  requestId as makeRequestId
+  requestId as makeRequestId,
+  redactSecrets
 } from "./utils.mjs";
 
 const codexBootstrapPath = fileURLToPath(
@@ -184,6 +185,7 @@ async function proxyModels(req, res, rawKey, principal, id) {
 }
 
 async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
+  const startedAt = Date.now();
   const signal = clientAbortSignal(req, res);
   const body = req.method === "GET"
     ? undefined
@@ -210,10 +212,27 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
 
   copyHeaders(upstream, res);
   res.statusCode = upstream.status;
-  if (!upstream.body) {
-    res.end();
-  } else {
-    Readable.fromWeb(upstream.body).pipe(res);
+  const captured = await pipeAndCapture(upstream, res);
+  let responseUsage = null;
+  if ((upstream.headers.get("content-type") || "").includes("application/json") && captured.length) {
+    try {
+      responseUsage = usageFromResponsePayload(JSON.parse(captured.toString("utf8")));
+    } catch {
+      responseUsage = null;
+    }
+  }
+
+  if (!isOutsideControlPrincipal(principal)) {
+    await recordUserAnalytics({
+      date: localDate(),
+      principal,
+      routeTier: "capability",
+      selectedCombo: "",
+      status: upstream.status,
+      latencyMs: Date.now() - startedAt,
+      usage: responseUsage,
+      clientIdHashPrefix: ""
+    });
   }
 
   jsonLog("capability_completed", {
@@ -222,7 +241,8 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
     principalType: principal.principalType,
     userId: principal.userId,
     path: upstreamPath.split("?")[0],
-    status: upstream.status
+    status: upstream.status,
+    latencyMs: Date.now() - startedAt
   });
 }
 
@@ -822,7 +842,8 @@ export function createGatewayServer() {
   } catch (error) {
     jsonLog("request_failed", {
       requestId: id,
-      error: error?.message || String(error)
+      error: redactSecrets(error?.message || String(error)),
+      code: error?.code || null
     });
 
     if (!res.headersSent) {

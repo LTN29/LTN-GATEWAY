@@ -55,6 +55,16 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
       return;
     }
     if (req.url === "/v1/images/generations?response_format=binary") {
+      const model = JSON.parse(body.toString("utf8")).model;
+      if (model === "delay") {
+        setTimeout(() => res.writeHead(200, { "content-type": "application/json" }).end("{}"), 200);
+        return;
+      }
+      if ([401, 404, 502].includes(Number(model))) {
+        res.writeHead(Number(model), { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: { message: `upstream ${model}` } }));
+        return;
+      }
       res.writeHead(200, { "content-type": "image/png" });
       res.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
       return;
@@ -82,14 +92,28 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
   process.env.UPSTREAM_BASE_URL = `http://127.0.0.1:${upstreamPort}`;
   process.env.LTN_LEGACY_TEAM_KEYS_ENABLED = "true";
   process.env.MAX_CAPABILITY_BODY_BYTES = "32000000";
+  process.env.UPSTREAM_TIMEOUT_MS = "50";
 
   const { createGatewayServer } = await import(`../src/server.mjs?capability=${Date.now()}`);
   const gateway = createGatewayServer();
   const gatewayPort = await listen(gateway);
   const baseUrl = `http://127.0.0.1:${gatewayPort}`;
   const headers = { authorization: `Bearer ${key}` };
+  const logChunks = [];
+  const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk, ...args) => {
+    logChunks.push(String(chunk));
+    return originalStdoutWrite(chunk, ...args);
+  };
 
   try {
+    const unauthenticated = await fetch(`${baseUrl}/v1/images/generations`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}"
+    });
+    assert.equal(unauthenticated.status, 401);
+
     const models = await fetch(`${baseUrl}/v1/models/image`, { headers });
     assert.equal(models.status, 200);
     assert.equal((await models.json()).data[0].id, "openai/gpt-image-2");
@@ -139,6 +163,29 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
       prompt: "test"
     });
 
+    for (const status of [401, 404, 502]) {
+      const response = await fetch(
+        `${baseUrl}/v1/images/generations?response_format=binary`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ model: String(status), prompt: "sensitive prompt" })
+        }
+      );
+      assert.equal(response.status, status);
+    }
+
+    const timedOut = await fetch(
+      `${baseUrl}/v1/images/generations?response_format=binary`,
+      {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ model: "delay", prompt: "sensitive timeout prompt" })
+      }
+    );
+    assert.equal(timedOut.status, 504);
+    assert.equal((await timedOut.json()).error.code, null);
+
     const transcriptionRequest = requests.find((item) =>
       item.url === "/v1/audio/transcriptions"
     );
@@ -156,7 +203,11 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
       headers
     });
     assert.equal(unsupported.status, 404);
+    const logs = logChunks.join("");
+    assert.doesNotMatch(logs, new RegExp(key));
+    assert.doesNotMatch(logs, /sensitive (?:prompt|timeout prompt)/);
   } finally {
+    process.stdout.write = originalStdoutWrite;
     await close(gateway);
     await close(upstream);
   }

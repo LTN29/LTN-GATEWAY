@@ -86,7 +86,9 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.doesNotMatch(script, /combo\/SIMI-AI/);
   assert.match(script, /CLIENT_ID_PATH="\$\{CODEX_HOME\}\/ltn-client-id"/);
   assert.match(script, /chmod 600 "\$\{CLIENT_ID_PATH\}"/);
-  assert.match(script, /\/usr\/bin\/security find-generic-password/);
+  assert.match(script, /LTN_SECURITY_COMMAND:-\/usr\/bin\/security/);
+  assert.match(script, /find-generic-password -s "LTN Codex Team Key" -w/);
+  assert.doesNotMatch(script, /find-generic-password[^\n]*-a\s+["']?simi/i);
   assert.match(script, /secret-tool store/);
   assert.match(script, /LINUX_KEY_PATH="\$\{CREDENTIAL_DIR\}\/ltn-team-key"/);
   assert.match(script, /chmod 600 "\$\{LINUX_KEY_PATH\}"/);

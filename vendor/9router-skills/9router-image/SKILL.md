@@ -12,12 +12,18 @@ Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://ra
 This skill is distributed by the SIMI installer. Route every request through
 `https://ai.simi.vn`, never directly through the admin-only `router.simi.vn`.
 
-- Windows: read `NINEROUTER_URL` and `NINEROUTER_KEY` from the user environment.
-- macOS/Linux: set `NINEROUTER_URL=https://ai.simi.vn` and obtain the key at runtime
-  with `NINEROUTER_KEY="$("$HOME/.codex/bin/ltn-codex-token")"`.
+- Base URL defaults to `https://ai.simi.vn`; only use `NINEROUTER_URL` when it is
+  explicitly configured.
+- Resolve the token with the same helper as Codex:
+  `NINEROUTER_KEY="$("${CODEX_HOME:-$HOME/.codex}/bin/ltn-codex-token)"`.
+  The helper owns the shared priority order (`LTN_TEAM_API_KEY`, then
+  `NINEROUTER_KEY`, then the installer-managed credential). Never ask the user
+  to enter or create another key.
 
 Do not print, persist, or include `NINEROUTER_KEY` in command output. For image
 requests, call `/v1/images/generations`; do not substitute SVG/HTML/Canvas drawing.
+Use a finite client timeout (180 seconds by default) and report only the HTTP
+status or a sanitized timeout/network error.
 
 ## Discover
 
