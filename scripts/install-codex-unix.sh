@@ -644,8 +644,9 @@ install_managed_9router_skills() {
 }
 
 get_or_create_browser_bridge_token() {
-  if [ "${#LTN_BROWSER_BRIDGE_TOKEN:-0}" -ge 32 ]; then
-    printf '%s' "${LTN_BROWSER_BRIDGE_TOKEN}"
+  local existing_token="${LTN_BROWSER_BRIDGE_TOKEN:-}"
+  if [ -n "${existing_token}" ] && [ "${#existing_token}" -ge 32 ]; then
+    printf '%s' "${existing_token}"
     return
   fi
   if [ -r "${BRIDGE_TOKEN_PATH}" ]; then

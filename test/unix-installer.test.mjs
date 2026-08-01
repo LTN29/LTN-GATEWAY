@@ -52,6 +52,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /read_stored_team_key\(\)/);
   assert.match(script, /\[ "\$\{MODE\}" = "--repair" \]/);
   assert.match(script, /Repair: dung API key da luu/);
+  assert.match(script, /local existing_token="\$\{LTN_BROWSER_BRIDGE_TOKEN:-\}"/);
+  assert.doesNotMatch(script, /\$\{#LTN_BROWSER_BRIDGE_TOKEN:-0\}/);
   assert.match(script, /< \/dev\/tty/);
   assert.match(script, /read_menu_choice\(\)/);
   assert.match(script, /Chon che do:/);
