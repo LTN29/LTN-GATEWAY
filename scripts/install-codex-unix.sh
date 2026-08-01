@@ -750,8 +750,8 @@ exec "\${node_bin}" "${chrome_debug_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-chrome-debug"
   echo "Da cai Chrome CDP client: ${chrome_debug_path}"
-  echo "  Khoi tao profile doc tab: ltn-chrome-debug https://inventory.simi.vn/inventory"
-  echo "  Doc tab khong can Extension: ltn-browser-page --cdp"
+  echo "  Tu dong mo profile Chrome khi 9router-browser duoc goi"
+  echo "  User chi can dang nhap mot lan trong cua so Chrome moi"
 }
 
 runtime_node_major() {

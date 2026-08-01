@@ -239,15 +239,20 @@ venv Python riêng với `pypdf`, `pdfplumber` và `pymupdf`. PDF scan không c�
 sẽ được báo rõ là cần OCR, không trả kết quả giả.
 
 Để Codex đọc trang đã đăng nhập mà không phụ thuộc Chrome Extension, installer
-cài Chrome DevTools Protocol client và lệnh `ltn-chrome-debug`. Lệnh này mở một
-Chrome profile riêng trên localhost; user đăng nhập trang cần dùng một lần,
-những lần sau session được giữ lại. Skill `9router-browser` chỉ đọc DOM/text
-hiển thị, không đọc mật khẩu, cookie hoặc session store.
+cài Chrome DevTools Protocol client. Khi skill `9router-browser` được gọi,
+`ltn-browser-page --cdp` tự mở một Chrome profile riêng trên localhost nếu chưa
+chạy; user chỉ cần đăng nhập trang cần dùng một lần, những lần sau session được
+giữ lại. Skill chỉ đọc DOM/text hiển thị, không đọc mật khẩu, cookie hoặc session
+store.
 
 ```text
-ltn-chrome-debug https://inventory.simi.vn/inventory
-ltn-browser-page --cdp https://inventory.simi.vn/inventory
+ltn-browser-page --cdp https://inventory.simi.vn/inventory https://inventory.simi.vn/admin/shopee/orders
 ```
+
+The CDP client reuses one tab per requested URL, opens additional tabs when a
+prompt contains multiple URLs, and automatically restarts the managed profile
+if it was closed. A login is still required once per website when that site's
+session does not already exist in the managed profile.
 
 Không dùng skill `Chrome: Control Chrome` cho luồng 9Router này. Extension
 Browser Bridge cũ vẫn được giữ làm fallback tương thích, nhưng không còn là

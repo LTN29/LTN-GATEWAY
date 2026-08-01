@@ -505,8 +505,8 @@ endlocal
   $chromeDebugWrapperText = $chromeDebugWrapperText.Replace('%CODEX_HOME%', $escapedCodexHome)
   [IO.File]::WriteAllText($chromeDebugWrapper, $chromeDebugWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài Chrome CDP client: $chromeDebugPath"
-  Write-Host "  Khởi tạo profile đọc tab: ltn-chrome-debug https://inventory.simi.vn/inventory"
-  Write-Host "  Đọc tab không cần Extension: ltn-browser-page --cdp"
+  Write-Host "  Tự động mở profile Chrome khi 9router-browser được gọi"
+  Write-Host "  User chỉ cần đăng nhập một lần trong cửa sổ Chrome mới"
 }
 
 function Refresh-ProcessPath {

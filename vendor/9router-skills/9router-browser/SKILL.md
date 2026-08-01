@@ -10,46 +10,39 @@ This mode uses Chrome DevTools Protocol on localhost and evaluates a read-only
 DOM expression in the debug profile. It does not read passwords, cookies, or
 browser session stores.
 
-## One-time Chrome profile setup
+## Automatic setup and reading
 
-The installer provides `ltn-chrome-debug`, which opens a separate Chrome
-profile with a localhost CDP port. Login to the target site in that profile
-once; later runs retain its session.
+When this skill is invoked, `ltn-browser-page --cdp` automatically starts the
+dedicated Chrome CDP profile if it is not already running. The user only needs
+to log in once in the Chrome window that opens; no Terminal command is needed.
+Subsequent reads reuse that profile and its signed-in session.
 
-macOS/Linux:
+When the user provides a different URL, pass that URL to the same command.
+The client navigates the debug tab automatically and keeps the existing login;
+do not ask the user to open or paste the URL manually.
 
-```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/ltn-chrome-debug" "https://inventory.simi.vn/inventory"
-```
-
-Windows:
-
-```powershell
-$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
-& (Join-Path $codexHome "bin\ltn-chrome-debug.cmd") "https://inventory.simi.vn/inventory"
-```
-
-## Read the current debug-profile tab
-
-Run the platform command below and use the returned JSON `data.text` as the
-page content. Do not use `9router-web-fetch` for a page that requires login.
+Run one command for all requested URLs and use `data.text` for one page or
+`data.pages` for multiple pages. The client keeps/reuses one tab per URL and
+reads them concurrently. Do not use `9router-web-fetch` for a page that
+requires login.
 
 Windows:
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
-& (Join-Path $codexHome "bin\ltn-browser-page.cmd") --cdp "https://inventory.simi.vn/inventory"
+& (Join-Path $codexHome "bin\ltn-browser-page.cmd") --cdp "https://inventory.simi.vn/inventory" "https://inventory.simi.vn/admin/shopee/orders"
 ```
 
 macOS/Linux:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/ltn-browser-page" --cdp "https://inventory.simi.vn/inventory"
+"${CODEX_HOME:-$HOME/.codex}/bin/ltn-browser-page" --cdp "https://inventory.simi.vn/inventory" "https://inventory.simi.vn/admin/shopee/orders"
 ```
 
-If CDP is unavailable, start `ltn-chrome-debug` and keep the target tab open
-in that profile. The normal Chrome profile cannot be attached silently when no
-extension is used; the explicit debug profile is the security boundary.
+If the newly opened Chrome window shows a login page, ask the user to log in
+there and retry the read. The normal Chrome profile cannot be attached
+silently when no extension is used; the explicit debug profile is the security
+boundary.
 
 ## Routing rules
 

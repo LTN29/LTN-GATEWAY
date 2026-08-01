@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readCdpPage } from "./browser-cdp.mjs";
+import { readCdpPages } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const bridgeHost = process.env.LTN_BROWSER_BRIDGE_HOST || "127.0.0.1";
@@ -14,6 +14,7 @@ const tokenPath = process.env.LTN_BROWSER_BRIDGE_TOKEN_PATH ||
 const timeoutMs = Math.max(10_000, Number(process.env.LTN_BROWSER_CAPTURE_TIMEOUT_MS || 60_000));
 const cdpHost = process.env.LTN_CHROME_DEBUG_HOST || "127.0.0.1";
 const cdpPort = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
+const chromeDebugPath = process.env.LTN_CHROME_DEBUG_PATH || join(codexHome, "chrome-debug.mjs");
 
 function readFileValue(path) {
   try {
@@ -136,18 +137,74 @@ async function capture(token) {
   return body.payload;
 }
 
+async function checkCdp(signal) {
+  const response = await fetch(`http://${cdpHost}:${cdpPort}/json/version`, {
+    signal,
+    redirect: "manual"
+  });
+  if (!response.ok) throw new Error(`Chrome CDP tráº£ HTTP ${response.status}.`);
+  return true;
+}
+
+function startChromeDebug(targetUrl) {
+  if (!existsSync(chromeDebugPath)) {
+    throw new Error(`KhÃ´ng tÃ¬m tháº¥y Chrome CDP client táº¡i ${chromeDebugPath}. HÃ£y cháº¡y Repair.`);
+  }
+
+  const nodeBin = process.env.LTN_BROWSER_NODE_PATH || process.execPath;
+  const childArgs = targetUrl ? [chromeDebugPath, targetUrl] : [chromeDebugPath];
+  const child = spawn(nodeBin, childArgs, {
+    detached: true,
+    windowsHide: true,
+    stdio: "ignore",
+    env: process.env
+  });
+  child.unref();
+}
+
+async function ensureChromeDebug(targetUrl) {
+  try {
+    await checkCdp(AbortSignal.timeout(1_000));
+    return;
+  } catch {
+    startChromeDebug(targetUrl);
+  }
+
+  const deadline = Date.now() + 12_000;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      await checkCdp(AbortSignal.timeout(700));
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  throw new Error(
+    `KhÃ´ng thá»ƒ tá»± khá»Ÿi Ä‘á»™ng/káº¿t ná»‘i Chrome CDP táº¡i ${cdpHost}:${cdpPort}: ${lastError?.message || "khÃ´ng rÃµ nguyÃªn nhÃ¢n"}`
+  );
+}
+
 async function main() {
-  const args = new Set(process.argv.slice(2));
+  const cliArgs = process.argv.slice(2);
+  const args = new Set(cliArgs);
   if (args.has("--cdp") || String(process.env.LTN_BROWSER_MODE || "").toLowerCase() === "cdp") {
-    const targetUrl = process.env.LTN_CHROME_TARGET_URL ||
-      process.argv.slice(2).find((value) => /^https?:\/\//i.test(value)) || "";
-    const page = await readCdpPage({
+    const targetUrls = [
+      process.env.LTN_CHROME_TARGET_URL || "",
+      ...cliArgs.filter((value) => /^https?:\/\//i.test(value))
+    ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
+    await ensureChromeDebug(targetUrls[0] || "");
+    const pages = await readCdpPages({
       host: cdpHost,
       port: cdpPort,
-      targetUrl,
+      targetUrls,
       timeoutMs: Math.min(timeoutMs, 15_000)
     });
-    process.stdout.write(`${JSON.stringify({ object: "browser.page", data: page })}\n`);
+    const result = pages.length === 1
+      ? { object: "browser.page", data: pages[0] }
+      : { object: "browser.pages", data: { pages } };
+    process.stdout.write(`${JSON.stringify(result)}\n`);
     return;
   }
   const token = resolveToken();

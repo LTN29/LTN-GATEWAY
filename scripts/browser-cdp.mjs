@@ -245,6 +245,35 @@ export async function cdpTargets({ host = "127.0.0.1", port = 9222, timeoutMs = 
   return Array.isArray(payload) ? payload : [];
 }
 
+export async function createCdpTarget({ host = "127.0.0.1", port = 9222, targetUrl, timeoutMs = 5_000 } = {}) {
+  const wanted = String(targetUrl || "").trim();
+  if (!/^https?:\/\//i.test(wanted)) throw new Error("URL CDP mới không hợp lệ.");
+  let response;
+  try {
+    response = await fetch(`http://${host}:${port}/json/new?${encodeURIComponent(wanted)}`, {
+      method: "PUT",
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual"
+    });
+  } catch (error) {
+    const code = error?.cause?.code || error?.code || "";
+    throw new Error(`Không mở được tab CDP mới tại ${host}:${port}${code ? ` (${code})` : ""}.`);
+  }
+  if (!response.ok) throw new Error(`Chrome CDP không mở được tab mới (HTTP ${response.status}).`);
+  const target = await response.json();
+  if (!target || target.type !== "page" || typeof target.webSocketDebuggerUrl !== "string") {
+    throw new Error("Chrome CDP trả về tab mới không hợp lệ.");
+  }
+  return target;
+}
+
+function targetMatchesUrl(target, targetUrl = "") {
+  const wanted = String(targetUrl || "").trim();
+  if (!wanted) return false;
+  const actual = String(target?.url || "");
+  return actual === wanted || actual.startsWith(wanted);
+}
+
 function chooseTarget(targets, targetUrl = "") {
   const pages = targets.filter((target) =>
     target?.type === "page" &&
@@ -254,32 +283,108 @@ function chooseTarget(targets, targetUrl = "") {
   if (!pages.length) throw new Error("Chrome CDP không có tab HTTP/HTTPS để đọc.");
   const wanted = String(targetUrl || "").trim();
   if (wanted) {
-    const exact = pages.find((target) => target.url === wanted);
-    if (exact) return exact;
-    const prefix = pages.find((target) => target.url.startsWith(wanted));
-    if (prefix) return prefix;
+    const matching = pages.find((target) => targetMatchesUrl(target, wanted));
+    if (matching) return matching;
   }
   return pages[0];
 }
 
-export async function readCdpPage({ host = "127.0.0.1", port = 9222, targetUrl = "", timeoutMs = 10_000 } = {}) {
-  const target = chooseTarget(await cdpTargets({ host, port, timeoutMs }), targetUrl);
+const pageEvaluationExpression = `(() => ({
+  url: location.href,
+  title: document.title,
+  text: document.body?.innerText || document.documentElement?.innerText || "",
+  selectedText: window.getSelection?.()?.toString?.() || "",
+  readyState: document.readyState
+}))()`;
+
+async function evaluatePage(connection) {
+  const evaluation = await connection.command("Runtime.evaluate", {
+    awaitPromise: true,
+    returnByValue: true,
+    expression: pageEvaluationExpression
+  });
+  const page = evaluation?.result?.value;
+  if (!page || typeof page !== "object") throw new Error("CDP không trả nội dung trang.");
+  return page;
+}
+
+async function navigateAndWait(connection, targetUrl, timeoutMs) {
+  await connection.command("Page.enable");
+  await connection.command("Page.navigate", { url: targetUrl });
+
+  const deadline = Date.now() + Math.max(1_000, Math.min(timeoutMs, 10_000));
+  let lastPage = null;
+  while (Date.now() < deadline) {
+    try {
+      lastPage = await evaluatePage(connection);
+      if (targetMatchesUrl({ url: lastPage.url }, targetUrl) &&
+          ["interactive", "complete"].includes(lastPage.readyState)) {
+        return lastPage;
+      }
+    } catch {
+      // The page can briefly disconnect while Chrome commits navigation.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (lastPage && targetMatchesUrl({ url: lastPage.url }, targetUrl)) return lastPage;
+  throw new Error(`Chrome không điều hướng đến được trang ${targetUrl}.`);
+}
+
+async function readTarget(target, targetUrl, timeoutMs, navigate = false) {
   const connection = await new WebSocketConnection(target.webSocketDebuggerUrl, timeoutMs).connect();
   try {
-    const evaluation = await connection.command("Runtime.evaluate", {
-      awaitPromise: true,
-      returnByValue: true,
-      expression: `(() => ({
-        url: location.href,
-        title: document.title,
-        text: document.body?.innerText || document.documentElement?.innerText || "",
-        selectedText: window.getSelection?.()?.toString?.() || ""
-      }))()`
-    });
-    const page = evaluation?.result?.value;
-    if (!page || typeof page !== "object") throw new Error("CDP không trả nội dung trang.");
+    const page = navigate && targetUrl && !targetMatchesUrl(target, targetUrl)
+      ? await navigateAndWait(connection, targetUrl, timeoutMs)
+      : await evaluatePage(connection);
     return { ...page, capturedAt: new Date().toISOString(), source: "chrome-cdp" };
   } finally {
     connection.close();
   }
+}
+
+export async function readCdpPages({
+  host = "127.0.0.1",
+  port = 9222,
+  targetUrls = [],
+  timeoutMs = 10_000
+} = {}) {
+  const urls = [...new Set(targetUrls.map((value) => String(value || "").trim()).filter(Boolean))];
+  const targets = await cdpTargets({ host, port, timeoutMs });
+  if (!urls.length) {
+    return [await readTarget(chooseTarget(targets), "", timeoutMs)];
+  }
+
+  const available = [...targets];
+  const plans = [];
+  for (const [index, wanted] of urls.entries()) {
+    const matchingIndex = available.findIndex((target) => targetMatchesUrl(target, wanted));
+    if (matchingIndex >= 0) {
+      const [target] = available.splice(matchingIndex, 1);
+      plans.push({ target, wanted, navigate: false });
+      continue;
+    }
+
+    // Reuse the first existing debug tab for the first requested URL. Additional
+    // URLs get their own tabs so multiple pages can be read in one prompt.
+    if (index === 0 && available.length) {
+      plans.push({ target: available.shift(), wanted, navigate: true });
+      continue;
+    }
+    const target = await createCdpTarget({ host, port, targetUrl: wanted, timeoutMs });
+    plans.push({ target, wanted, navigate: !targetMatchesUrl(target, wanted) });
+  }
+
+  return Promise.all(plans.map(({ target, wanted, navigate }) =>
+    readTarget(target, wanted, timeoutMs, navigate)
+  ));
+}
+
+export async function readCdpPage({ host = "127.0.0.1", port = 9222, targetUrl = "", timeoutMs = 10_000 } = {}) {
+  const [page] = await readCdpPages({
+    host,
+    port,
+    targetUrls: targetUrl ? [targetUrl] : [],
+    timeoutMs
+  });
+  return page;
 }

@@ -11,6 +11,12 @@ test("browser page client starts the bridge and captures only through the local 
   assert.match(source, /LTN_BROWSER_BRIDGE_TOKEN_PATH/);
   assert.match(source, /describeFetchError/);
   assert.match(source, /\/v1\/bridge\/capture/);
+  assert.match(source, /chromeDebugPath/);
+  assert.match(source, /startChromeDebug/);
+  assert.match(source, /ensureChromeDebug\(targetUrls\[0\]/);
+  assert.match(source, /readCdpPages/);
+  assert.match(source, /browser\.pages/);
+  assert.match(source, /remote-debugging-port|\/json\/version/);
   assert.doesNotMatch(source, /cookie/i);
   assert.doesNotMatch(source, /localStorage|sessionStorage|password/i);
 });
