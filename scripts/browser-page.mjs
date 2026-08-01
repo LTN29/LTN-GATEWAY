@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readCdpPage } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const bridgeHost = process.env.LTN_BROWSER_BRIDGE_HOST || "127.0.0.1";
@@ -11,6 +12,8 @@ const bridgePath = process.env.LTN_BROWSER_BRIDGE_PATH || join(codexHome, "brows
 const tokenPath = process.env.LTN_BROWSER_BRIDGE_TOKEN_PATH ||
   join(codexHome, "credentials", "ltn-browser-bridge-token");
 const timeoutMs = Math.max(10_000, Number(process.env.LTN_BROWSER_CAPTURE_TIMEOUT_MS || 60_000));
+const cdpHost = process.env.LTN_CHROME_DEBUG_HOST || "127.0.0.1";
+const cdpPort = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
 
 function readFileValue(path) {
   try {
@@ -47,12 +50,23 @@ function errorFromResponse(response, body, fallback) {
   return new Error(message ? String(message) : `${fallback}: HTTP ${response.status}`);
 }
 
+function describeFetchError(error) {
+  const code = error?.cause?.code || error?.code || "";
+  const detail = code ? ` (${code})` : "";
+  return `${error?.message || String(error)}${detail}`;
+}
+
 async function checkBridge(token, signal) {
-  const response = await fetch(`${bridgeBase}/health`, {
-    headers: headers(token),
-    signal,
-    redirect: "manual"
-  });
+  let response;
+  try {
+    response = await fetch(`${bridgeBase}/health`, {
+      headers: headers(token),
+      signal,
+      redirect: "manual"
+    });
+  } catch (error) {
+    throw new Error(`Không kết nối được Browser Bridge tại ${bridgeBase}: ${describeFetchError(error)}`);
+  }
   const body = await readResponse(response);
   if (!response.ok || body?.payload?.ok !== true) {
     throw errorFromResponse(response, body, "Browser bridge chưa sẵn sàng");
@@ -97,17 +111,24 @@ async function ensureBridge(token) {
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
   }
-  throw lastError || new Error("Không thể khởi động browser bridge.");
+  throw new Error(
+    `Không thể khởi động/kết nối Browser Bridge tại ${bridgeBase}: ${lastError?.message || "không rõ nguyên nhân"}`
+  );
 }
 
 async function capture(token) {
-  const response = await fetch(`${bridgeBase}/v1/bridge/capture`, {
-    method: "POST",
-    headers: headers(token),
-    body: JSON.stringify({ timeout_ms: timeoutMs }),
-    signal: AbortSignal.timeout(timeoutMs + 5_000),
-    redirect: "manual"
-  });
+  let response;
+  try {
+    response = await fetch(`${bridgeBase}/v1/bridge/capture`, {
+      method: "POST",
+      headers: headers(token),
+      body: JSON.stringify({ timeout_ms: timeoutMs }),
+      signal: AbortSignal.timeout(timeoutMs + 5_000),
+      redirect: "manual"
+    });
+  } catch (error) {
+    throw new Error(`Không gửi được yêu cầu đọc tab tới Browser Bridge: ${describeFetchError(error)}`);
+  }
   const body = await readResponse(response);
   if (!response.ok) {
     throw errorFromResponse(response, body, "Browser bridge không đọc được tab");
@@ -116,6 +137,19 @@ async function capture(token) {
 }
 
 async function main() {
+  const args = new Set(process.argv.slice(2));
+  if (args.has("--cdp") || String(process.env.LTN_BROWSER_MODE || "").toLowerCase() === "cdp") {
+    const targetUrl = process.env.LTN_CHROME_TARGET_URL ||
+      process.argv.slice(2).find((value) => /^https?:\/\//i.test(value)) || "";
+    const page = await readCdpPage({
+      host: cdpHost,
+      port: cdpPort,
+      targetUrl,
+      timeoutMs: Math.min(timeoutMs, 15_000)
+    });
+    process.stdout.write(`${JSON.stringify({ object: "browser.page", data: page })}\n`);
+    return;
+  }
   const token = resolveToken();
   if (!token) throw new Error("Thiếu Browser Bridge token. Hãy chạy Repair.");
   await ensureBridge(token);

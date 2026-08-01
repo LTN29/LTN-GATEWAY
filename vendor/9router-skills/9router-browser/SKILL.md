@@ -1,45 +1,55 @@
 ---
 name: 9router-browser
-description: Read the visible content of the user's currently active, signed-in Chrome tab through the SIMI local browser bridge and LTN Gateway. Use for private web pages that require the user's existing browser session.
+description: Read the visible content of an authorized signed-in Chrome tab through Chrome DevTools Protocol and LTN Gateway, without requiring a Chrome extension. Use for private web pages that require the user's browser session.
 ---
 
-# 9Router — Signed-in Browser Tab
+# 9Router - Signed-in Browser Tab Without Extension
 
 Use this skill only for a page the user is already authorized to view in Chrome.
-It does not receive passwords, cookies, or browser session tokens. The Chrome
-extension sends only the visible page text after the local bridge receives a
-request from Codex.
+This mode uses Chrome DevTools Protocol on localhost and evaluates a read-only
+DOM expression in the debug profile. It does not read passwords, cookies, or
+browser session stores.
 
-## Read the current tab
+## One-time Chrome profile setup
 
-Run the platform command below and use the returned JSON `data.text` as the
-page content. Do not use `9router-web-fetch` for a page that requires login.
+The installer provides `ltn-chrome-debug`, which opens a separate Chrome
+profile with a localhost CDP port. Login to the target site in that profile
+once; later runs retain its session.
 
-Use the generated `ltn-browser-page` wrapper. It reads the local bridge token
-without printing it and starts the local bridge automatically when it is not
-already running. This skill is intentionally separate from `Chrome: Control
-Chrome`; do not switch to that skill for this operation because it requires a
-different trusted native connector.
+macOS/Linux:
+
+```bash
+"${CODEX_HOME:-$HOME/.codex}/bin/ltn-chrome-debug" "https://inventory.simi.vn/inventory"
+```
 
 Windows:
 
 ```powershell
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
-& (Join-Path $codexHome "bin\ltn-browser-page.cmd")
+& (Join-Path $codexHome "bin\ltn-chrome-debug.cmd") "https://inventory.simi.vn/inventory"
+```
+
+## Read the current debug-profile tab
+
+Run the platform command below and use the returned JSON `data.text` as the
+page content. Do not use `9router-web-fetch` for a page that requires login.
+
+Windows:
+
+```powershell
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+& (Join-Path $codexHome "bin\ltn-browser-page.cmd") --cdp "https://inventory.simi.vn/inventory"
 ```
 
 macOS/Linux:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/bin/ltn-browser-page"
+"${CODEX_HOME:-$HOME/.codex}/bin/ltn-browser-page" --cdp "https://inventory.simi.vn/inventory"
 ```
 
-If the command returns a bridge or Chrome error, report that exact error. The
-user must have loaded and enabled the SIMI Browser Bridge unpacked extension
-once in `chrome://extensions`, and must keep the authorized target tab open.
-For compatibility with an older installed wrapper, if the error is specifically
-`Could not connect to 127.0.0.1:20130`, start `ltn-browser-bridge` once and run
-the wrapper again; then run Repair to receive the self-starting client.
+If CDP is unavailable, start `ltn-chrome-debug` and keep the target tab open
+in that profile. The normal Chrome profile cannot be attached silently when no
+extension is used; the explicit debug profile is the security boundary.
 
 ## Routing rules
 

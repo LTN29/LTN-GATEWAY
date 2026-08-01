@@ -407,6 +407,8 @@ function Install-BrowserBridge {
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $bridgePath = Join-Path $CodexHome "browser-bridge.mjs"
   $pageClientPath = Join-Path $CodexHome "browser-page.mjs"
+  $cdpClientPath = Join-Path $CodexHome "browser-cdp.mjs"
+  $chromeDebugPath = Join-Path $CodexHome "chrome-debug.mjs"
   $bridgeTemp = "$bridgePath.$([Guid]::NewGuid().ToString('N')).tmp"
   try {
     Invoke-WebRequest -UseBasicParsing `
@@ -424,6 +426,20 @@ function Install-BrowserBridge {
     Move-Item -LiteralPath $pageClientTemp -Destination $pageClientPath -Force
   } finally {
     if (Test-Path -LiteralPath $pageClientTemp) { Remove-Item -LiteralPath $pageClientTemp -Force -ErrorAction SilentlyContinue }
+  }
+  foreach ($asset in @(
+    @{ Name = "browser-cdp.mjs"; Path = $cdpClientPath },
+    @{ Name = "chrome-debug.mjs"; Path = $chromeDebugPath }
+  )) {
+    $assetTemp = "$($asset.Path).$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+      Invoke-WebRequest -UseBasicParsing `
+        -Uri ([Uri]"$gatewayRoot/install/tools/$($asset.Name)").AbsoluteUri `
+        -OutFile $assetTemp -MaximumRedirection 0
+      Move-Item -LiteralPath $assetTemp -Destination $asset.Path -Force
+    } finally {
+      if (Test-Path -LiteralPath $assetTemp) { Remove-Item -LiteralPath $assetTemp -Force -ErrorAction SilentlyContinue }
+    }
   }
 
   $extensionDir = Join-Path $CodexHome "browser-extension"
@@ -453,6 +469,7 @@ function Install-BrowserBridge {
 
   $bridgeWrapper = Join-Path $BinDir "ltn-browser-bridge.cmd"
   $pageWrapper = Join-Path $BinDir "ltn-browser-page.cmd"
+  $chromeDebugWrapper = Join-Path $BinDir "ltn-chrome-debug.cmd"
   $escapedCodexHome = $CodexHome.Replace('"', '')
   $bridgeWrapperText = @"
 @echo off
@@ -475,9 +492,21 @@ endlocal
 '@
   $pageWrapperText = $pageWrapperText.Replace('%CODEX_HOME%', $escapedCodexHome)
   [IO.File]::WriteAllText($pageWrapper, $pageWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
-  Write-Host "Đã cài browser bridge: $bridgePath"
-  Write-Host "  Extension: mở chrome://extensions -> Developer mode -> Load unpacked -> $extensionDir"
-  Write-Host "  ltn-browser-page sẽ tự khởi động bridge khi Codex đọc tab"
+  $chromeDebugWrapperText = @'
+@echo off
+setlocal
+if defined LTN_BROWSER_NODE_PATH (
+  "%LTN_BROWSER_NODE_PATH%" "%CODEX_HOME%\chrome-debug.mjs" %*
+) else (
+  node "%CODEX_HOME%\chrome-debug.mjs" %*
+)
+endlocal
+'@
+  $chromeDebugWrapperText = $chromeDebugWrapperText.Replace('%CODEX_HOME%', $escapedCodexHome)
+  [IO.File]::WriteAllText($chromeDebugWrapper, $chromeDebugWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
+  Write-Host "Đã cài Chrome CDP client: $chromeDebugPath"
+  Write-Host "  Khởi tạo profile đọc tab: ltn-chrome-debug https://inventory.simi.vn/inventory"
+  Write-Host "  Đọc tab không cần Extension: ltn-browser-page --cdp"
 }
 
 function Refresh-ProcessPath {
@@ -712,7 +741,7 @@ function Invoke-LtnUninstall {
     $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent ""
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
-  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-9router.cmd", "ltn-pdf.cmd")) {
+  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd")) {
     $wrapperPath = Join-Path $BinDir $wrapper
     if (Test-Path $wrapperPath) {
       Remove-Item -LiteralPath $wrapperPath -Force
@@ -744,12 +773,16 @@ function Invoke-LtnUninstall {
   Remove-Item Env:LTN_BROWSER_BRIDGE_TOKEN -ErrorAction SilentlyContinue
   $browserBridgePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-bridge.mjs"
   $browserPagePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-page.mjs"
+  $browserCdpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-cdp.mjs"
+  $chromeDebugPath = Join-Path (Split-Path -Parent $ConfigPath) "chrome-debug.mjs"
   $browserTokenPath = Join-Path (Split-Path -Parent $ConfigPath) "credentials\ltn-browser-bridge-token"
   $browserExtensionPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-extension"
   $toolsPath = Join-Path (Split-Path -Parent $ConfigPath) "tools"
   $pdfRuntimePath = Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime"
   if (Test-Path -LiteralPath $browserBridgePath) { Remove-Item -LiteralPath $browserBridgePath -Force }
   if (Test-Path -LiteralPath $browserPagePath) { Remove-Item -LiteralPath $browserPagePath -Force }
+  if (Test-Path -LiteralPath $browserCdpPath) { Remove-Item -LiteralPath $browserCdpPath -Force }
+  if (Test-Path -LiteralPath $chromeDebugPath) { Remove-Item -LiteralPath $chromeDebugPath -Force }
   if (Test-Path -LiteralPath $browserTokenPath) { Remove-Item -LiteralPath $browserTokenPath -Force }
   if (Test-Path -LiteralPath $browserExtensionPath) { Remove-Item -LiteralPath $browserExtensionPath -Recurse -Force }
   if (Test-Path -LiteralPath $toolsPath) { Remove-Item -LiteralPath $toolsPath -Recurse -Force }
@@ -908,7 +941,7 @@ Write-Host "  Hệ điều hành: Windows"
 Write-Host "  Codex CLI: $(if ($installedCodexStatus.Healthy) { $installedCodexStatus.Version } else { "chưa xác định" })"
 Write-Host "  Gateway: $GatewayBaseUrl"
 Write-Host "  Model mặc định: $defaultModel"
-Write-Host "  Browser bridge: dùng ltn-browser-bridge sau khi Load unpacked extension"
+Write-Host "  Chrome CDP: dùng ltn-chrome-debug rồi đọc bằng ltn-browser-page --cdp"
 Write-Host ""
 Write-Host "Bước tiếp theo:"
 Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."

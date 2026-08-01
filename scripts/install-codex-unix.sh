@@ -665,11 +665,13 @@ get_or_create_browser_bridge_token() {
 }
 
 install_browser_bridge() {
-  local gateway_root bridge_path bridge_tmp page_client_path page_client_tmp extension_root asset asset_path asset_tmp bridge_token
+  local gateway_root bridge_path bridge_tmp page_client_path page_client_tmp cdp_client_path chrome_debug_path asset asset_path asset_tmp bridge_token
   gateway_root="${GATEWAY_BASE_URL%/}"
   gateway_root="${gateway_root%/v1}"
   bridge_path="${CODEX_HOME}/browser-bridge.mjs"
   page_client_path="${CODEX_HOME}/browser-page.mjs"
+  cdp_client_path="${CODEX_HOME}/browser-cdp.mjs"
+  chrome_debug_path="${CODEX_HOME}/chrome-debug.mjs"
   bridge_tmp="${bridge_path}.$$.$(date +%s).tmp"
   if ! curl --fail --silent --show-error --max-redirs 0 \
     --output "${bridge_tmp}" "${gateway_root}/install/browser-bridge.mjs"; then
@@ -686,6 +688,20 @@ install_browser_bridge() {
   fi
   chmod 600 "${page_client_tmp}"
   mv "${page_client_tmp}" "${page_client_path}"
+  for asset in browser-cdp.mjs chrome-debug.mjs; do
+    case "${asset}" in
+      browser-cdp.mjs) asset_path="${cdp_client_path}" ;;
+      chrome-debug.mjs) asset_path="${chrome_debug_path}" ;;
+    esac
+    asset_tmp="${asset_path}.$$.$(date +%s).tmp"
+    if ! curl --fail --silent --show-error --max-redirs 0 \
+      --output "${asset_tmp}" "${gateway_root}/install/tools/${asset}"; then
+      rm -f "${asset_tmp}"
+      die_code 32 "Khong the tai browser asset ${asset}."
+    fi
+    chmod 600 "${asset_tmp}"
+    mv "${asset_tmp}" "${asset_path}"
+  done
 
   extension_root="${CODEX_HOME}/browser-extension"
   mkdir -p "${extension_root}"
@@ -726,9 +742,16 @@ node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
 exec "\${node_bin}" "${page_client_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-browser-page"
-  echo "Da cai browser bridge: ${bridge_path}"
-  echo "  Extension: chrome://extensions -> Developer mode -> Load unpacked -> ${extension_root}"
-  echo "  ltn-browser-page tu khoi dong bridge khi Codex doc tab"
+cat > "${BIN_DIR}/ltn-chrome-debug" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+exec "\${node_bin}" "${chrome_debug_path}" "\$@"
+EOF
+  chmod 700 "${BIN_DIR}/ltn-chrome-debug"
+  echo "Da cai Chrome CDP client: ${chrome_debug_path}"
+  echo "  Khoi tao profile doc tab: ltn-chrome-debug https://inventory.simi.vn/inventory"
+  echo "  Doc tab khong can Extension: ltn-browser-page --cdp"
 }
 
 runtime_node_major() {
@@ -996,11 +1019,11 @@ uninstall_ltn() {
   local account skill_name skill_dir
   account="$(id -un)"
   remove_managed_config
-  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs"
+  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs"
   rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
   rm -rf "${CODEX_HOME}/browser-extension"
-  rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page"
+  rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page" "${BIN_DIR}/ltn-chrome-debug"
   for skill_name in ${MANAGED_SKILL_NAMES}; do
     skill_dir="${CODEX_HOME}/skills/${skill_name}"
     rm -f "${skill_dir}/SKILL.md"

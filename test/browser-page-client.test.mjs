@@ -9,6 +9,7 @@ test("browser page client starts the bridge and captures only through the local 
   assert.match(source, /detached: true/);
   assert.match(source, /windowsHide: true/);
   assert.match(source, /LTN_BROWSER_BRIDGE_TOKEN_PATH/);
+  assert.match(source, /describeFetchError/);
   assert.match(source, /\/v1\/bridge\/capture/);
   assert.doesNotMatch(source, /cookie/i);
   assert.doesNotMatch(source, /localStorage|sessionStorage|password/i);

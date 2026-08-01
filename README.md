@@ -238,14 +238,20 @@ ltn-pdf --json --max-chars 200000 /path/to/file.pdf
 venv Python riêng với `pypdf`, `pdfplumber` và `pymupdf`. PDF scan không có lớp text
 sẽ được báo rõ là cần OCR, không trả kết quả giả.
 
-Để Codex đọc trang đang mở bằng tài khoản Chrome đã đăng nhập, installer cũng cài
-local Browser Bridge và bộ Chrome Extension. Mở
-`chrome://extensions`, bật Developer mode và chọn Load unpacked tới thư mục
-`~/.codex/browser-extension` (Windows dùng `%USERPROFILE%\\.codex\\browser-extension`).
-Giữ tab cần đọc ở trạng thái đang mở; skill `9router-browser` sẽ lấy phần text đang
-hiển thị và gửi qua Gateway. Mật khẩu, cookie và token phiên không bị đọc.
-Lệnh `ltn-browser-page` tự khởi động bridge khi cần; không dùng skill
-`Chrome: Control Chrome` cho luồng 9Router này.
+Để Codex đọc trang đã đăng nhập mà không phụ thuộc Chrome Extension, installer
+cài Chrome DevTools Protocol client và lệnh `ltn-chrome-debug`. Lệnh này mở một
+Chrome profile riêng trên localhost; user đăng nhập trang cần dùng một lần,
+những lần sau session được giữ lại. Skill `9router-browser` chỉ đọc DOM/text
+hiển thị, không đọc mật khẩu, cookie hoặc session store.
+
+```text
+ltn-chrome-debug https://inventory.simi.vn/inventory
+ltn-browser-page --cdp https://inventory.simi.vn/inventory
+```
+
+Không dùng skill `Chrome: Control Chrome` cho luồng 9Router này. Extension
+Browser Bridge cũ vẫn được giữ làm fallback tương thích, nhưng không còn là
+đường chính.
 
 Bridge local cần Node.js 20+ trên máy nhân viên. Nếu lệnh `node` không có trong PATH,
 có thể đặt `LTN_BROWSER_NODE_PATH` trỏ tới `node` rồi chạy lại lệnh đọc tab.

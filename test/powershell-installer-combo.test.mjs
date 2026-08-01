@@ -133,6 +133,12 @@ async function runInstallerWithCombo({
       return;
     }
 
+    if (req.url === "/install/tools/browser-cdp.mjs" || req.url === "/install/tools/chrome-debug.mjs") {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end("console.log('browser cdp asset test');");
+      return;
+    }
+
     if (req.url === "/install/tools/pdf-extract.py") {
       res.writeHead(200, { "content-type": "text/x-python" });
       res.end("print('pdf test')\n");

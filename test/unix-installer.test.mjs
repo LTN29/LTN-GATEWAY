@@ -113,6 +113,9 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /install_local_tools\(\)/);
   assert.match(script, /install\/tools\/\$\{asset\}/);
   assert.match(script, /install\/tools\/browser-page\.mjs/);
+  assert.match(script, /browser-cdp\.mjs/);
+  assert.match(script, /chrome-debug\.mjs/);
+  assert.match(script, /ltn-chrome-debug/);
   assert.match(script, /page_client_path="\$\{CODEX_HOME\}\/browser-page\.mjs"/);
   assert.match(script, /exec .*page_client_path/);
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);

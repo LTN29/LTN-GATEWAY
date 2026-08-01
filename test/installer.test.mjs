@@ -76,6 +76,9 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /browser-bridge\.mjs/);
   assert.match(script, /browser-page\.mjs/);
   assert.match(script, /install\/tools\/browser-page\.mjs/);
+  assert.match(script, /browser-cdp\.mjs/);
+  assert.match(script, /chrome-debug\.mjs/);
+  assert.match(script, /ltn-chrome-debug\.cmd/);
   assert.match(script, /9Router skills:/);
 });
 
