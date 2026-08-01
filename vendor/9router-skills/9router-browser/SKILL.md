@@ -37,6 +37,9 @@ macOS/Linux:
 If the command returns a bridge or Chrome error, report that exact error. The
 user must have loaded and enabled the SIMI Browser Bridge unpacked extension
 once in `chrome://extensions`, and must keep the authorized target tab open.
+For compatibility with an older installed wrapper, if the error is specifically
+`Could not connect to 127.0.0.1:20130`, start `ltn-browser-bridge` once and run
+the wrapper again; then run Repair to receive the self-starting client.
 
 ## Routing rules
 

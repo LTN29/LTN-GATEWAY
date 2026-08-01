@@ -477,7 +477,7 @@ endlocal
   [IO.File]::WriteAllText($pageWrapper, $pageWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài browser bridge: $bridgePath"
   Write-Host "  Extension: mở chrome://extensions -> Developer mode -> Load unpacked -> $extensionDir"
-  Write-Host "  Khởi động bridge: ltn-browser-bridge"
+  Write-Host "  ltn-browser-page sẽ tự khởi động bridge khi Codex đọc tab"
 }
 
 function Refresh-ProcessPath {

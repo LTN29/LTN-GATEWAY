@@ -728,7 +728,7 @@ EOF
   chmod 700 "${BIN_DIR}/ltn-browser-page"
   echo "Da cai browser bridge: ${bridge_path}"
   echo "  Extension: chrome://extensions -> Developer mode -> Load unpacked -> ${extension_root}"
-  echo "  Khoi dong bridge: ltn-browser-bridge"
+  echo "  ltn-browser-page tu khoi dong bridge khi Codex doc tab"
 }
 
 runtime_node_major() {
