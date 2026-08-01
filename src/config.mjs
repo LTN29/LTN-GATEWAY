@@ -47,6 +47,10 @@ export const config = {
     1,
     number(process.env.MEMORY_EXTRACTION_QUEUE_LIMIT || 100, 100)
   ),
+  memoryExtractionConcurrency: Math.max(
+    1,
+    number(process.env.MEMORY_EXTRACTION_CONCURRENCY || 2, 2)
+  ),
   codexCombos: {
     premium: process.env.CODEX_COMBO_PREMIUM || "",
     free: process.env.CODEX_COMBO_FREE || "",
@@ -122,6 +126,10 @@ export const config = {
   ),
   memoryBackupDir: resolve(process.env.MEMORY_BACKUP_DIR || "./data/memory-backups"),
   userAnalyticsEnabled: bool(process.env.USER_ANALYTICS_ENABLED, true),
+  userAnalyticsRetentionDays: Math.max(
+    7,
+    number(process.env.USER_ANALYTICS_RETENTION_DAYS || 90, 90)
+  ),
   userAnalyticsFile: resolve(
     process.env.USER_ANALYTICS_FILE || "./data/user-analytics.json"
   ),

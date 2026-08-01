@@ -3,8 +3,25 @@ import { config } from "../config.mjs";
 import { timingSafeEqualString } from "./admin-validation.mjs";
 
 const tokens = new Map();
+const MAX_TOKENS_PER_ADMIN = 20;
+
+function pruneTokens(email) {
+  const now = Date.now();
+  const activeForAdmin = [];
+  for (const [key, record] of tokens) {
+    if (record.expiresAt <= now) {
+      tokens.delete(key);
+    } else if (record.email === email) {
+      activeForAdmin.push(key);
+    }
+  }
+  while (activeForAdmin.length >= MAX_TOKENS_PER_ADMIN) {
+    tokens.delete(activeForAdmin.shift());
+  }
+}
 
 export function issueCsrfToken(admin) {
+  pruneTokens(admin.email);
   const token = randomBytes(32).toString("base64url");
   tokens.set(`${admin.email}:${token}`, {
     email: admin.email,

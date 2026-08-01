@@ -10,6 +10,7 @@ const VALID_MODES = new Set(["premium_always", "limited_daily", "free_only", "te
 const VALID_SCOPES = new Set(["client", "team", "user"]);
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const dateFormatters = new Map();
 
 function validateComboId(comboId, name) {
   const value = String(comboId || "").trim();
@@ -45,12 +46,17 @@ export function validateClientId(value) {
 }
 
 function dailyDate(timeZone) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(new Date());
+  let formatter = dateFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    });
+    dateFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }

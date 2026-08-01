@@ -24,6 +24,10 @@ function emptyStore() {
   };
 }
 
+// Serialize transactions from this process before taking the cross-process
+// filesystem lock. This avoids 25 ms polling loops when requests arrive in a burst.
+let usageTransactionQueue = Promise.resolve();
+
 async function readStore(path) {
   try {
     const raw = await readFile(path, "utf8");
@@ -135,7 +139,7 @@ async function recoverStaleLock(lockPath) {
   }
 }
 
-async function withStoreLock(task) {
+async function withStoreFileLock(task) {
   const lockPath = `${config.codexUsageFile}.lock`;
   const deadline = Date.now() + config.codexUsageLockTimeoutMs;
   await mkdir(dirname(config.codexUsageFile), { recursive: true });
@@ -171,6 +175,14 @@ async function withStoreLock(task) {
   } finally {
     await rm(lockPath, { recursive: true, force: true });
   }
+}
+
+function withStoreLock(task) {
+  const transaction = usageTransactionQueue
+    .catch(() => undefined)
+    .then(() => withStoreFileLock(task));
+  usageTransactionQueue = transaction.then(() => undefined, () => undefined);
+  return transaction;
 }
 
 function recordKey({ teamCode, usageDate, usageScope, clientIdHash, principalType, userId }) {

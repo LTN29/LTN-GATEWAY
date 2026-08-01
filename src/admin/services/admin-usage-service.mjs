@@ -3,9 +3,40 @@ import { config } from "../../config.mjs";
 import { redactSecrets } from "../../utils.mjs";
 import { csvEscape, safeTeamId, safeUserId } from "../admin-validation.mjs";
 
+const READ_CACHE_TTL_MS = 1_000;
+const MAX_JSON_CACHE_ENTRIES = 10;
+const jsonReadCache = new Map();
+
+function setJsonCache(path, value) {
+  jsonReadCache.delete(path);
+  jsonReadCache.set(path, value);
+  while (jsonReadCache.size > MAX_JSON_CACHE_ENTRIES) {
+    jsonReadCache.delete(jsonReadCache.keys().next().value);
+  }
+}
+
 async function readJson(path, fallback) {
-  try { return JSON.parse(await readFile(path, "utf8")); }
-  catch (error) { if (error?.code === "ENOENT") return fallback; throw error; }
+  const cached = jsonReadCache.get(path);
+  if (cached?.data && Date.now() - cached.loadedAt < READ_CACHE_TTL_MS) return cached.data;
+  if (cached?.pending) return cached.pending;
+
+  const pending = readFile(path, "utf8")
+    .then((raw) => JSON.parse(raw))
+    .catch((error) => {
+      if (error?.code === "ENOENT") return fallback;
+      throw error;
+    })
+    .then((data) => {
+      setJsonCache(path, { data, loadedAt: Date.now(), pending: null });
+      return data;
+    })
+    .catch((error) => {
+      jsonReadCache.delete(path);
+      throw error;
+    });
+
+  setJsonCache(path, { data: cached?.data || null, loadedAt: cached?.loadedAt || 0, pending });
+  return pending;
 }
 
 function pageArgs({ page = 1, pageSize = 50 } = {}) {

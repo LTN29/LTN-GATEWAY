@@ -15,6 +15,7 @@ import { listSyncOutbox, retryAllSync, retrySyncItem } from "./services/admin-sy
 import { configSummary, dashboardSummary, systemHealth } from "./services/admin-system-service.mjs";
 
 const rateBuckets = new Map();
+const MAX_RATE_BUCKETS = 2_000;
 
 function adminHeaders(extra = {}) {
   return {
@@ -61,6 +62,12 @@ function isWrite(method) {
 }
 
 function rateLimit(admin, kind) {
+  const now = Date.now();
+  if (rateBuckets.size >= MAX_RATE_BUCKETS) {
+    for (const [key, record] of rateBuckets) {
+      if (record.expiresAt <= now) rateBuckets.delete(key);
+    }
+  }
   const minute = Math.floor(Date.now() / 60000);
   const hour = Math.floor(Date.now() / 3600000);
   const limit = kind === "key"
@@ -69,8 +76,12 @@ function rateLimit(admin, kind) {
       ? config.adminRateLimitWritePerMinute
       : config.adminRateLimitReadPerMinute;
   const bucketId = `${admin.email}:${kind}:${kind === "key" ? hour : minute}`;
-  const count = (rateBuckets.get(bucketId) || 0) + 1;
-  rateBuckets.set(bucketId, count);
+  const current = rateBuckets.get(bucketId);
+  const count = (current?.count || 0) + 1;
+  rateBuckets.set(bucketId, {
+    count,
+    expiresAt: kind === "key" ? (hour + 1) * 3600000 : (minute + 1) * 60000
+  });
   if (count > limit) {
     throw Object.assign(new Error("Bạn thao tác quá nhanh, vui lòng thử lại sau."), { statusCode: 429, code: "RATE_LIMITED" });
   }

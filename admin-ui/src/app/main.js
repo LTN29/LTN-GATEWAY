@@ -106,6 +106,15 @@ function qs(params) {
 }
 
 const apiCache = new Map();
+const MAX_API_CACHE_ENTRIES = 100;
+
+function setApiCache(path, value) {
+  apiCache.delete(path);
+  apiCache.set(path, value);
+  while (apiCache.size > MAX_API_CACHE_ENTRIES) {
+    apiCache.delete(apiCache.keys().next().value);
+  }
+}
 
 async function api(path, init = {}) {
   const method = init.method || "GET";
@@ -116,6 +125,7 @@ async function api(path, init = {}) {
     if (cached && (Date.now() - cached.time < ttl)) {
       return cached.data;
     }
+    if (cached) apiCache.delete(path);
   }
 
   const controller = new AbortController();
@@ -144,7 +154,7 @@ async function api(path, init = {}) {
     }
     
     if (method === "GET") {
-      apiCache.set(path, { time: Date.now(), data: payload.data });
+      setApiCache(path, { time: Date.now(), data: payload.data });
     } else {
       apiCache.clear();
     }

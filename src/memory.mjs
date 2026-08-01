@@ -1,11 +1,55 @@
 import { resolve, relative, dirname } from "node:path";
-import { mkdir, chmod, readFile } from "node:fs/promises";
+import { mkdir, chmod, readFile, stat } from "node:fs/promises";
 import { config } from "./config.mjs";
-import { readUtf8, atomicWrite, redactSecrets, stripCodeFence, jsonLog } from "./utils.mjs";
+import { atomicWrite, redactSecrets, stripCodeFence, jsonLog } from "./utils.mjs";
 import { syncMemoryFile } from "./onedrive.mjs";
 
 const teamQueues = new Map();
 const teamQueueDepths = new Map();
+const memoryReadCache = new Map();
+const MAX_MEMORY_CACHE_ENTRIES = 512;
+
+function setMemoryCache(path, value) {
+  memoryReadCache.delete(path);
+  memoryReadCache.set(path, value);
+  while (memoryReadCache.size > MAX_MEMORY_CACHE_ENTRIES) {
+    memoryReadCache.delete(memoryReadCache.keys().next().value);
+  }
+}
+
+async function readMemoryFile(path, fallback = null) {
+  let info;
+  try {
+    info = await stat(path);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      memoryReadCache.delete(path);
+      if (fallback !== null) return fallback;
+    }
+    throw error;
+  }
+
+  const fingerprint = `${info.mtimeMs}:${info.size}`;
+  const cached = memoryReadCache.get(path);
+  if (cached?.fingerprint === fingerprint && cached.data !== undefined) {
+    setMemoryCache(path, cached);
+    return cached.data;
+  }
+  if (cached?.fingerprint === fingerprint && cached.pending) return cached.pending;
+
+  const pending = readFile(path, "utf8")
+    .then((data) => {
+      const limited = data.slice(0, config.maxContextChars);
+      setMemoryCache(path, { fingerprint, data: limited, pending: null });
+      return limited;
+    })
+    .catch((error) => {
+      memoryReadCache.delete(path);
+      throw error;
+    });
+  setMemoryCache(path, { fingerprint, data: undefined, pending });
+  return pending;
+}
 
 function safeMemoryPath(memoryFile, label = "memory file") {
   const path = resolve(config.memoryDir, memoryFile);
@@ -26,18 +70,12 @@ function userMemoryPath(principal) {
 
 export async function loadCompanyMemory() {
   const path = resolve(config.memoryDir, "COMPANY.md");
-  return (await readUtf8(path, "# LTN COMPANY CONTEXT\n")).slice(
-    0,
-    config.maxContextChars
-  );
+  return readMemoryFile(path, "# LTN COMPANY CONTEXT\n");
 }
 
 export async function loadTeamMemory(team) {
   const fallback = `# ${team.displayName} CONTEXT\n\n## Kiến thức hiện tại\n\n- Chưa có dữ liệu.`;
-  return (await readUtf8(memoryPath(team), fallback)).slice(
-    0,
-    config.maxContextChars
-  );
+  return readMemoryFile(memoryPath(team), fallback);
 }
 
 function userMemoryTemplate(principal) {
@@ -77,7 +115,7 @@ export async function loadUserMemory(principal) {
   if (!principal?.userId || !config.userMemoryEnabled) return "";
   const path = userMemoryPath(principal);
   try {
-    return (await readFile(path, "utf8")).slice(0, config.maxContextChars);
+    return await readMemoryFile(path);
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
   }

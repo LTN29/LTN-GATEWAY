@@ -215,6 +215,23 @@ async function runExtraction({ team, principal, rawKey, originalMessages, assist
   }
 }
 
+let activeExtractions = 0;
+let scheduledExtractions = 0;
+const extractionWaiters = [];
+
+async function withExtractionSlot(task) {
+  if (activeExtractions >= config.memoryExtractionConcurrency) {
+    await new Promise((resolve) => extractionWaiters.push(resolve));
+  }
+  activeExtractions += 1;
+  try {
+    return await task();
+  } finally {
+    activeExtractions -= 1;
+    extractionWaiters.shift()?.();
+  }
+}
+
 export function scheduleMemoryExtraction({
   team,
   principal,
@@ -225,8 +242,31 @@ export function scheduleMemoryExtraction({
 }) {
   if (!config.memoryUpdateEnabled || !config.memoryExtractionEnabled) return;
   if (!assistantText || !String(assistantText).trim()) return;
+  if (scheduledExtractions >= config.memoryExtractionQueueLimit) {
+    jsonLog("memory_extraction_dropped_global_queue_full", {
+      team: team.code,
+      queueLimit: config.memoryExtractionQueueLimit
+    });
+    return;
+  }
 
-  enqueueTeamMemoryUpdate(team, async () => {
-    await runExtraction({ team, principal, rawKey, originalMessages, assistantText, requestId });
+  scheduledExtractions += 1;
+  const queued = enqueueTeamMemoryUpdate(team, async () => {
+    await withExtractionSlot(() => runExtraction({
+      team,
+      principal,
+      rawKey,
+      originalMessages,
+      assistantText,
+      requestId
+    }));
   });
+  if (!queued) {
+    scheduledExtractions -= 1;
+    return;
+  }
+  queued.then(
+    () => { scheduledExtractions -= 1; },
+    () => { scheduledExtractions -= 1; }
+  );
 }

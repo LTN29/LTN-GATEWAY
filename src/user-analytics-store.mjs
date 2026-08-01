@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { config } from "./config.mjs";
 import { jsonLog, redactSecrets } from "./utils.mjs";
@@ -10,6 +10,7 @@ function emptyStore() {
 // Analytics is a small JSON file. Serialize read/modify/write transactions
 // in this process so concurrent requests cannot overwrite each other's data.
 let analyticsWriteQueue = Promise.resolve();
+let analyticsStoreCache = { path: "", fingerprint: null, store: null };
 
 function dateKey(date, userId) {
   return `${date}|${userId || "legacy-team"}`;
@@ -22,13 +23,35 @@ function average(previousAverage, previousCount, nextValue) {
 
 const MAX_RECENT_ERRORS_PER_USER_DAY = 50;
 
+function cleanupOldAnalytics(store, today) {
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(todayMs)) return;
+  const retentionMs = config.userAnalyticsRetentionDays * 24 * 60 * 60 * 1000;
+  for (const [key, record] of Object.entries(store.dailyUsers)) {
+    const recordMs = Date.parse(`${record?.date || ""}T00:00:00Z`);
+    if (Number.isFinite(recordMs) && todayMs - recordMs > retentionMs) {
+      delete store.dailyUsers[key];
+    }
+  }
+}
+
 async function readStore(path) {
   try {
+    const info = await stat(path);
+    const fingerprint = `${info.mtimeMs}:${info.size}`;
+    if (analyticsStoreCache.path === path && analyticsStoreCache.store) {
+      if (analyticsStoreCache.fingerprint === null) {
+        analyticsStoreCache.fingerprint = fingerprint;
+        return analyticsStoreCache.store;
+      }
+      if (analyticsStoreCache.fingerprint === fingerprint) return analyticsStoreCache.store;
+    }
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw);
     if (parsed.version !== 1 || !parsed.dailyUsers || typeof parsed.dailyUsers !== "object") {
       throw new Error("user analytics schema không hợp lệ");
     }
+    analyticsStoreCache = { path, fingerprint, store: parsed };
     return parsed;
   } catch (error) {
     if (error?.code === "ENOENT") return emptyStore();
@@ -115,6 +138,7 @@ async function recordUserAnalyticsTransaction({
 }) {
   try {
     const store = await readStore(config.userAnalyticsFile);
+    cleanupOldAnalytics(store, date);
     const key = dateKey(date, principal.userId);
     const record = store.dailyUsers[key] || {
       date,
@@ -192,6 +216,7 @@ async function recordUserAnalyticsTransaction({
     record.updatedAt = new Date().toISOString();
     store.dailyUsers[key] = record;
     await writeStore(config.userAnalyticsFile, store);
+    analyticsStoreCache = { path: config.userAnalyticsFile, fingerprint: null, store };
     jsonLog("user_analytics_recorded", {
       userId: principal.userId,
       teamId: principal.teamId,

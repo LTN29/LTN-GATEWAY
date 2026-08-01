@@ -503,7 +503,9 @@ async function handleChat(req, res, rawKey, principal, id) {
     return;
   }
 
-  const originalMessages = structuredClone(payload.messages);
+  // injectMemory creates a new array and does not mutate the original messages.
+  // Keep the original reference instead of cloning potentially large prompts.
+  const originalMessages = payload.messages;
   if (!outsideControl && principal.memoryMode !== "none") {
     const { companyMemory, teamMemory, userMemory } = await loadMemoryContext(team, principal);
     payload.messages = injectMemory(
