@@ -1,0 +1,1 @@
+self.SIMI_BRIDGE_TOKEN = "";

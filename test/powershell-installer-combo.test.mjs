@@ -11,7 +11,7 @@ const installerSource = await readFile(
   "utf8"
 );
 
-test("Windows installer uses the official standalone Codex installer without requiring Node.js", () => {
+test("Windows installer keeps Codex standalone and provisions Node/Python separately", () => {
   assert.match(
     installerSource,
     /https:\/\/chatgpt\.com\/codex\/install\.ps1/
@@ -19,7 +19,8 @@ test("Windows installer uses the official standalone Codex installer without req
   assert.match(installerSource, /CODEX_NON_INTERACTIVE/);
   assert.match(installerSource, /Install-OfficialCodexCli/);
   assert.doesNotMatch(installerSource, /npm install --global @openai\/codex/);
-  assert.doesNotMatch(installerSource, /Chưa có Node\.js\/npm/);
+  assert.match(installerSource, /Ensure-NodeRuntime/);
+  assert.match(installerSource, /Ensure-PdfRuntime/);
   assert.match(
     installerSource,
     /Đang xác minh Combo SIMI AI qua Gateway\.\.\./
@@ -81,7 +82,8 @@ async function runInstallerWithCombo({
     { id: "SIMI-AI", owned_by: "combo" },
     { id: "SIMI-FREE", owned_by: "combo" }
   ],
-  mode = "auto"
+  mode = "auto",
+  storedTeamApiKey = ""
 }) {
   const requests = [];
   const gateway = http.createServer((req, res) => {
@@ -110,6 +112,30 @@ async function runInstallerWithCombo({
     if (req.url === "/v1/models") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ data: models }));
+      return;
+    }
+
+    if (req.url === "/install/browser-bridge.mjs") {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end("console.log('browser bridge test');");
+      return;
+    }
+
+    if (req.url === "/install/tools/9router-client.mjs") {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end("console.log('9router client test');");
+      return;
+    }
+
+    if (req.url === "/install/tools/pdf-extract.py") {
+      res.writeHead(200, { "content-type": "text/x-python" });
+      res.end("print('pdf test')\n");
+      return;
+    }
+
+    if (req.url.match(/^\/install\/browser-extension\/[A-Za-z0-9._-]+$/)) {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("test asset");
       return;
     }
 
@@ -156,7 +182,7 @@ async function runInstallerWithCombo({
     const shell = findCommand("powershell.exe");
     if (!shell) return { skipped: "Windows PowerShell 5.1 is unavailable" };
 
-    const result = await runProcess(shell, [
+    const installerArgs = [
       "-NoLogo",
       "-NoProfile",
       "-NonInteractive",
@@ -165,18 +191,20 @@ async function runInstallerWithCombo({
       "-File",
       scriptPath,
       "-GatewayBaseUrl",
-      `http://127.0.0.1:${gatewayPort}/v1`,
-      "-TeamApiKey",
-      teamApiKey,
-      "-Mode",
-      mode,
-      "-SkipCodexInstall"
-    ], {
+      `http://127.0.0.1:${gatewayPort}/v1`
+    ];
+    if (mode !== "repair") {
+      installerArgs.push("-TeamApiKey", teamApiKey);
+    }
+    installerArgs.push("-Mode", mode, "-SkipCodexInstall");
+
+    const result = await runProcess(shell, installerArgs, {
       env: {
         ...process.env,
         CODEX_HOME: codexHome,
-        LTN_TEAM_API_KEY: "",
-        LTN_CLIENT_ID: ""
+        LTN_TEAM_API_KEY: storedTeamApiKey,
+        LTN_CLIENT_ID: "",
+        LTN_SKIP_RUNTIME_INSTALL: "1"
       }
     });
     if (result.signal === "SIGKILL") {
@@ -223,7 +251,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     output.requests.filter((request) =>
       /^\/install\/skills\/[^/]+\/SKILL\.md$/.test(request.url)
     ).length,
-    9
+    11
   );
   assert.match(output.config, /model = "SIMI-AI"/);
   assert.match(output.config, /name = "SIMI Gateway"/);
@@ -252,6 +280,28 @@ test("Windows installer trims clipboard whitespace from the team API key", async
     output.requests.find((request) => request.url === "/v1/codex/config")
       ?.authorization,
     "Bearer team-test-key"
+  );
+});
+
+test("Windows Repair reuses the stored team API key without prompting", async (t) => {
+  const output = await runInstallerWithCombo({
+    mode: "repair",
+    storedTeamApiKey: "stored-team-key"
+  });
+  if (output.skipped) {
+    t.skip(output.skipped);
+    return;
+  }
+
+  assert.equal(output.result.status, 0, output.result.stderr || output.result.stdout);
+  assert.equal(
+    output.requests.find((request) => request.url === "/v1/codex/config")
+      ?.authorization,
+    "Bearer stored-team-key"
+  );
+  assert.match(
+    `${output.result.stdout}\n${output.result.stderr}`,
+    /Repair: dùng API key đã lưu, không yêu cầu nhập lại/
   );
 });
 

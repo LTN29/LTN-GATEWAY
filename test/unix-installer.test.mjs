@@ -49,6 +49,9 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.doesNotMatch(script, /https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
   assert.match(script, /MODE="\$\{1:-\}"/);
   assert.match(script, /read -r -s -p 'API key cua team: '/);
+  assert.match(script, /read_stored_team_key\(\)/);
+  assert.match(script, /\[ "\$\{MODE\}" = "--repair" \]/);
+  assert.match(script, /Repair: dung API key da luu/);
   assert.match(script, /< \/dev\/tty/);
   assert.match(script, /read_menu_choice\(\)/);
   assert.match(script, /Chon che do:/);
@@ -80,8 +83,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /LTN_CODEX_INSTALLER_V2/);
   assert.match(script, /test_only/);
   assert.match(script, /Đang xác minh Combo SIMI AI qua Gateway/);
-  assert.doesNotMatch(script, /command -v python3/);
-  assert.doesNotMatch(script, /Cần python3 hoặc node/);
+  assert.match(script, /command -v python3/);
+  assert.match(script, /python3 python3-venv python3-pip nodejs npm/);
   assert.doesNotMatch(script, /combo\/\$\{?[A-Za-z_]/);
   assert.doesNotMatch(script, /combo\/SIMI-AI/);
   assert.match(script, /CLIENT_ID_PATH="\$\{CODEX_HOME\}\/ltn-client-id"/);
@@ -103,7 +106,10 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /install_managed_9router_skills\(\)/);
   assert.match(script, /install\/skills\/\$\{skill_name\}\/SKILL\.md/);
   assert.match(script, /MANAGED_SKILL_NAMES=/);
-  assert.match(script, /9Router skills: \$\{skill_count\}\/9/);
+  assert.match(script, /9Router skills: \$\{skill_count\}\/11/);
+  assert.match(script, /ensure_runtime_dependencies\(\)/);
+  assert.match(script, /install_local_tools\(\)/);
+  assert.match(script, /install\/tools\/\$\{asset\}/);
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);
   assert.doesNotMatch(script, /MS_CLIENT_SECRET|Cloudflare token/i);
   assert.doesNotMatch(script, /config[\\/]teams\.json/i);

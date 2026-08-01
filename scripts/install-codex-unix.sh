@@ -8,6 +8,7 @@ BIN_DIR="${CODEX_HOME}/bin"
 CLIENT_ID_PATH="${CODEX_HOME}/ltn-client-id"
 CREDENTIAL_DIR="${CODEX_HOME}/credentials"
 LINUX_KEY_PATH="${CREDENTIAL_DIR}/ltn-team-key"
+BRIDGE_TOKEN_PATH="${CREDENTIAL_DIR}/ltn-browser-bridge-token"
 HELPER_PATH="${BIN_DIR}/ltn-codex-token"
 KEYCHAIN_SERVICE="LTN Codex Team Key"
 SECRET_SERVICE_LABEL="LTN Codex Team Key"
@@ -22,7 +23,7 @@ CODEX_VERSION=""
 CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
-MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch"
+MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch 9router-browser 9router-pdf"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -108,7 +109,31 @@ get_or_create_client_id() {
   printf '%s' "${client_id}"
 }
 
+read_stored_team_key() {
+  if [ -n "${TEAM_API_KEY}" ]; then
+    return 0
+  fi
+  if [ -n "${LTN_TEAM_API_KEY:-}" ]; then
+    TEAM_API_KEY="${LTN_TEAM_API_KEY}"
+    return 0
+  fi
+  if [ -n "${NINEROUTER_KEY:-}" ]; then
+    TEAM_API_KEY="${NINEROUTER_KEY}"
+    return 0
+  fi
+  if [ -x "${HELPER_PATH}" ]; then
+    TEAM_API_KEY="$(${HELPER_PATH} 2>/dev/null || true)"
+  fi
+}
+
 read_team_key() {
+  if [ -z "${TEAM_API_KEY}" ] && [ "${MODE}" = "--repair" ]; then
+    read_stored_team_key
+    if [ -z "${TEAM_API_KEY}" ]; then
+      die "Repair khong tim thay API key da luu. Hay chay Install/Update mot lan hoac truyen LTN_TEAM_API_KEY."
+    fi
+    echo "Repair: dung API key da luu, khong yeu cau nhap lai."
+  fi
   if [ -z "${TEAM_API_KEY}" ]; then
     if [ ! -r /dev/tty ]; then
       die "Khong tim thay terminal de nhap API key. Hay chay lai trong terminal tuong tac."
@@ -615,7 +640,239 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 9 skill 9Router."
+  echo "Da cai/cap nhat 11 skill 9Router."
+}
+
+get_or_create_browser_bridge_token() {
+  if [ "${#LTN_BROWSER_BRIDGE_TOKEN:-0}" -ge 32 ]; then
+    printf '%s' "${LTN_BROWSER_BRIDGE_TOKEN}"
+    return
+  fi
+  if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
+    local stored_token
+    stored_token="$(tr -d '\r\n' < "${BRIDGE_TOKEN_PATH}")"
+    if [ "${#stored_token}" -ge 32 ]; then
+      printf '%s' "${stored_token}"
+      return
+    fi
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+    return
+  fi
+  od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+install_browser_bridge() {
+  local gateway_root bridge_path bridge_tmp extension_root asset asset_path asset_tmp bridge_token
+  gateway_root="${GATEWAY_BASE_URL%/}"
+  gateway_root="${gateway_root%/v1}"
+  bridge_path="${CODEX_HOME}/browser-bridge.mjs"
+  bridge_tmp="${bridge_path}.$$.$(date +%s).tmp"
+  if ! curl --fail --silent --show-error --max-redirs 0 \
+    --output "${bridge_tmp}" "${gateway_root}/install/browser-bridge.mjs"; then
+    rm -f "${bridge_tmp}"
+    die_code 32 "Khong the tai browser bridge tu Gateway."
+  fi
+  chmod 600 "${bridge_tmp}"
+  mv "${bridge_tmp}" "${bridge_path}"
+
+  extension_root="${CODEX_HOME}/browser-extension"
+  mkdir -p "${extension_root}"
+  chmod 700 "${extension_root}"
+  for asset in manifest.json service-worker.js popup.html popup.js options.html options.js; do
+    asset_path="${extension_root}/${asset}"
+    asset_tmp="${asset_path}.$$.$(date +%s).tmp"
+    if ! curl --fail --silent --show-error --max-redirs 0 \
+      --output "${asset_tmp}" "${gateway_root}/install/browser-extension/${asset}"; then
+      rm -f "${asset_tmp}"
+      die_code 32 "Khong the tai browser extension asset ${asset}."
+    fi
+    chmod 600 "${asset_tmp}"
+    mv "${asset_tmp}" "${asset_path}"
+  done
+
+  bridge_token="$(get_or_create_browser_bridge_token)"
+  [ -n "${bridge_token}" ] || die_code 32 "Khong tao duoc browser bridge token."
+  mkdir -p "${CREDENTIAL_DIR}"
+  chmod 700 "${CREDENTIAL_DIR}"
+  printf '%s' "${bridge_token}" > "${BRIDGE_TOKEN_PATH}"
+  chmod 600 "${BRIDGE_TOKEN_PATH}"
+  printf 'self.SIMI_BRIDGE_TOKEN = %s;\n' "$(printf '%s' "${bridge_token}" | sed "s/'/\\\\'/g; s/.*/'&'/")" > "${extension_root}/bridge-config.js"
+  chmod 600 "${extension_root}/bridge-config.js"
+
+cat > "${BIN_DIR}/ltn-browser-bridge" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export LTN_BROWSER_BRIDGE_TOKEN="\${LTN_BROWSER_BRIDGE_TOKEN:-\$(cat "${BRIDGE_TOKEN_PATH}")}"
+node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+exec "\${node_bin}" "${bridge_path}"
+EOF
+  chmod 700 "${BIN_DIR}/ltn-browser-bridge"
+  cat > "${BIN_DIR}/ltn-browser-page" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+token="\${LTN_BROWSER_BRIDGE_TOKEN:-}"
+if [ -z "\${token}" ] && [ -r "${BRIDGE_TOKEN_PATH}" ]; then token="\$(cat "${BRIDGE_TOKEN_PATH}")"; fi
+curl -sS -X POST http://127.0.0.1:20130/v1/bridge/capture \\
+  -H "Authorization: Bearer \${token}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"timeout_ms":60000}'
+EOF
+  chmod 700 "${BIN_DIR}/ltn-browser-page"
+  echo "Da cai browser bridge: ${bridge_path}"
+  echo "  Extension: chrome://extensions -> Developer mode -> Load unpacked -> ${extension_root}"
+  echo "  Khoi dong bridge: ltn-browser-bridge"
+}
+
+runtime_node_major() {
+  local node_command="$1" version
+  version="$(${node_command} --version 2>/dev/null || true)"
+  printf '%s' "${version#v}" | cut -d. -f1
+}
+
+run_privileged() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    return 1
+  fi
+}
+
+install_runtime_packages() {
+  [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" = "1" ] && return 1
+  if [ "${OS_NAME}" = "macos" ] && command -v brew >/dev/null 2>&1; then
+    brew install node python
+    return $?
+  fi
+
+  if [ "${OS_NAME}" != "linux" ]; then
+    return 1
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    run_privileged apt-get update &&
+      run_privileged apt-get install -y python3 python3-venv python3-pip nodejs npm
+    return $?
+  fi
+  if command -v dnf >/dev/null 2>&1; then
+    run_privileged dnf install -y python3 python3-pip nodejs npm
+    return $?
+  fi
+  if command -v yum >/dev/null 2>&1; then
+    run_privileged yum install -y python3 python3-pip nodejs npm
+    return $?
+  fi
+  if command -v pacman >/dev/null 2>&1; then
+    run_privileged pacman -Sy --noconfirm python python-pip nodejs npm
+    return $?
+  fi
+  if command -v zypper >/dev/null 2>&1; then
+    run_privileged zypper --non-interactive install python3 python3-pip nodejs npm
+    return $?
+  fi
+  return 1
+}
+
+resolve_runtime_commands() {
+  RUNTIME_NODE_CMD="$(command -v node 2>/dev/null || true)"
+  RUNTIME_PYTHON_CMD="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+}
+
+ensure_runtime_dependencies() {
+  local node_major runtime_dir venv_python marker
+  resolve_runtime_commands
+  node_major=0
+  if [ -n "${RUNTIME_NODE_CMD}" ]; then
+    node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+  fi
+  if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+    echo "Kiem tra Node.js 20+ va Python 3..."
+    if [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ] && ! install_runtime_packages; then
+      echo "Canh bao: khong tu dong cai duoc Node.js/Python. Hay cai thu cong roi chay Repair." >&2
+    fi
+    resolve_runtime_commands
+  fi
+
+  if [ -n "${RUNTIME_NODE_CMD}" ]; then
+    node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+    echo "Node.js: $(${RUNTIME_NODE_CMD} --version 2>/dev/null || true)"
+    if [ "${node_major}" -lt 20 ]; then
+      echo "Canh bao: Node.js hien tai nho hon 20; ltn-9router va 9Router real co the khong chay du." >&2
+    fi
+  else
+    echo "Canh bao: chua co Node.js; bridge va ltn-9router se chua dung duoc." >&2
+  fi
+
+  if [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+    echo "Canh bao: chua co Python 3; phan tich PDF se bao loi cho den khi cai Python." >&2
+    return 0
+  fi
+
+  runtime_dir="${CODEX_HOME}/pdf-runtime"
+  venv_python="${runtime_dir}/bin/python"
+  mkdir -p "${runtime_dir}"
+  if [ ! -x "${venv_python}" ]; then
+    if ! "${RUNTIME_PYTHON_CMD}" -m venv "${runtime_dir}" >/dev/null 2>&1; then
+      echo "Canh bao: khong tao duoc Python venv cho PDF." >&2
+      return 0
+    fi
+  fi
+  marker="${runtime_dir}/.ltn-pdf-deps-v1"
+  if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
+    echo "Dang cai thu vien PDF: pypdf, pdfplumber, pymupdf..."
+    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf; then
+      printf 'pypdf\npdfplumber\npymupdf\n' > "${marker}"
+      chmod 600 "${marker}"
+    else
+      echo "Canh bao: khong tai duoc thu vien PDF. Kiem tra mang roi chay Repair." >&2
+    fi
+  fi
+  echo "Python PDF runtime: ${venv_python}"
+}
+
+install_local_tools() {
+  local gateway_root tools_dir asset asset_path asset_tmp
+  gateway_root="${GATEWAY_BASE_URL%/}"
+  gateway_root="${gateway_root%/v1}"
+  tools_dir="${CODEX_HOME}/tools"
+  mkdir -p "${tools_dir}"
+  chmod 700 "${tools_dir}"
+  for asset in 9router-client.mjs pdf-extract.py; do
+    asset_path="${tools_dir}/${asset}"
+    asset_tmp="${asset_path}.$$.$(date +%s).tmp"
+    if ! curl --fail --silent --show-error --max-redirs 0 \
+      --output "${asset_tmp}" "${gateway_root}/install/tools/${asset}"; then
+      rm -f "${asset_tmp}"
+      die_code 32 "Khong the tai local tool ${asset} tu Gateway."
+    fi
+    chmod 700 "${asset_tmp}"
+    mv "${asset_tmp}" "${asset_path}"
+  done
+
+  cat > "${BIN_DIR}/ltn-9router" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+node_bin="\${LTN_NODE_PATH:-\${LTN_BROWSER_NODE_PATH:-node}}"
+exec "\${node_bin}" "${tools_dir}/9router-client.mjs" "\$@"
+EOF
+  chmod 700 "${BIN_DIR}/ltn-9router"
+  cat > "${BIN_DIR}/ltn-pdf" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "\${LTN_PYTHON_PATH:-}" ]; then
+  python_bin="\${LTN_PYTHON_PATH}"
+elif [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ]; then
+  python_bin="${CODEX_HOME}/pdf-runtime/bin/python"
+else
+  python_bin="\${PYTHON_BIN:-\${RUNTIME_PYTHON_CMD:-python3}}"
+fi
+exec "\${python_bin}" "${tools_dir}/pdf-extract.py" "\$@"
+EOF
+  chmod 700 "${BIN_DIR}/ltn-pdf"
+  echo "Da cai lenh mang: ltn-9router"
+  echo "Da cai lenh PDF: ltn-pdf"
 }
 
 install_or_repair() {
@@ -632,6 +889,9 @@ install_or_repair() {
   merge_config "${client_id}"
   echo "[7/7] Cai full skill 9Router..."
   install_managed_9router_skills
+  install_browser_bridge
+  ensure_runtime_dependencies
+  install_local_tools
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."
@@ -705,7 +965,24 @@ status() {
       skill_count=$((skill_count + 1))
     fi
   done
-  echo "9Router skills: ${skill_count}/9"
+  echo "9Router skills: ${skill_count}/11"
+  if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
+    echo "Browser bridge token: da tao"
+  else
+    echo "Browser bridge token: chua tao"
+  fi
+  resolve_runtime_commands
+  if [ -n "${RUNTIME_NODE_CMD}" ]; then
+    echo "Node.js: $(${RUNTIME_NODE_CMD} --version 2>/dev/null || true)"
+  else
+    echo "Node.js: chua co"
+  fi
+  if [ -n "${RUNTIME_PYTHON_CMD}" ]; then
+    echo "Python: ${RUNTIME_PYTHON_CMD}"
+  else
+    echo "Python: chua co"
+  fi
+  [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ] && echo "PDF runtime: da tao" || echo "PDF runtime: chua tao"
   gateway_health_status
 }
 
@@ -713,7 +990,11 @@ uninstall_ltn() {
   local account skill_name skill_dir
   account="$(id -un)"
   remove_managed_config
-  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}"
+  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs"
+  rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
+  rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
+  rm -rf "${CODEX_HOME}/browser-extension"
+  rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page"
   for skill_name in ${MANAGED_SKILL_NAMES}; do
     skill_dir="${CODEX_HOME}/skills/${skill_name}"
     rm -f "${skill_dir}/SKILL.md"

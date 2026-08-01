@@ -28,6 +28,11 @@ import {
 } from "./codex-routing.mjs";
 import { recordUserAnalytics } from "./user-analytics-store.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
+import {
+  browserPageScope,
+  getBrowserPage,
+  storeBrowserPage
+} from "./browser-page-store.mjs";
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import {
   sendJson,
@@ -55,6 +60,22 @@ const codexUnixBootstrapPath = fileURLToPath(
 const codexUnixFullInstallerPath = fileURLToPath(
   new URL("../scripts/install-codex-unix.sh", import.meta.url)
 );
+const browserBridgeScriptPath = fileURLToPath(
+  new URL("../scripts/browser-bridge.mjs", import.meta.url)
+);
+const browserExtensionRoot = fileURLToPath(
+  new URL("../browser-extension/", import.meta.url)
+);
+const localToolPaths = new Map([
+  [
+    "/install/tools/9router-client.mjs",
+    fileURLToPath(new URL("../scripts/9router-client.mjs", import.meta.url))
+  ],
+  [
+    "/install/tools/pdf-extract.py",
+    fileURLToPath(new URL("../scripts/pdf-extract.py", import.meta.url))
+  ]
+]);
 
 function upstreamErrorDetail(captured, requestId, endpoint, status) {
   let code = "UPSTREAM_ERROR";
@@ -88,7 +109,9 @@ const managedSkillNames = [
   "9router-stt",
   "9router-embeddings",
   "9router-web-search",
-  "9router-web-fetch"
+  "9router-web-fetch",
+  "9router-browser",
+  "9router-pdf"
 ];
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
   `/install/skills/${name}/SKILL.md`,
@@ -114,6 +137,100 @@ function isCapabilityGetPath(pathname) {
     pathname === "/v1/models/info" ||
     pathname === "/v1/audio/voices" ||
     /^\/v1\/videos\/[^/]+$/.test(pathname);
+}
+
+function browserClientId(req) {
+  const value = String(req.headers["x-ltn-client-id"] || "").trim();
+  if (!/^[A-Za-z0-9._:-]{8,100}$/.test(value)) {
+    const error = new Error("X-LTN-Client-ID không hợp lệ.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return value;
+}
+
+function parseBrowserPage(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw.toString("utf8"));
+  } catch {
+    const error = new Error("Browser page payload không phải JSON hợp lệ.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const url = String(payload?.url || "").trim();
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    const error = new Error("Browser page URL không hợp lệ.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    const error = new Error("Browser page chỉ chấp nhận HTTP/HTTPS.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const text = String(payload?.text || "").trim();
+  if (!text) {
+    const error = new Error("Browser page không có nội dung hiển thị.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (text.length > config.browserPageMaxChars) {
+    const error = new Error(
+      `Browser page vượt quá giới hạn ${config.browserPageMaxChars} ký tự.`
+    );
+    error.statusCode = 413;
+    throw error;
+  }
+
+  return {
+    url,
+    title: String(payload?.title || "").trim().slice(0, 500),
+    text,
+    selectedText: String(payload?.selectedText || "").trim().slice(0, 20_000),
+    capturedAt: String(payload?.capturedAt || new Date().toISOString()).slice(0, 64),
+    source: "chrome-extension"
+  };
+}
+
+async function handleBrowserPage(req, res, principal, id) {
+  const clientId = browserClientId(req);
+  const scope = browserPageScope(principal, clientId);
+
+  if (req.method === "GET") {
+    const page = getBrowserPage(scope);
+    if (!page) {
+      sendJson(
+        res,
+        404,
+        openAiError("Chưa có snapshot tab Chrome mới.", "not_found_error")
+      );
+      return;
+    }
+    sendJson(res, 200, { object: "browser.page", data: page });
+    return;
+  }
+
+  const page = parseBrowserPage(await readBody(req, config.browserPageMaxChars * 4));
+  const { expiresAt } = storeBrowserPage(scope, page, config.browserPageTtlMs);
+  jsonLog("browser_page_received", {
+    requestId: id,
+    principalType: principal.principalType,
+    principalId: principal.principalId,
+    clientId,
+    source: page.source,
+    textChars: page.text.length,
+    expiresAt
+  });
+  sendJson(res, 202, {
+    object: "browser.page.received",
+    data: { url: page.url, title: page.title, textChars: page.text.length, expiresAt }
+  });
 }
 
 function copyHeaders(upstream, res) {
@@ -704,6 +821,74 @@ export function createGatewayServer() {
     return;
   }
 
+  if (req.method === "GET" && pathname === "/install/browser-bridge.mjs" && !hasQuery) {
+    try {
+      await serveInstallerFile(
+        res,
+        browserBridgeScriptPath,
+        "text/javascript; charset=utf-8"
+      );
+    } catch (error) {
+      jsonLog("browser_bridge_download_failed", {
+        error: error?.message || String(error)
+      });
+      sendJson(res, 500, openAiError("Không thể tải browser bridge", "gateway_error"));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && !hasQuery && localToolPaths.has(pathname)) {
+    const toolPath = localToolPaths.get(pathname);
+    const contentType = pathname.endsWith(".py")
+      ? "text/x-python; charset=utf-8"
+      : "text/javascript; charset=utf-8";
+    try {
+      await serveInstallerFile(res, toolPath, contentType);
+    } catch (error) {
+      jsonLog("local_tool_download_failed", {
+        path: pathname,
+        error: error?.message || String(error)
+      });
+      sendJson(res, 404, openAiError("Không tìm thấy local tool", "not_found_error"));
+    }
+    return;
+  }
+
+  if (
+    req.method === "GET" &&
+    pathname.startsWith("/install/browser-extension/") &&
+    !hasQuery
+  ) {
+    const assetName = pathname.slice("/install/browser-extension/".length);
+    if (!/^[A-Za-z0-9._-]+$/.test(assetName)) {
+      sendJson(res, 404, openAiError("Không tìm thấy browser extension asset", "not_found_error"));
+      return;
+    }
+    try {
+      const assetPath = resolve(browserExtensionRoot, assetName);
+      const normalizedRoot = browserExtensionRoot.endsWith("\\") || browserExtensionRoot.endsWith("/")
+        ? browserExtensionRoot
+        : `${browserExtensionRoot}${process.platform === "win32" ? "\\" : "/"}`;
+      if (!assetPath.startsWith(normalizedRoot)) {
+        sendJson(res, 404, openAiError("Không tìm thấy browser extension asset", "not_found_error"));
+        return;
+      }
+      const contentType = assetName.endsWith(".json")
+        ? "application/json; charset=utf-8"
+        : assetName.endsWith(".html")
+          ? "text/html; charset=utf-8"
+          : "text/javascript; charset=utf-8";
+      await serveInstallerFile(res, assetPath, contentType);
+    } catch (error) {
+      jsonLog("browser_extension_download_failed", {
+        assetName,
+        error: error?.message || String(error)
+      });
+      sendJson(res, 404, openAiError("Không tìm thấy browser extension asset", "not_found_error"));
+    }
+    return;
+  }
+
   if (req.method === "GET" && !hasQuery && managedSkillPaths.has(pathname)) {
     try {
       await serveInstallerFile(
@@ -768,8 +953,10 @@ export function createGatewayServer() {
     (req.method === "GET" && isCapabilityGetPath(pathname)) ||
     (req.method === "GET" && pathname === "/v1/codex/config") ||
     (req.method === "GET" && pathname === "/v1/codex/installer-config") ||
+    (req.method === "GET" && pathname === "/v1/browser/page") ||
     (req.method === "POST" && pathname === "/v1/chat/completions") ||
     (req.method === "POST" && pathname === "/v1/responses") ||
+    (req.method === "POST" && pathname === "/v1/browser/page") ||
     (req.method === "POST" && capabilityPostPaths.has(pathname));
 
   if (!supported) {
@@ -842,6 +1029,11 @@ export function createGatewayServer() {
         "x-content-type-options": "nosniff"
       });
       res.end(body);
+      return;
+    }
+
+    if (pathname === "/v1/browser/page") {
+      await handleBrowserPage(req, res, principal, id);
       return;
     }
 

@@ -10,6 +10,10 @@ const bootstrapUrl = new URL(
   "../scripts/install-codex-bootstrap.ps1",
   import.meta.url
 );
+const browserBridgeUrl = new URL(
+  "../scripts/browser-bridge.mjs",
+  import.meta.url
+);
 
 test("Windows installer remains Combo-first and does not embed model IDs or API keys", async () => {
   const script = await readFile(installerUrl, "utf8");
@@ -64,6 +68,12 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
   assert.match(script, /9router-web-fetch/);
+  assert.match(script, /9router-browser/);
+  assert.match(script, /9router-pdf/);
+  assert.match(script, /Install-BrowserBridge/);
+  assert.match(script, /Install-LocalTools/);
+  assert.match(script, /install\/tools\/\$asset/);
+  assert.match(script, /browser-bridge\.mjs/);
   assert.match(script, /9Router skills:/);
 });
 
@@ -123,4 +133,12 @@ test("public bootstrap is pipeline-safe and cleans its fixed HTTPS download", as
   assert.match(script, /finally/);
   assert.match(script, /Remove-Item -LiteralPath \$tempInstaller/);
   assert.doesNotMatch(script, /TeamApiKey|LTN_TEAM_API_KEY/);
+});
+
+test("browser bridge reuses the installer-managed client ID without logging page text", async () => {
+  const script = await readFile(browserBridgeUrl, "utf8");
+
+  assert.match(script, /LTN_CLIENT_ID_PATH/);
+  assert.match(script, /ltn-client-id/);
+  assert.doesNotMatch(script, /console\.log\(.*page/);
 });

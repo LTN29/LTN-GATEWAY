@@ -123,6 +123,15 @@ function Read-TeamApiKey {
   }
 }
 
+function Get-StoredTeamApiKey {
+  $value = [Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "Process")
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = [Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User")
+  }
+  if ([string]::IsNullOrWhiteSpace($value)) { return $null }
+  return [string]$value
+}
+
 function Confirm-ClientId {
   param([AllowNull()][string]$ClientId)
 
@@ -331,7 +340,9 @@ function Install-Managed9RouterSkills {
     "9router-stt",
     "9router-embeddings",
     "9router-web-search",
-    "9router-web-fetch"
+    "9router-web-fetch",
+    "9router-browser",
+    "9router-pdf"
   )
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $skillsRoot = Join-Path $CodexHome "skills"
@@ -364,6 +375,254 @@ function Install-Managed9RouterSkills {
   }
 
   Write-Host "Đã cài/cập nhật $($skillNames.Count) skill 9Router."
+}
+
+function Get-OrCreateBrowserBridgeToken {
+  $existing = [Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User")
+  if (-not [string]::IsNullOrWhiteSpace($existing) -and $existing.Length -ge 32) {
+    return $existing.Trim()
+  }
+
+  $bytes = New-Object byte[] 32
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  $token = (-join ($bytes | ForEach-Object { $_.ToString("x2") })).Substring(0, 64)
+  try {
+    [Environment]::SetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", $token, "User")
+  } catch {
+    Write-Warning "Không lưu được Browser Bridge token vào User environment; token vẫn được giữ cho phiên cài đặt này."
+  }
+  $env:LTN_BROWSER_BRIDGE_TOKEN = $token
+  return $token
+}
+
+function Install-BrowserBridge {
+  param(
+    [string]$CodexHome,
+    [string]$BinDir,
+    [string]$GatewayBaseUrl,
+    [string]$BridgeToken
+  )
+
+  $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
+  $bridgePath = Join-Path $CodexHome "browser-bridge.mjs"
+  $bridgeTemp = "$bridgePath.$([Guid]::NewGuid().ToString('N')).tmp"
+  try {
+    Invoke-WebRequest -UseBasicParsing `
+      -Uri ([Uri]"$gatewayRoot/install/browser-bridge.mjs").AbsoluteUri `
+      -OutFile $bridgeTemp -MaximumRedirection 0
+    Move-Item -LiteralPath $bridgeTemp -Destination $bridgePath -Force
+  } finally {
+    if (Test-Path -LiteralPath $bridgeTemp) { Remove-Item -LiteralPath $bridgeTemp -Force -ErrorAction SilentlyContinue }
+  }
+
+  $extensionDir = Join-Path $CodexHome "browser-extension"
+  New-Item -ItemType Directory -Force -Path $extensionDir | Out-Null
+  foreach ($asset in @("manifest.json", "service-worker.js", "popup.html", "popup.js", "options.html", "options.js")) {
+    $assetPath = Join-Path $extensionDir $asset
+    $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+      Invoke-WebRequest -UseBasicParsing `
+        -Uri ([Uri]"$gatewayRoot/install/browser-extension/$asset").AbsoluteUri `
+        -OutFile $assetTemp -MaximumRedirection 0
+      Move-Item -LiteralPath $assetTemp -Destination $assetPath -Force
+    } finally {
+      if (Test-Path -LiteralPath $assetTemp) { Remove-Item -LiteralPath $assetTemp -Force -ErrorAction SilentlyContinue }
+    }
+  }
+  $configPath = Join-Path $extensionDir "bridge-config.js"
+  [IO.File]::WriteAllText(
+    $configPath,
+    "self.SIMI_BRIDGE_TOKEN = '$BridgeToken';`r`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+
+  $bridgeWrapper = Join-Path $BinDir "ltn-browser-bridge.cmd"
+  $pageWrapper = Join-Path $BinDir "ltn-browser-page.cmd"
+  $escapedCodexHome = $CodexHome.Replace('"', '')
+  $bridgeWrapperText = @"
+@echo off
+if defined LTN_BROWSER_NODE_PATH (
+  "%LTN_BROWSER_NODE_PATH%" "$escapedCodexHome\browser-bridge.mjs"
+) else (
+  node "$escapedCodexHome\browser-bridge.mjs"
+)
+"@
+  [IO.File]::WriteAllText($bridgeWrapper, $bridgeWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
+  $pageWrapperText = @'
+@echo off
+curl.exe -sS -X POST http://127.0.0.1:20130/v1/bridge/capture -H "Authorization: Bearer %LTN_BROWSER_BRIDGE_TOKEN%" -H "Content-Type: application/json" -d "{\"timeout_ms\":60000}"
+'@
+  [IO.File]::WriteAllText($pageWrapper, $pageWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
+  Write-Host "Đã cài browser bridge: $bridgePath"
+  Write-Host "  Extension: mở chrome://extensions -> Developer mode -> Load unpacked -> $extensionDir"
+  Write-Host "  Khởi động bridge: ltn-browser-bridge"
+}
+
+function Refresh-ProcessPath {
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $env:Path = (($userPath, $machinePath | Where-Object { $_ }) -join ";")
+}
+
+function Install-WingetPackage {
+  param([string]$PackageId)
+
+  if ($env:LTN_SKIP_RUNTIME_INSTALL -eq "1") { return $false }
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    Write-Warning "Không tìm thấy winget để cài $PackageId. Hãy cài thủ công rồi chạy Repair."
+    return $false
+  }
+
+  Write-Host "Đang cài runtime Windows: $PackageId..."
+  & $winget.Source install `
+    --id $PackageId `
+    --exact `
+    --source winget `
+    --accept-package-agreements `
+    --accept-source-agreements `
+    --silent | Out-Host
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Ensure-NodeRuntime {
+  Refresh-ProcessPath
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if ($node) {
+    $version = (& $node.Source --version 2>$null | Out-String).Trim()
+    $major = 0
+    if ($version -match '^v(\d+)') { $major = [int]$Matches[1] }
+    if ($major -ge 20) {
+      Write-Host "Node.js: $version"
+      return $true
+    }
+    Write-Warning "Node.js hiện tại $version thấp hơn Node.js 20; sẽ thử cập nhật."
+  }
+
+  if (-not (Install-WingetPackage -PackageId "OpenJS.NodeJS.LTS")) {
+    Write-Warning "Không cài được Node.js tự động. Browser bridge và lệnh ltn-9router sẽ cần Node.js 20+."
+    return $false
+  }
+  Refresh-ProcessPath
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if (-not $node) {
+    Write-Warning "Node.js đã cài nhưng chưa có trong PATH của phiên này. Mở terminal mới rồi chạy Repair."
+    return $false
+  }
+  Write-Host "Node.js: $((& $node.Source --version 2>$null | Out-String).Trim())"
+  return $true
+}
+
+function Get-PythonCommand {
+  Refresh-ProcessPath
+  $python = Get-Command py -ErrorAction SilentlyContinue
+  if ($python) { return $python }
+  return Get-Command python -ErrorAction SilentlyContinue
+}
+
+function Ensure-PdfRuntime {
+  param([string]$CodexHome)
+
+  if ($env:LTN_SKIP_RUNTIME_INSTALL -eq "1") {
+    Write-Host "Bỏ qua cài runtime PDF do LTN_SKIP_RUNTIME_INSTALL=1."
+    return $false
+  }
+  $python = Get-PythonCommand
+  if (-not $python) {
+    [void](Install-WingetPackage -PackageId "Python.Python.3.12")
+    $python = Get-PythonCommand
+  }
+  if (-not $python) {
+    Write-Warning "Không tìm thấy Python 3.12+. Phân tích PDF sẽ yêu cầu cài Python rồi chạy Repair."
+    return $false
+  }
+
+  $runtimeDir = Join-Path $CodexHome "pdf-runtime"
+  $venvPython = Join-Path $runtimeDir "Scripts\python.exe"
+  if (-not (Test-Path -LiteralPath $venvPython)) {
+    New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+    if ($python.Name -match '^py(\.exe)?$') {
+      & $python.Source -3 -m venv $runtimeDir | Out-Host
+    } else {
+      & $python.Source -m venv $runtimeDir | Out-Host
+    }
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
+      Write-Warning "Không tạo được Python venv cho PDF."
+      return $false
+    }
+  }
+
+  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v1"
+  if (-not (Test-Path -LiteralPath $marker)) {
+    Write-Host "Đang cài thư viện PDF: pypdf, pdfplumber, pymupdf..."
+    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
+      return $false
+    }
+    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`n", [Text.UTF8Encoding]::new($false))
+  }
+  Write-Host "Python PDF runtime: $venvPython"
+  return $true
+}
+
+function Install-LocalTools {
+  param(
+    [string]$CodexHome,
+    [string]$BinDir,
+    [string]$GatewayBaseUrl,
+    [bool]$PdfRuntimeReady
+  )
+
+  $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
+  $toolsDir = Join-Path $CodexHome "tools"
+  New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+  foreach ($asset in @("9router-client.mjs", "pdf-extract.py")) {
+    $assetPath = Join-Path $toolsDir $asset
+    $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
+    try {
+      Invoke-WebRequest -UseBasicParsing `
+        -Uri ([Uri]"$gatewayRoot/install/tools/$asset").AbsoluteUri `
+        -OutFile $assetTemp -MaximumRedirection 0
+      Move-Item -LiteralPath $assetTemp -Destination $assetPath -Force
+    } finally {
+      if (Test-Path -LiteralPath $assetTemp) { Remove-Item -LiteralPath $assetTemp -Force -ErrorAction SilentlyContinue }
+    }
+  }
+
+  $escapedCodexHome = $CodexHome.Replace('"', '')
+  $nodeWrapper = @"
+@echo off
+setlocal
+if defined LTN_NODE_PATH (
+  "%LTN_NODE_PATH%" "$escapedCodexHome\tools\9router-client.mjs" %*
+) else if defined LTN_BROWSER_NODE_PATH (
+  "%LTN_BROWSER_NODE_PATH%" "$escapedCodexHome\tools\9router-client.mjs" %*
+) else (
+  node "$escapedCodexHome\tools\9router-client.mjs" %*
+)
+endlocal
+"@
+  [IO.File]::WriteAllText((Join-Path $BinDir "ltn-9router.cmd"), $nodeWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
+
+  $pdfWrapper = @"
+@echo off
+setlocal
+if defined LTN_PYTHON_PATH (
+  "%LTN_PYTHON_PATH%" "$escapedCodexHome\tools\pdf-extract.py" %*
+) else if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" (
+  "$escapedCodexHome\pdf-runtime\Scripts\python.exe" "$escapedCodexHome\tools\pdf-extract.py" %*
+) else if defined PY_PYTHON (
+  py -3 "$escapedCodexHome\tools\pdf-extract.py" %*
+) else (
+  python "$escapedCodexHome\tools\pdf-extract.py" %*
+)
+endlocal
+"@
+  [IO.File]::WriteAllText((Join-Path $BinDir "ltn-pdf.cmd"), $pdfWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
+  Write-Host "Đã cài lệnh mạng: ltn-9router"
+  Write-Host "Đã cài lệnh PDF: ltn-pdf (runtime: $(if ($PdfRuntimeReady) { "OK" } else { "chưa sẵn sàng" }))"
 }
 
 function Show-InstallerStatus {
@@ -409,9 +668,16 @@ function Show-InstallerStatus {
   $skillCount = @(
     "9router", "9router-chat", "9router-image", "9router-video",
     "9router-tts", "9router-stt", "9router-embeddings",
-    "9router-web-search", "9router-web-fetch"
+    "9router-web-search", "9router-web-fetch", "9router-browser", "9router-pdf"
   ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
-  Write-Host "  9Router skills: $skillCount/9"
+  Write-Host "  9Router skills: $skillCount/11"
+  $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
+  Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
+  $nodeStatus = Get-Command node -ErrorAction SilentlyContinue
+  $pythonStatus = Get-PythonCommand
+  Write-Host "  Node.js: $(if ($nodeStatus) { (& $nodeStatus.Source --version 2>$null | Out-String).Trim() } else { "chưa có" })"
+  Write-Host "  Python: $(if ($pythonStatus) { $pythonStatus.Source } else { "chưa có" })"
+  Write-Host "  PDF runtime: $(if (Test-Path (Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime\Scripts\python.exe")) { "đã tạo" } else { "chưa tạo" })"
 }
 
 function Invoke-LtnUninstall {
@@ -425,7 +691,7 @@ function Invoke-LtnUninstall {
     $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent ""
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
-  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd")) {
+  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-9router.cmd", "ltn-pdf.cmd")) {
     $wrapperPath = Join-Path $BinDir $wrapper
     if (Test-Path $wrapperPath) {
       Remove-Item -LiteralPath $wrapperPath -Force
@@ -435,7 +701,7 @@ function Invoke-LtnUninstall {
   foreach ($skillName in @(
     "9router", "9router-chat", "9router-image", "9router-video",
     "9router-tts", "9router-stt", "9router-embeddings",
-    "9router-web-search", "9router-web-fetch"
+    "9router-web-search", "9router-web-fetch", "9router-browser", "9router-pdf"
   )) {
     $skillDir = Join-Path $skillsRoot $skillName
     $skillPath = Join-Path $skillDir "SKILL.md"
@@ -451,8 +717,18 @@ function Invoke-LtnUninstall {
   [Environment]::SetEnvironmentVariable("LTN_CLIENT_ID", $null, "User")
   [Environment]::SetEnvironmentVariable("NINEROUTER_URL", $null, "User")
   [Environment]::SetEnvironmentVariable("NINEROUTER_KEY", $null, "User")
+  [Environment]::SetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", $null, "User")
   Remove-Item Env:LTN_TEAM_API_KEY -ErrorAction SilentlyContinue
   Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
+  Remove-Item Env:LTN_BROWSER_BRIDGE_TOKEN -ErrorAction SilentlyContinue
+  $browserBridgePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-bridge.mjs"
+  $browserExtensionPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-extension"
+  $toolsPath = Join-Path (Split-Path -Parent $ConfigPath) "tools"
+  $pdfRuntimePath = Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime"
+  if (Test-Path -LiteralPath $browserBridgePath) { Remove-Item -LiteralPath $browserBridgePath -Force }
+  if (Test-Path -LiteralPath $browserExtensionPath) { Remove-Item -LiteralPath $browserExtensionPath -Recurse -Force }
+  if (Test-Path -LiteralPath $toolsPath) { Remove-Item -LiteralPath $toolsPath -Recurse -Force }
+  if (Test-Path -LiteralPath $pdfRuntimePath) { Remove-Item -LiteralPath $pdfRuntimePath -Recurse -Force }
   Write-Host "Đã gỡ cấu hình SIMI Gateway, wrapper, LTN_TEAM_API_KEY và LTN_CLIENT_ID. Codex CLI không bị gỡ."
 }
 
@@ -491,7 +767,15 @@ if ($gatewayUri.Scheme -ne "https" -and $gatewayUri.Host -notin @("localhost", "
 }
 
 if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
-  $TeamApiKey = Read-TeamApiKey
+  if ($Mode -eq "repair") {
+    $TeamApiKey = Get-StoredTeamApiKey
+    if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
+      throw "Repair không tìm thấy API key đã lưu. Hãy chạy Install/Update một lần hoặc truyền -TeamApiKey."
+    }
+    Write-Host "Repair: dùng API key đã lưu, không yêu cầu nhập lại."
+  } else {
+    $TeamApiKey = Read-TeamApiKey
+  }
 }
 
 $TeamApiKey = Confirm-TeamApiKey $TeamApiKey
@@ -547,7 +831,12 @@ if (-not $SkipCodexInstall) {
 }
 
 New-Item -ItemType Directory -Force -Path $codexHome, $binDir | Out-Null
+$browserBridgeToken = Get-OrCreateBrowserBridgeToken
+$nodeRuntimeReady = Ensure-NodeRuntime
+$pdfRuntimeReady = Ensure-PdfRuntime -CodexHome $codexHome
 Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
+Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -BridgeToken $browserBridgeToken
+Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
 
 $existingConfig = ""
 if (Test-Path $configPath) {
@@ -585,6 +874,7 @@ $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
 [Environment]::SetEnvironmentVariable("NINEROUTER_KEY", $TeamApiKey, "User")
 $env:NINEROUTER_URL = $gatewayRoot
 $env:NINEROUTER_KEY = $TeamApiKey
+$env:LTN_BROWSER_BRIDGE_TOKEN = $browserBridgeToken
 
 $installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""
@@ -593,6 +883,7 @@ Write-Host "  Hệ điều hành: Windows"
 Write-Host "  Codex CLI: $(if ($installedCodexStatus.Healthy) { $installedCodexStatus.Version } else { "chưa xác định" })"
 Write-Host "  Gateway: $GatewayBaseUrl"
 Write-Host "  Model mặc định: $defaultModel"
+Write-Host "  Browser bridge: dùng ltn-browser-bridge sau khi Load unpacked extension"
 Write-Host ""
 Write-Host "Bước tiếp theo:"
 Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."

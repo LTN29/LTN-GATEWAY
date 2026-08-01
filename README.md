@@ -196,11 +196,12 @@ Trên macOS/Linux, installer tự kiểm tra Codex CLI trước khi hỏi API ke
 installer sẽ gỡ đúng package npm `@openai/codex` khi xác định được nguồn, rồi cài lại
 bằng standalone installer chính thức từ `https://chatgpt.com/codex/install.sh`.
 Installer chỉ cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
-Máy người dùng không cần cài Node.js, npm, Python hoặc jq; Gateway tự đọc JSON và
-xác minh Combo trước khi trả cấu hình văn bản tối giản cho installer.
+Phần cài Codex/Gateway vẫn tự đọc JSON và xác minh Combo; installer cũng kiểm tra/cài
+Node.js 20+ và Python 3 để bật Browser Bridge, lệnh mạng 9Router và PDF runtime.
 
 Trên Windows, installer cài Codex CLI standalone bằng installer chính thức
-`https://chatgpt.com/codex/install.ps1`; máy người dùng không cần cài Node.js/npm trước.
+`https://chatgpt.com/codex/install.ps1`; Codex standalone được cài riêng với runtime
+Node.js/Python mà LTN dùng cho mạng, browser và PDF.
 Installer chỉ tiếp tục cấu hình LTN Gateway sau khi `codex --version` chạy thành công.
 
 Installer không tắt bảo vệ macOS, không chạy `xattr` để bỏ quarantine, không tắt
@@ -220,10 +221,32 @@ uninstall, và ghi `http_headers` để Codex gửi `X-LTN-Client-ID` cho Gatewa
 
 Mỗi lần `Install/Update` hoặc `Repair`, installer cũng tự cài/cập nhật bộ 9Router
 skills vào `~/.codex/skills/`: Entry, Chat, Image, Video, TTS, STT, Embeddings,
-Web Search và Web Fetch. Skill được tải từ chính `ai.simi.vn`, được kiểm tra tên
+Web Search, Web Fetch, Browser và PDF. Skill được tải từ chính `ai.simi.vn`, được kiểm tra tên
 trước khi thay atomically và không yêu cầu nhân viên tải trực tiếp từ GitHub.
-`Status` hiển thị số lượng `9Router skills: 9/9`; `Uninstall` chỉ xóa các file
+`Status` hiển thị số lượng `9Router skills: 11/11`; `Uninstall` chỉ xóa các file
 skill do installer quản lý.
+
+Installer tạo thêm ba lệnh trong `~/.codex/bin` (Windows có đuôi `.cmd`):
+
+```text
+ltn-9router GET /models/web
+ltn-9router POST /search {"model":"search-combo","query":"...","max_results":5}
+ltn-pdf --json --max-chars 200000 /path/to/file.pdf
+```
+
+`ltn-9router` dùng mạng qua Gateway và tự lấy API key/client ID; `ltn-pdf` dùng
+venv Python riêng với `pypdf`, `pdfplumber` và `pymupdf`. PDF scan không có lớp text
+sẽ được báo rõ là cần OCR, không trả kết quả giả.
+
+Để Codex đọc trang đang mở bằng tài khoản Chrome đã đăng nhập, installer cũng cài
+local Browser Bridge và bộ Chrome Extension. Chạy `ltn-browser-bridge`, sau đó mở
+`chrome://extensions`, bật Developer mode và chọn Load unpacked tới thư mục
+`~/.codex/browser-extension` (Windows dùng `%USERPROFILE%\\.codex\\browser-extension`).
+Giữ tab cần đọc ở trạng thái đang mở; skill `9router-browser` sẽ lấy phần text đang
+hiển thị và gửi qua Gateway. Mật khẩu, cookie và token phiên không bị đọc.
+
+Bridge local cần Node.js 20+ trên máy nhân viên. Nếu lệnh `node` không có trong PATH,
+có thể đặt `LTN_BROWSER_NODE_PATH` trỏ tới `node` rồi chạy lại wrapper bridge.
 
 Các capability đi qua Gateway bằng cùng API key cá nhân/team:
 
@@ -249,7 +272,10 @@ Sau khi cài, admin chỉ thay đổi thành phần hoặc thứ tự fallback t
 **9Router Dashboard → Combos**. Máy nhân viên luôn giữ nguyên Combo ID.
 
 Repair hoặc rotate API key: chạy lại installer; block cấu hình được cập nhật
-thay vì tạo trùng. Gỡ cấu hình LTN (không gỡ Codex CLI):
+thay vì tạo trùng. Khi chọn `Repair`, installer tự dùng key đã lưu trên máy
+(Windows User Environment, macOS Keychain hoặc Linux Secret Service/file), nên
+không cần nhập lại key. Chỉ khi key chưa từng được lưu hoặc đã bị xóa thì
+installer mới yêu cầu nhập lại. Gỡ cấu hình LTN (không gỡ Codex CLI):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
@@ -270,7 +296,8 @@ Nhập 1-4:
 sang Combo này sau khi admin chọn policy `Test`; biến này không thay đổi hai tier
 Premium/Free hoặc policy mặc định.
 
-Chỉ `Install/Update` và `Repair` mới hỏi API key team. `Status` chỉ kiểm tra trạng thái.
+`Install/Update` hỏi API key team khi cần; `Repair` ưu tiên key đã lưu và chỉ hỏi
+khi không tìm thấy key. `Status` chỉ kiểm tra trạng thái.
 `Uninstall` xóa block LTN trong `~/.codex/config.toml`, helper token và client ID; không gỡ Codex CLI.
 
 Nếu muốn gọi trực tiếp không qua menu trên macOS/Ubuntu/Linux, dùng flag qua `bash -s --`:
@@ -346,7 +373,8 @@ node scripts/manage-users.mjs rotate-key --user-id sales-ngoc
 node scripts/manage-users.mjs disable --user-id sales-ngoc
 ```
 
-Nhân viên không cần cài lại Codex; chạy installer, chọn `Repair`, nhập key cá nhân.
+Nhân viên không cần cài lại Codex; chạy installer, chọn `Repair`. Key cá nhân chỉ
+cần nhập ở lần cài đầu tiên, các lần Repair sau sẽ dùng key đã lưu.
 
 Report/coaching nội bộ, không có public admin endpoint mặc định:
 

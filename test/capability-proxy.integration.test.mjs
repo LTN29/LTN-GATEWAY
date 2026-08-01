@@ -114,6 +114,47 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
     });
     assert.equal(unauthenticated.status, 401);
 
+    const browserClientId = "chrome-client-123";
+    const browserHeaders = {
+      ...headers,
+      "x-ltn-client-id": browserClientId
+    };
+    const missingBrowserPage = await fetch(`${baseUrl}/v1/browser/page`, {
+      headers: browserHeaders
+    });
+    assert.equal(missingBrowserPage.status, 404);
+
+    const browserPageText = "Nội dung chỉ hiển thị trong tab đã đăng nhập.";
+    const submittedBrowserPage = await fetch(`${baseUrl}/v1/browser/page`, {
+      method: "POST",
+      headers: { ...browserHeaders, "content-type": "application/json" },
+      body: JSON.stringify({
+        url: "https://inventory.simi.vn/inventory",
+        title: "Inventory",
+        text: browserPageText,
+        selectedText: "SKU-123",
+        capturedAt: "2026-08-01T09:00:00.000Z"
+      })
+    });
+    assert.equal(submittedBrowserPage.status, 202);
+    const submittedPayload = await submittedBrowserPage.json();
+    assert.equal(submittedPayload.data.url, "https://inventory.simi.vn/inventory");
+    assert.equal(submittedPayload.data.textChars, browserPageText.length);
+    assert.equal("text" in submittedPayload.data, false);
+
+    const retrievedBrowserPage = await fetch(`${baseUrl}/v1/browser/page`, {
+      headers: browserHeaders
+    });
+    assert.equal(retrievedBrowserPage.status, 200);
+    const retrievedPayload = await retrievedBrowserPage.json();
+    assert.equal(retrievedPayload.data.text, browserPageText);
+    assert.equal(retrievedPayload.data.source, "chrome-extension");
+
+    const otherBrowserClient = await fetch(`${baseUrl}/v1/browser/page`, {
+      headers: { ...headers, "x-ltn-client-id": "another-client-123" }
+    });
+    assert.equal(otherBrowserClient.status, 404);
+
     const models = await fetch(`${baseUrl}/v1/models/image`, { headers });
     assert.equal(models.status, 200);
     assert.equal((await models.json()).data[0].id, "openai/gpt-image-2");
@@ -206,6 +247,7 @@ test("Gateway proxies authenticated 9Router capability endpoints without rewriti
     const logs = logChunks.join("");
     assert.doesNotMatch(logs, new RegExp(key));
     assert.doesNotMatch(logs, /sensitive (?:prompt|timeout prompt)/);
+    assert.doesNotMatch(logs, new RegExp(browserPageText));
   } finally {
     process.stdout.write = originalStdoutWrite;
     await close(gateway);

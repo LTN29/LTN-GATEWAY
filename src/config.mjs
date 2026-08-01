@@ -140,6 +140,14 @@ export const config = {
   maxCapabilityBodyBytes: Number(process.env.MAX_CAPABILITY_BODY_BYTES || 32_000_000),
   maxContextChars: Number(process.env.MAX_CONTEXT_CHARS || 24_000),
   maxCaptureBytes: Number(process.env.MAX_CAPTURE_BYTES || 8_000_000),
+  browserPageMaxChars: Math.max(
+    10_000,
+    number(process.env.BROWSER_PAGE_MAX_CHARS || 300_000, 300_000)
+  ),
+  browserPageTtlMs: Math.max(
+    10_000,
+    number(process.env.BROWSER_PAGE_TTL_MS || 120_000, 120_000)
+  ),
   maxMemoryChars: Number(process.env.MAX_MEMORY_CHARS || 16_000),
   memoryUpdateEnabled: bool(process.env.MEMORY_UPDATE_ENABLED, true),
   corsAllowOrigin: process.env.CORS_ALLOW_ORIGIN || "*",

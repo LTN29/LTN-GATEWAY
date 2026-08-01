@@ -18,10 +18,18 @@ This skill is distributed by the SIMI installer. Route every request through
 
 Do not print, persist, or include `NINEROUTER_KEY` in command output.
 
+In a SIMI-managed installation, prefer the generated `ltn-9router` wrapper;
+it supplies the Gateway URL, API key, and client ID without exposing the key:
+
+```text
+ltn-9router GET /models/web
+ltn-9router POST /search {"model":"search-combo","query":"latest LLM benchmarks","max_results":10}
+```
+
 ## Discover
 
 ```bash
-curl $NINEROUTER_URL/v1/models/web | jq '.data[] | select(.kind=="webSearch") | .id'
+ltn-9router GET /models/web | jq '.data[] | select(.kind=="webSearch") | .id'
 # Per-provider params (searchTypes, maxResults, required options like cx for google-pse)
 curl "$NINEROUTER_URL/v1/models/info?id=tavily/search"
 ```
@@ -43,10 +51,7 @@ IDs end in `/search` (e.g. `tavily/search`). Combos (`owned_by:"combo"`) chain p
 ## Examples
 
 ```bash
-curl -X POST $NINEROUTER_URL/v1/search \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"tavily","query":"9Router open source","max_results":5}'
+ltn-9router POST /search '{"model":"tavily","query":"9Router open source","max_results":5}'
 ```
 
 JS:

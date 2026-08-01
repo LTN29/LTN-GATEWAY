@@ -321,6 +321,24 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(imageSkill.headers["content-type"], /^text\/markdown/);
     assert.match(imageSkill.body, /^---\r?\nname: 9router-image/m);
     assert.match(imageSkill.body, /https:\/\/ai\.simi\.vn/);
+    const pdfSkill = await rawGet(
+      gatewayPort,
+      "/install/skills/9router-pdf/SKILL.md"
+    );
+    assert.equal(pdfSkill.status, 200);
+    assert.match(pdfSkill.body, /^---\r?\nname: 9router-pdf/m);
+    const routerClient = await rawGet(
+      gatewayPort,
+      "/install/tools/9router-client.mjs"
+    );
+    assert.equal(routerClient.status, 200);
+    assert.match(routerClient.body, /resolveApiKey/);
+    const pdfTool = await rawGet(
+      gatewayPort,
+      "/install/tools/pdf-extract.py"
+    );
+    assert.equal(pdfTool.status, 200);
+    assert.match(pdfTool.body, /pypdf/);
     assert.equal(
       (await rawGet(gatewayPort, "/install/skills/unknown/SKILL.md")).status,
       404
@@ -340,6 +358,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(
       (await rawGet(gatewayPort, "/install/codex.sh?file=other.sh")).status,
+      404
+    );
+    assert.equal(
+      (await rawGet(gatewayPort, "/install/tools/pdf-extract.py?file=other.py")).status,
       404
     );
     assert.equal(

@@ -18,10 +18,17 @@ This skill is distributed by the SIMI installer. Route every request through
 
 Do not print, persist, or include `NINEROUTER_KEY` in command output.
 
+In a SIMI-managed installation, prefer the generated `ltn-9router` wrapper;
+it supplies the Gateway URL, API key, and client ID without exposing the key:
+
+```text
+ltn-9router POST /web/fetch {"model":"fetch-combo","url":"https://example.com","format":"markdown"}
+```
+
 ## Discover
 
 ```bash
-curl $NINEROUTER_URL/v1/models/web | jq '.data[] | select(.kind=="webFetch") | .id'
+ltn-9router GET /models/web | jq '.data[] | select(.kind=="webFetch") | .id'
 # Per-provider params
 curl "$NINEROUTER_URL/v1/models/info?id=firecrawl/fetch"
 ```
@@ -43,34 +50,22 @@ IDs end in `/fetch` (e.g. `firecrawl/fetch`, `jina/fetch`). `fetch-combo` chains
 
 ### Jina Reader
 ```bash
-curl -X POST $NINEROUTER_URL/v1/web/fetch \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"jina-reader","url":"https://9router.com","format":"markdown"}'
+ltn-9router POST /web/fetch '{"model":"jina-reader","url":"https://9router.com","format":"markdown"}'
 ```
 
 ### Exa
 ```bash
-curl -X POST $NINEROUTER_URL/v1/web/fetch \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"exa","url":"https://example.com","format":"markdown","max_characters":0}'
+ltn-9router POST /web/fetch '{"model":"exa","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
 
 ### Firecrawl
 ```bash
-curl -X POST $NINEROUTER_URL/v1/web/fetch \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"firecrawl","url":"https://example.com","format":"markdown","max_characters":0}'
+ltn-9router POST /web/fetch '{"model":"firecrawl","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
 
 ### Tavily
 ```bash
-curl -X POST $NINEROUTER_URL/v1/web/fetch \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"tavily","url":"https://example.com","format":"markdown","max_characters":0}'
+ltn-9router POST /web/fetch '{"model":"tavily","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
 
 

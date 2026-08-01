@@ -50,7 +50,7 @@ export function handleOptions(res) {
   res.writeHead(204, {
     "access-control-allow-origin": config.corsAllowOrigin,
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "authorization,content-type,x-request-id,x-connection-id",
+    "access-control-allow-headers": "authorization,content-type,x-request-id,x-connection-id,x-ltn-client-id,x-ltn-browser-bridge",
     "access-control-max-age": "86400"
   });
   res.end();
