@@ -127,6 +127,12 @@ async function runInstallerWithCombo({
       return;
     }
 
+    if (req.url === "/install/tools/browser-page.mjs") {
+      res.writeHead(200, { "content-type": "text/javascript" });
+      res.end("console.log('browser page client test');");
+      return;
+    }
+
     if (req.url === "/install/tools/pdf-extract.py") {
       res.writeHead(200, { "content-type": "text/x-python" });
       res.end("print('pdf test')\n");

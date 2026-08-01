@@ -16,8 +16,10 @@ Run the platform command below and use the returned JSON `data.text` as the
 page content. Do not use `9router-web-fetch` for a page that requires login.
 
 Use the generated `ltn-browser-page` wrapper. It reads the local bridge token
-without printing it. The wrappers live under the Codex home directory, so the
-absolute form below also works when that directory is not in `PATH`.
+without printing it and starts the local bridge automatically when it is not
+already running. This skill is intentionally separate from `Chrome: Control
+Chrome`; do not switch to that skill for this operation because it requires a
+different trusted native connector.
 
 Windows:
 
@@ -32,8 +34,9 @@ macOS/Linux:
 "${CODEX_HOME:-$HOME/.codex}/bin/ltn-browser-page"
 ```
 
-If the command returns a bridge or Chrome error, report that exact error and
-ask the user to start `ltn-browser-bridge` and keep the target tab open.
+If the command returns a bridge or Chrome error, report that exact error. The
+user must have loaded and enabled the SIMI Browser Bridge unpacked extension
+once in `chrome://extensions`, and must keep the authorized target tab open.
 
 ## Routing rules
 

@@ -665,10 +665,11 @@ get_or_create_browser_bridge_token() {
 }
 
 install_browser_bridge() {
-  local gateway_root bridge_path bridge_tmp extension_root asset asset_path asset_tmp bridge_token
+  local gateway_root bridge_path bridge_tmp page_client_path page_client_tmp extension_root asset asset_path asset_tmp bridge_token
   gateway_root="${GATEWAY_BASE_URL%/}"
   gateway_root="${gateway_root%/v1}"
   bridge_path="${CODEX_HOME}/browser-bridge.mjs"
+  page_client_path="${CODEX_HOME}/browser-page.mjs"
   bridge_tmp="${bridge_path}.$$.$(date +%s).tmp"
   if ! curl --fail --silent --show-error --max-redirs 0 \
     --output "${bridge_tmp}" "${gateway_root}/install/browser-bridge.mjs"; then
@@ -677,6 +678,14 @@ install_browser_bridge() {
   fi
   chmod 600 "${bridge_tmp}"
   mv "${bridge_tmp}" "${bridge_path}"
+  page_client_tmp="${page_client_path}.$$.$(date +%s).tmp"
+  if ! curl --fail --silent --show-error --max-redirs 0 \
+    --output "${page_client_tmp}" "${gateway_root}/install/tools/browser-page.mjs"; then
+    rm -f "${page_client_tmp}"
+    die_code 32 "Khong the tai browser page client tu Gateway."
+  fi
+  chmod 600 "${page_client_tmp}"
+  mv "${page_client_tmp}" "${page_client_path}"
 
   extension_root="${CODEX_HOME}/browser-extension"
   mkdir -p "${extension_root}"
@@ -710,15 +719,11 @@ node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
 exec "\${node_bin}" "${bridge_path}"
 EOF
   chmod 700 "${BIN_DIR}/ltn-browser-bridge"
-  cat > "${BIN_DIR}/ltn-browser-page" <<EOF
+cat > "${BIN_DIR}/ltn-browser-page" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-token="\${LTN_BROWSER_BRIDGE_TOKEN:-}"
-if [ -z "\${token}" ] && [ -r "${BRIDGE_TOKEN_PATH}" ]; then token="\$(cat "${BRIDGE_TOKEN_PATH}")"; fi
-curl -sS -X POST http://127.0.0.1:20130/v1/bridge/capture \\
-  -H "Authorization: Bearer \${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"timeout_ms":60000}'
+node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+exec "\${node_bin}" "${page_client_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-browser-page"
   echo "Da cai browser bridge: ${bridge_path}"
@@ -991,7 +996,7 @@ uninstall_ltn() {
   local account skill_name skill_dir
   account="$(id -un)"
   remove_managed_config
-  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs"
+  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs"
   rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
   rm -rf "${CODEX_HOME}/browser-extension"

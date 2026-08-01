@@ -68,6 +68,10 @@ const browserExtensionRoot = fileURLToPath(
 );
 const localToolPaths = new Map([
   [
+    "/install/tools/browser-page.mjs",
+    fileURLToPath(new URL("../scripts/browser-page.mjs", import.meta.url))
+  ],
+  [
     "/install/tools/9router-client.mjs",
     fileURLToPath(new URL("../scripts/9router-client.mjs", import.meta.url))
   ],

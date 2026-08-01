@@ -239,14 +239,16 @@ venv Python riêng với `pypdf`, `pdfplumber` và `pymupdf`. PDF scan không c�
 sẽ được báo rõ là cần OCR, không trả kết quả giả.
 
 Để Codex đọc trang đang mở bằng tài khoản Chrome đã đăng nhập, installer cũng cài
-local Browser Bridge và bộ Chrome Extension. Chạy `ltn-browser-bridge`, sau đó mở
+local Browser Bridge và bộ Chrome Extension. Mở
 `chrome://extensions`, bật Developer mode và chọn Load unpacked tới thư mục
 `~/.codex/browser-extension` (Windows dùng `%USERPROFILE%\\.codex\\browser-extension`).
 Giữ tab cần đọc ở trạng thái đang mở; skill `9router-browser` sẽ lấy phần text đang
 hiển thị và gửi qua Gateway. Mật khẩu, cookie và token phiên không bị đọc.
+Lệnh `ltn-browser-page` tự khởi động bridge khi cần; không dùng skill
+`Chrome: Control Chrome` cho luồng 9Router này.
 
 Bridge local cần Node.js 20+ trên máy nhân viên. Nếu lệnh `node` không có trong PATH,
-có thể đặt `LTN_BROWSER_NODE_PATH` trỏ tới `node` rồi chạy lại wrapper bridge.
+có thể đặt `LTN_BROWSER_NODE_PATH` trỏ tới `node` rồi chạy lại lệnh đọc tab.
 
 Các capability đi qua Gateway bằng cùng API key cá nhân/team:
 

@@ -406,6 +406,7 @@ function Install-BrowserBridge {
 
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $bridgePath = Join-Path $CodexHome "browser-bridge.mjs"
+  $pageClientPath = Join-Path $CodexHome "browser-page.mjs"
   $bridgeTemp = "$bridgePath.$([Guid]::NewGuid().ToString('N')).tmp"
   try {
     Invoke-WebRequest -UseBasicParsing `
@@ -415,8 +416,21 @@ function Install-BrowserBridge {
   } finally {
     if (Test-Path -LiteralPath $bridgeTemp) { Remove-Item -LiteralPath $bridgeTemp -Force -ErrorAction SilentlyContinue }
   }
+  $pageClientTemp = "$pageClientPath.$([Guid]::NewGuid().ToString('N')).tmp"
+  try {
+    Invoke-WebRequest -UseBasicParsing `
+      -Uri ([Uri]"$gatewayRoot/install/tools/browser-page.mjs").AbsoluteUri `
+      -OutFile $pageClientTemp -MaximumRedirection 0
+    Move-Item -LiteralPath $pageClientTemp -Destination $pageClientPath -Force
+  } finally {
+    if (Test-Path -LiteralPath $pageClientTemp) { Remove-Item -LiteralPath $pageClientTemp -Force -ErrorAction SilentlyContinue }
+  }
 
   $extensionDir = Join-Path $CodexHome "browser-extension"
+  $credentialDir = Join-Path $CodexHome "credentials"
+  $bridgeTokenPath = Join-Path $credentialDir "ltn-browser-bridge-token"
+  New-Item -ItemType Directory -Force -Path $credentialDir | Out-Null
+  [IO.File]::WriteAllText($bridgeTokenPath, $BridgeToken, [Text.UTF8Encoding]::new($false))
   New-Item -ItemType Directory -Force -Path $extensionDir | Out-Null
   foreach ($asset in @("manifest.json", "service-worker.js", "popup.html", "popup.js", "options.html", "options.js")) {
     $assetPath = Join-Path $extensionDir $asset
@@ -451,8 +465,15 @@ if defined LTN_BROWSER_NODE_PATH (
   [IO.File]::WriteAllText($bridgeWrapper, $bridgeWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   $pageWrapperText = @'
 @echo off
-curl.exe -sS -X POST http://127.0.0.1:20130/v1/bridge/capture -H "Authorization: Bearer %LTN_BROWSER_BRIDGE_TOKEN%" -H "Content-Type: application/json" -d "{\"timeout_ms\":60000}"
+setlocal
+if defined LTN_BROWSER_NODE_PATH (
+  "%LTN_BROWSER_NODE_PATH%" "%CODEX_HOME%\browser-page.mjs" %*
+) else (
+  node "%CODEX_HOME%\browser-page.mjs" %*
+)
+endlocal
 '@
+  $pageWrapperText = $pageWrapperText.Replace('%CODEX_HOME%', $escapedCodexHome)
   [IO.File]::WriteAllText($pageWrapper, $pageWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài browser bridge: $bridgePath"
   Write-Host "  Extension: mở chrome://extensions -> Developer mode -> Load unpacked -> $extensionDir"
@@ -722,10 +743,14 @@ function Invoke-LtnUninstall {
   Remove-Item Env:LTN_CLIENT_ID -ErrorAction SilentlyContinue
   Remove-Item Env:LTN_BROWSER_BRIDGE_TOKEN -ErrorAction SilentlyContinue
   $browserBridgePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-bridge.mjs"
+  $browserPagePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-page.mjs"
+  $browserTokenPath = Join-Path (Split-Path -Parent $ConfigPath) "credentials\ltn-browser-bridge-token"
   $browserExtensionPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-extension"
   $toolsPath = Join-Path (Split-Path -Parent $ConfigPath) "tools"
   $pdfRuntimePath = Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime"
   if (Test-Path -LiteralPath $browserBridgePath) { Remove-Item -LiteralPath $browserBridgePath -Force }
+  if (Test-Path -LiteralPath $browserPagePath) { Remove-Item -LiteralPath $browserPagePath -Force }
+  if (Test-Path -LiteralPath $browserTokenPath) { Remove-Item -LiteralPath $browserTokenPath -Force }
   if (Test-Path -LiteralPath $browserExtensionPath) { Remove-Item -LiteralPath $browserExtensionPath -Recurse -Force }
   if (Test-Path -LiteralPath $toolsPath) { Remove-Item -LiteralPath $toolsPath -Recurse -Force }
   if (Test-Path -LiteralPath $pdfRuntimePath) { Remove-Item -LiteralPath $pdfRuntimePath -Recurse -Force }
