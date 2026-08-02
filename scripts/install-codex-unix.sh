@@ -23,6 +23,7 @@ CODEX_VERSION=""
 CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
+BROWSER_MCP_ALREADY_CONFIGURED=0
 MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch 9router-browser 9router-pdf"
 
 cleanup() {
@@ -932,6 +933,9 @@ install_or_repair() {
   require_basic_dependencies
   ensure_codex_cli_healthy
   ensure_runtime_dependencies
+  if [ -f "${CONFIG_PATH}" ] && grep -q '^\[mcp_servers\.simi_browser\]$' "${CONFIG_PATH}"; then
+    BROWSER_MCP_ALREADY_CONFIGURED=1
+  fi
   echo "[6/7] Cau hinh SIMI Gateway..."
   read_team_key
   fetch_and_validate_gateway
@@ -959,7 +963,11 @@ install_or_repair() {
   echo "  3. Khởi động: codex"
   case "${OS_NAME}" in
     macos)
-      echo "  4. Nếu dùng Codex Desktop: đóng hoàn toàn ứng dụng, mở lại, rồi tạo New chat."
+      if [ "${BROWSER_MCP_ALREADY_CONFIGURED}" = "1" ]; then
+        echo "  4. Codex Desktop da co Browser MCP: chi tao New chat, khong can dong/mo hoac dang nhap lai."
+      else
+        echo "  4. Lan dau cai Browser MCP: dong hoan toan ung dung, mo lai, roi tao New chat."
+      fi
       ;;
     linux)
       echo "  4. Nếu lệnh codex chưa được nhận diện, đăng xuất rồi đăng nhập lại."

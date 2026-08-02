@@ -122,6 +122,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /Browser MCP runtime:/);
   assert.match(script, /rm -rf -- "\$\{skill_dir\}"/);
   assert.match(script, /MCP-only/);
+  assert.match(script, /BROWSER_MCP_ALREADY_CONFIGURED/);
+  assert.match(script, /khong can dong\/mo hoac dang nhap lai/);
   assert.match(script, /ltn-chrome-debug/);
   assert.match(script, /page_client_path="\$\{CODEX_HOME\}\/browser-page\.mjs"/);
   assert.match(script, /exec .*page_client_path/);

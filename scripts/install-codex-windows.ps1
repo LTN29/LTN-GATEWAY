@@ -911,10 +911,12 @@ Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $Gat
 Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
 
 $existingConfig = ""
+$browserMcpAlreadyConfigured = $false
 if (Test-Path $configPath) {
   $backupPath = "$configPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
   Copy-Item -LiteralPath $configPath -Destination $backupPath
   $existingConfig = [IO.File]::ReadAllText($configPath)
+  $browserMcpAlreadyConfigured = $existingConfig -match '(?m)^\s*\[mcp_servers\.simi_browser\]\s*$'
   Write-Host "Đã sao lưu config cũ: $backupPath"
 }
 
@@ -973,3 +975,8 @@ Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."
 Write-Host "  2. Kiểm tra: codex --version"
 Write-Host "  3. Khởi động: codex"
 Write-Host "  4. Prompt trực tiếp: Vào URL này tôi đã login và kiểm tra dữ liệu."
+if ($browserMcpAlreadyConfigured) {
+  Write-Host "  Codex Desktop đã có Browser MCP: chỉ tạo New chat, không cần đóng/mở hoặc đăng nhập lại."
+} else {
+  Write-Host "  Lần đầu cài Browser MCP: đóng hoàn toàn Codex Desktop, mở lại rồi tạo New chat."
+}
