@@ -118,6 +118,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /browser-mcp\.mjs/);
   assert.match(script, /\[mcp_servers\.simi_browser\]/);
   assert.match(script, /tool_timeout_sec = 90/);
+  assert.match(script, /Browser MCP config:/);
+  assert.match(script, /Browser MCP runtime:/);
   assert.match(script, /ltn-chrome-debug/);
   assert.match(script, /page_client_path="\$\{CODEX_HOME\}\/browser-page\.mjs"/);
   assert.match(script, /exec .*page_client_path/);

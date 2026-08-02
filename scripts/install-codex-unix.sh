@@ -92,6 +92,11 @@ new_uuid() {
 
 get_or_create_client_id() {
   local client_id tmp
+  if [ -f "${CONFIG_PATH}" ] && grep -q '^\[mcp_servers\.simi_browser\]$' "${CONFIG_PATH}"; then
+    echo "Browser MCP config: co"
+  else
+    echo "Browser MCP config: chua co - chay Repair"
+  fi
   if [ -f "${CLIENT_ID_PATH}" ]; then
     client_id="$(tr -d '\r\n' < "${CLIENT_ID_PATH}")"
     if is_uuid "${client_id}"; then
@@ -822,6 +827,7 @@ resolve_runtime_commands() {
 
 ensure_runtime_dependencies() {
   local node_major runtime_dir venv_python marker
+  [ -f "${CODEX_HOME}/browser-mcp.mjs" ] && echo "Browser MCP runtime: da cai" || echo "Browser MCP runtime: chua co - chay Repair"
   resolve_runtime_commands
   node_major=0
   if [ -n "${RUNTIME_NODE_CMD}" ]; then

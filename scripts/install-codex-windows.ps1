@@ -702,13 +702,16 @@ function Show-InstallerStatus {
   if (Test-Path $ConfigPath) {
     $configText = [IO.File]::ReadAllText($ConfigPath)
     $hasLtnProvider = $configText -match '(?m)^\s*\[model_providers\.ltn_gateway\]\s*$'
+    $hasBrowserMcp = $configText -match '(?m)^\s*\[mcp_servers\.simi_browser\]\s*$'
     $modelLine = [regex]::Match($configText, '(?m)^\s*model\s*=\s*"([^"]+)"\s*$')
     Write-Host "  SIMI Gateway config: $(if ($hasLtnProvider) { "có" } else { "chưa có" })"
+    Write-Host "  Browser MCP config: $(if ($hasBrowserMcp) { "có" } else { "chưa có - chạy Repair" })"
     if ($modelLine.Success) {
       Write-Host "  Model mặc định: $($modelLine.Groups[1].Value)"
     }
   } else {
     Write-Host "  SIMI Gateway config: chưa có"
+    Write-Host "  Browser MCP config: chưa có - chạy Repair"
   }
 
   $keyConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User"))
@@ -726,6 +729,8 @@ function Show-InstallerStatus {
   Write-Host "  9Router skills: $skillCount/11"
   $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
   Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
+  $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
+  Write-Host "  Browser MCP runtime: $(if (Test-Path -LiteralPath $browserMcpPath) { "đã cài" } else { "chưa có - chạy Repair" })"
   $nodeStatus = Get-Command node -ErrorAction SilentlyContinue
   $pythonStatus = Get-PythonCommand
   Write-Host "  Node.js: $(if ($nodeStatus) { (& $nodeStatus.Source --version 2>$null | Out-String).Trim() } else { "chưa có" })"
