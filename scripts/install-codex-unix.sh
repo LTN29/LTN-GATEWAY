@@ -94,9 +94,9 @@ new_uuid() {
 get_or_create_client_id() {
   local client_id tmp
   if [ -f "${CONFIG_PATH}" ] && grep -q '^\[mcp_servers\.simi_browser\]$' "${CONFIG_PATH}"; then
-    echo "Browser MCP config: co"
+    echo "Browser MCP config: co" >&2
   else
-    echo "Browser MCP config: chua co - chay Repair"
+    echo "Browser MCP config: chua co - chay Repair" >&2
   fi
   if [ -f "${CLIENT_ID_PATH}" ]; then
     client_id="$(tr -d '\r\n' < "${CLIENT_ID_PATH}")"
@@ -552,6 +552,7 @@ escape_toml() {
 merge_config() {
   local client_id="$1"
   local backup tmp escaped_base escaped_model escaped_helper escaped_node escaped_browser_mcp
+  local preserved_root preserved_tables python_cmd validation_status
   escaped_base="$(escape_toml "${GATEWAY_BASE_URL%/}")"
   escaped_model="$(escape_toml "${DEFAULT_MODEL}")"
   escaped_helper="$(escape_toml "${HELPER_PATH}")"
@@ -559,19 +560,52 @@ merge_config() {
   escaped_browser_mcp="$(escape_toml "${CODEX_HOME}/browser-mcp.mjs")"
   mkdir -p "${CODEX_HOME}"
 
+  preserved_root="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-root.XXXXXX")"
+  preserved_tables="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-tables.XXXXXX")"
+
   if [ -f "${CONFIG_PATH}" ]; then
     backup="${CONFIG_PATH}.backup-$(date +%Y%m%d-%H%M%S)"
     cp "${CONFIG_PATH}" "${backup}"
+
+    awk -v root_file="${preserved_root}" -v table_file="${preserved_tables}" '
+      BEGIN { managed=0; legacy=0; section="root" }
+      /^# BEGIN LTN CODEX MANAGED$/ { managed=1; next }
+      /^# END LTN CODEX MANAGED$/ { managed=0; next }
+      /^# BEGIN LTN CODEX MANAGED ROOT$/ { managed=1; next }
+      /^# END LTN CODEX MANAGED ROOT$/ { managed=0; next }
+      /^# BEGIN LTN CODEX MANAGED TABLES$/ { managed=1; next }
+      /^# END LTN CODEX MANAGED TABLES$/ { managed=0; next }
+      managed { next }
+      legacy {
+        if ($0 ~ /^[[:space:]]*\[/) { legacy=0 }
+        else { next }
+      }
+      /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
+        legacy=1
+        section="tables"
+        next
+      }
+      /^[[:space:]]*\[/ { section="tables" }
+      section == "root" && /^[[:space:]]*model[[:space:]]*=/ { next }
+      section == "root" && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
+      section == "root" { print > root_file; next }
+      { print > table_file }
+    ' "${CONFIG_PATH}"
   fi
 
   tmp="${CONFIG_PATH}.$$.$(date +%s).tmp"
   {
     cat <<EOF
-# BEGIN LTN CODEX MANAGED
+# BEGIN LTN CODEX MANAGED ROOT
 # Managed by LTN Codex installer.
 model = "${escaped_model}"
 model_provider = "ltn_gateway"
+# END LTN CODEX MANAGED ROOT
+EOF
+    cat "${preserved_root}"
+    cat <<EOF
 
+# BEGIN LTN CODEX MANAGED TABLES
 [model_providers.ltn_gateway]
 name = "SIMI Gateway"
 base_url = "${escaped_base}"
@@ -589,36 +623,46 @@ command = "${escaped_node}"
 args = ["${escaped_browser_mcp}"]
 startup_timeout_sec = 20
 tool_timeout_sec = 90
-# END LTN CODEX MANAGED
+# END LTN CODEX MANAGED TABLES
 EOF
-    if [ -f "${CONFIG_PATH}" ]; then
-      awk '
-        BEGIN { inside=0; legacy=0; seen_table=0 }
-        /^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }
-        /^# END LTN CODEX MANAGED$/ { inside=0; next }
-        inside { next }
-        legacy {
-          if ($0 ~ /^[[:space:]]*\[/) { legacy=0 }
-          else { next }
-        }
-        /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
-          legacy=1
-          seen_table=1
-          next
-        }
-        /^\[/ { seen_table=1 }
-        !seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }
-        !seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
-        { print }
-      ' "${CONFIG_PATH}"
-    fi
+    cat "${preserved_tables}"
   } > "${tmp}"
+
+  python_cmd="${CODEX_HOME}/pdf-runtime/bin/python"
+  if [ ! -x "${python_cmd}" ]; then
+    python_cmd="${RUNTIME_PYTHON_CMD:-$(command -v python3 2>/dev/null || true)}"
+  fi
+  if [ -n "${python_cmd}" ]; then
+    set +e
+    "${python_cmd}" - "${tmp}" <<'PYVALIDATE'
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        raise SystemExit(2)
+with open(sys.argv[1], "rb") as handle:
+    tomllib.load(handle)
+PYVALIDATE
+    validation_status=$?
+    set -e
+    if [ "${validation_status}" -eq 2 ]; then
+      echo "Canh bao: Python hien tai chua co tomllib/tomli; bo qua buoc validate TOML bo sung." >&2
+    elif [ "${validation_status}" -ne 0 ]; then
+      rm -f "${tmp}" "${preserved_root}" "${preserved_tables}"
+      die_code 34 "config.toml moi khong hop le; da giu nguyen config cu."
+    fi
+  fi
+
   if [ ! -f "${CONFIG_PATH}" ] || ! cmp -s "${tmp}" "${CONFIG_PATH}"; then
     CONFIG_CHANGED=1
   fi
   chmod 600 "${tmp}"
   mv "${tmp}" "${CONFIG_PATH}"
   chmod 600 "${CONFIG_PATH}"
+  rm -f "${preserved_root}" "${preserved_tables}"
 }
 
 remove_managed_config() {
@@ -626,22 +670,26 @@ remove_managed_config() {
   [ -f "${CONFIG_PATH}" ] || return
   tmp="${CONFIG_PATH}.$$.$(date +%s).tmp"
   awk '
-    BEGIN { inside=0; legacy=0; seen_table=0 }
-    /^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }
-    /^# END LTN CODEX MANAGED$/ { inside=0; next }
-    inside { next }
+    BEGIN { managed=0; legacy=0; section="root" }
+    /^# BEGIN LTN CODEX MANAGED$/ { managed=1; next }
+    /^# END LTN CODEX MANAGED$/ { managed=0; next }
+    /^# BEGIN LTN CODEX MANAGED ROOT$/ { managed=1; next }
+    /^# END LTN CODEX MANAGED ROOT$/ { managed=0; next }
+    /^# BEGIN LTN CODEX MANAGED TABLES$/ { managed=1; next }
+    /^# END LTN CODEX MANAGED TABLES$/ { managed=0; next }
+    managed { next }
     legacy {
       if ($0 ~ /^[[:space:]]*\[/) { legacy=0 }
       else { next }
     }
     /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
       legacy=1
-      seen_table=1
+      section="tables"
       next
     }
-    /^\[/ { seen_table=1 }
-    !seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }
-    !seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
+    /^[[:space:]]*\[/ { section="tables" }
+    section == "root" && /^[[:space:]]*model[[:space:]]*=/ { next }
+    section == "root" && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
     { print }
   ' "${CONFIG_PATH}" > "${tmp}"
   chmod 600 "${tmp}"
@@ -894,11 +942,11 @@ ensure_runtime_dependencies() {
       return 0
     fi
   fi
-  marker="${runtime_dir}/.ltn-pdf-deps-v1"
+  marker="${runtime_dir}/.ltn-pdf-deps-v2"
   if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
-    echo "Dang cai thu vien PDF: pypdf, pdfplumber, pymupdf..."
-    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf; then
-      printf 'pypdf\npdfplumber\npymupdf\n' > "${marker}"
+    echo "Dang cai thu vien PDF: pypdf, pdfplumber, pymupdf, tomli..."
+    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf tomli; then
+      printf 'pypdf\npdfplumber\npymupdf\ntomli\n' > "${marker}"
       chmod 600 "${marker}"
     else
       echo "Canh bao: khong tai duoc thu vien PDF. Kiem tra mang roi chay Repair." >&2

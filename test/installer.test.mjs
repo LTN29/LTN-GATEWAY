@@ -30,12 +30,16 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   assert.doesNotMatch(script, /combo\/ltn-code-(?:auto|fast|default|power)/);
   assert.doesNotMatch(script, /\^combo\//);
   assert.doesNotMatch(script, /combo\/\$|combo\/\$\{|combo\/\$comboId/);
-  const configBlock = script.match(
-    /\$configContent = @"([\s\S]*?)"@/
+  const managedRootBlock = script.match(
+    /\$managedRootContent = @"([\s\S]*?)"@/
   )?.[1];
-  assert.ok(configBlock);
-  assert.doesNotMatch(configBlock, /TeamApiKey/);
-  assert.doesNotMatch(configBlock, /clientId|\$clientId/);
+  const managedTableBlock = script.match(
+    /\$managedTableContent = @"([\s\S]*?)"@/
+  )?.[1];
+  assert.ok(managedRootBlock);
+  assert.ok(managedTableBlock);
+  assert.doesNotMatch(managedRootBlock + managedTableBlock, /TeamApiKey/);
+  assert.doesNotMatch(managedRootBlock + managedTableBlock, /clientId|\$clientId/);
 });
 
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {

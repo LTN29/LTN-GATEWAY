@@ -83,7 +83,8 @@ async function runInstallerWithCombo({
     { id: "SIMI-FREE", owned_by: "combo" }
   ],
   mode = "auto",
-  storedTeamApiKey = ""
+  storedTeamApiKey = "",
+  initialConfig = ""
 }) {
   const requests = [];
   const gateway = http.createServer((req, res) => {
@@ -166,6 +167,9 @@ async function runInstallerWithCombo({
   const root = await mkdtemp(join(tmpdir(), "ltn-installer-combo-test-"));
   const codexHome = join(root, "codex-home");
   await mkdir(codexHome, { recursive: true });
+  if (initialConfig) {
+    await writeFile(join(codexHome, "config.toml"), initialConfig, "utf8");
+  }
   const scriptPath = join(root, "install-codex-windows.test.ps1");
   const testScript = installerSource
     .replace(
@@ -279,6 +283,40 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     `${output.result.stdout}\n${output.result.stderr}`,
     /team-test-key/
   );
+});
+
+test("Windows installer repairs legacy broken tables and keeps root settings at TOML root", async (t) => {
+  const output = await runInstallerWithCombo({
+    initialConfig: [
+      'model_reasoning_effort = "high"',
+      'approval_policy = "on-request"',
+      '',
+      '[model_providers.ltn_gateway]',
+      'http_headers = { "X-LTN-Client-ID" = "Browser MCP config: chua co - chay Repair',
+      '52287473-7284-449e-b10d-040f842c9956" }',
+      '',
+      '[model_providers.ltn_gateway.auth]',
+      'command = "/old/helper"',
+      '',
+      '[mcp_servers.simi_browser]',
+      'command = "old-node"',
+      '',
+      '[features]',
+      'example = true',
+      ''
+    ].join("\n")
+  });
+  if (output.skipped) {
+    t.skip(output.skipped);
+    return;
+  }
+
+  assert.equal(output.result.status, 0, output.result.stderr || output.result.stdout);
+  assert.doesNotMatch(output.config, /Browser MCP config: chua co/);
+  assert.doesNotMatch(output.config, /\/old\/helper|old-node/);
+  assert.ok(output.config.indexOf('model_reasoning_effort = "high"') < output.config.indexOf("[model_providers.ltn_gateway]"));
+  assert.ok(output.config.indexOf('approval_policy = "on-request"') < output.config.indexOf("[model_providers.ltn_gateway]"));
+  assert.ok(output.config.indexOf("[features]") > output.config.indexOf("[mcp_servers.simi_browser]"));
 });
 
 test("Windows installer trims clipboard whitespace from the team API key", async (t) => {

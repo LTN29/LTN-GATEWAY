@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const bootstrapPath = new URL("../scripts/install-codex-unix-bootstrap.sh", import.meta.url);
@@ -167,13 +169,38 @@ test("Unix installer status does not auto repair or ask for API key", async () =
 test("Unix installer config merge removes only the LTN managed block and avoids duplicates", async () => {
   const script = await readScript(fullInstallerPath);
 
-  assert.ok(script.includes("/^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }"));
-  assert.ok(script.includes("/^# END LTN CODEX MANAGED$/ { inside=0; next }"));
-  assert.ok(script.includes("inside { next }"));
+  assert.ok(script.includes("/^# BEGIN LTN CODEX MANAGED$/ { managed=1; next }"));
+  assert.ok(script.includes("/^# END LTN CODEX MANAGED$/ { managed=0; next }"));
+  assert.match(script, /BEGIN LTN CODEX MANAGED ROOT/);
+  assert.match(script, /BEGIN LTN CODEX MANAGED TABLES/);
+  assert.match(script, /preserved_root/);
+  assert.match(script, /preserved_tables/);
+  assert.match(script, /Browser MCP config: co" >&2/);
+  assert.match(script, /Browser MCP config: chua co - chay Repair" >&2/);
+  assert.match(script, /import tomllib/);
+  assert.match(script, /import tomli as tomllib/);
   assert.match(script, /model_providers\\\.ltn_gateway\(\\\.auth\)\?/);
   assert.match(script, /legacy=1/);
-  assert.ok(script.includes("!seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }"));
-  assert.ok(script.includes("!seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }"));
+  assert.ok(script.includes('section == "root" && /^[[:space:]]*model[[:space:]]*=/ { next }'));
+  assert.ok(script.includes('section == "root" && /^[[:space:]]*model_provider[[:space:]]*=/ { next }'));
+});
+
+test("Unix client ID command substitution returns only the UUID", { skip: !commandExists("bash") }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "ltn-client-id-regression-"));
+  await mkdir(root, { recursive: true });
+  const result = spawnSync("bash", ["-c", '. "$TEST_INSTALLER"; get_or_create_client_id'], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      TEST_INSTALLER: fullInstallerFsPath,
+      CODEX_HOME: root,
+      LTN_CODEX_SOURCE_ONLY: "1"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  assert.match(result.stderr, /Browser MCP config:/);
 });
 
 test("Unix shell scripts pass bash syntax check when bash is available", { skip: !commandExists("bash") }, () => {

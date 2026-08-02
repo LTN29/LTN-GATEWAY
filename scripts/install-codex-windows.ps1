@@ -158,37 +158,61 @@ function Get-OrCreateClientId {
 function Update-CodexConfig {
   param(
     [string]$ExistingContent,
-    [string]$ManagedContent
+    [string]$ManagedRootContent,
+    [string]$ManagedTableContent
   )
 
   $lines = @($ExistingContent -split "\r?\n")
-  $kept = [System.Collections.Generic.List[string]]::new()
+  $rootLines = [System.Collections.Generic.List[string]]::new()
+  $tableLines = [System.Collections.Generic.List[string]]::new()
+  $insideManagedBlock = $false
   $insideManagedTable = $false
-  $hasSeenTable = $false
+  $section = "root"
 
   foreach ($line in $lines) {
-    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway(?:\.auth)?|mcp_servers\.simi_browser)\]\s*$') {
-      $insideManagedTable = $true
-      $hasSeenTable = $true
+    if ($line -match '^\s*# BEGIN LTN CODEX MANAGED(?: ROOT| TABLES)?\s*$') {
+      $insideManagedBlock = $true
       continue
     }
-    if ($insideManagedTable -and $line -match '^\s*\[') {
-      $insideManagedTable = $false
+    if ($line -match '^\s*# END LTN CODEX MANAGED(?: ROOT| TABLES)?\s*$') {
+      $insideManagedBlock = $false
+      continue
     }
-    if ($insideManagedTable) { continue }
-    if ($line -match '^\s*\[') { $hasSeenTable = $true }
-    if (-not $hasSeenTable -and $line -match '^\s*model\s*=') { continue }
-    if (-not $hasSeenTable -and $line -match '^\s*model_provider\s*=') { continue }
+    if ($insideManagedBlock) { continue }
+
+    if ($insideManagedTable) {
+      if ($line -match '^\s*\[') {
+        $insideManagedTable = $false
+      } else {
+        continue
+      }
+    }
+
+    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway(?:\.auth)?|mcp_servers\.simi_browser)\]\s*$') {
+      $insideManagedTable = $true
+      $section = "tables"
+      continue
+    }
+
+    if ($line -match '^\s*\[') { $section = "tables" }
+    if ($section -eq "root" -and $line -match '^\s*model\s*=') { continue }
+    if ($section -eq "root" -and $line -match '^\s*model_provider\s*=') { continue }
     if ($line -match '^\s*# Managed by LTN Codex installer\.\s*$') { continue }
     if ($line -match '^\s*# Change Combo members and fallback order in 9Router, not on this machine\.\s*$') { continue }
-    $kept.Add($line)
+
+    if ($section -eq "root") { $rootLines.Add($line) }
+    else { $tableLines.Add($line) }
   }
 
-  $preserved = ($kept -join [Environment]::NewLine).Trim()
-  if ($preserved) {
-    return $ManagedContent.Trim() + [Environment]::NewLine + [Environment]::NewLine + $preserved + [Environment]::NewLine
-  }
-  return $ManagedContent.Trim() + [Environment]::NewLine
+  $parts = [System.Collections.Generic.List[string]]::new()
+  if (-not [string]::IsNullOrWhiteSpace($ManagedRootContent)) { $parts.Add($ManagedRootContent.Trim()) }
+  $preservedRoot = ($rootLines -join [Environment]::NewLine).Trim()
+  if ($preservedRoot) { $parts.Add($preservedRoot) }
+  if (-not [string]::IsNullOrWhiteSpace($ManagedTableContent)) { $parts.Add($ManagedTableContent.Trim()) }
+  $preservedTables = ($tableLines -join [Environment]::NewLine).Trim()
+  if ($preservedTables) { $parts.Add($preservedTables) }
+  if ($parts.Count -eq 0) { return "" }
+  return ($parts -join ([Environment]::NewLine + [Environment]::NewLine)) + [Environment]::NewLine
 }
 
 function Test-ComboIds {
@@ -610,18 +634,57 @@ function Ensure-PdfRuntime {
     }
   }
 
-  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v1"
+  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v2"
   if (-not (Test-Path -LiteralPath $marker)) {
-    Write-Host "Đang cài thư viện PDF: pypdf, pdfplumber, pymupdf..."
-    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf | Out-Host
+    Write-Host "Đang cài thư viện PDF: pypdf, pdfplumber, pymupdf, tomli..."
+    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf tomli | Out-Host
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
       return $false
     }
-    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`ntomli`n", [Text.UTF8Encoding]::new($false))
   }
   Write-Host "Python PDF runtime: $venvPython"
   return $true
+}
+
+function Test-TomlConfigContent {
+  param(
+    [string]$Content,
+    [string]$CodexHome
+  )
+
+  $venvPython = Join-Path $CodexHome "pdf-runtime\Scripts\python.exe"
+  if (-not (Test-Path -LiteralPath $venvPython)) {
+    return [pscustomobject]@{ Supported = $false; Valid = $false }
+  }
+
+  $tempPath = Join-Path $CodexHome ("config.toml.validate-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
+  $validator = @'
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        raise SystemExit(2)
+with open(sys.argv[1], "rb") as handle:
+    tomllib.load(handle)
+'@
+  try {
+    [IO.File]::WriteAllText($tempPath, $Content, [Text.UTF8Encoding]::new($false))
+    & $venvPython -c $validator $tempPath 2>$null
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 2) {
+      return [pscustomobject]@{ Supported = $false; Valid = $false }
+    }
+    return [pscustomobject]@{ Supported = $true; Valid = ($exitCode -eq 0) }
+  } finally {
+    if (Test-Path -LiteralPath $tempPath) {
+      Remove-Item -LiteralPath $tempPath -Force
+    }
+  }
 }
 
 function Install-LocalTools {
@@ -783,7 +846,7 @@ function Invoke-LtnUninstall {
 
   if (Test-Path $ConfigPath) {
     $existingConfig = [IO.File]::ReadAllText($ConfigPath)
-    $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent ""
+    $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedRootContent "" -ManagedTableContent ""
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
   foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd")) {
@@ -958,12 +1021,16 @@ $installedNode = Get-Command node -ErrorAction SilentlyContinue
 if ($installedNode) { $nodeCommand = $installedNode.Source }
 $escapedNodeCommand = Escape-TomlString $nodeCommand
 $escapedBrowserMcpPath = Escape-TomlString (Join-Path $codexHome "browser-mcp.mjs")
-$configContent = @"
+$managedRootContent = @"
+# BEGIN LTN CODEX MANAGED ROOT
 # Managed by LTN Codex installer.
-# Change Combo members and fallback order in 9Router, not on this machine.
 model = "$escapedModel"
 model_provider = "ltn_gateway"
+# END LTN CODEX MANAGED ROOT
+"@
 
+$managedTableContent = @"
+# BEGIN LTN CODEX MANAGED TABLES
 [model_providers.ltn_gateway]
 name = "SIMI Gateway"
 base_url = "$escapedBaseUrl"
@@ -976,10 +1043,18 @@ command = "$escapedNodeCommand"
 args = ["$escapedBrowserMcpPath"]
 startup_timeout_sec = 20
 tool_timeout_sec = 90
+# END LTN CODEX MANAGED TABLES
 "@
 
-$updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent $configContent
+$updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedRootContent $managedRootContent -ManagedTableContent $managedTableContent
 $configChanged = $updatedConfig -ne $existingConfig
+$tomlValidation = Test-TomlConfigContent -Content $updatedConfig -CodexHome $codexHome
+if ($tomlValidation.Supported -and -not $tomlValidation.Valid) {
+  throw "config.toml mới không hợp lệ; installer đã giữ nguyên config cũ."
+}
+if (-not $tomlValidation.Supported) {
+  Write-Warning "Python hiện tại chưa có tomllib/tomli; bỏ qua bước validate TOML bổ sung."
+}
 [IO.File]::WriteAllText($configPath, $updatedConfig, [Text.UTF8Encoding]::new($false))
 [Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $TeamApiKey, "User")
 $env:LTN_TEAM_API_KEY = $TeamApiKey
