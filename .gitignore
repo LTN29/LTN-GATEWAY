@@ -24,6 +24,8 @@ data/memory-sync-outbox.jsonl.*
 data/memory-backups/
 data/admin-audit.jsonl
 data/admin-audit.jsonl.*
+# Local/private memory files must never be committed.
+memory/
 memory/*.tmp
 memory/*.bak
 memory/**/*.tmp
