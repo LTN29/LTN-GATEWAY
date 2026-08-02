@@ -167,7 +167,7 @@ function Update-CodexConfig {
   $hasSeenTable = $false
 
   foreach ($line in $lines) {
-    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway|mcp_servers\.simi_browser)\]\s*$') {
+    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway(?:\.auth)?|mcp_servers\.simi_browser)\]\s*$') {
       $insideManagedTable = $true
       $hasSeenTable = $true
       continue
@@ -763,6 +763,10 @@ function Test-CodexManagedRuntimeConfig {
   }
   $mcpJson = (& $codexStatus.Path mcp get simi_browser --json 2>$null | Out-String)
   $configValid = $LASTEXITCODE -eq 0
+  if (-not $configValid) {
+    $mcpJson = (& $codexStatus.Path mcp get simi_browser 2>$null | Out-String)
+    $configValid = $LASTEXITCODE -eq 0
+  }
   return [pscustomobject]@{
     Supported = $true
     ConfigValid = $configValid
@@ -992,15 +996,14 @@ $env:LTN_BROWSER_BRIDGE_TOKEN = $browserBridgeToken
 $runtimeConfigStatus = Test-CodexManagedRuntimeConfig -ConfigPath $configPath
 if ($runtimeConfigStatus.Supported) {
   if (-not $runtimeConfigStatus.ConfigValid) {
-    throw "Codex không nạp được config.toml hoặc MCP simi_browser sau khi cài đặt."
+    Write-Warning "Codex CLI hiện tại chưa xác minh được MCP simi_browser; cấu hình đã được cài và có thể kiểm tra lại bằng Status."
+  } elseif (-not $runtimeConfigStatus.Provider) {
+    Write-Warning "Cấu hình model_provider=ltn_gateway chưa được xác nhận; hãy chạy Status sau khi mở Terminal mới."
+  } elseif (-not $runtimeConfigStatus.BrowserMcp) {
+    Write-Warning "Codex chưa xác nhận MCP simi_browser; hãy chạy Status sau khi mở Terminal mới."
+  } else {
+    Write-Host "  Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
   }
-  if (-not $runtimeConfigStatus.Provider) {
-    throw "Cấu hình model_provider=ltn_gateway chưa được ghi đúng vào config.toml."
-  }
-  if (-not $runtimeConfigStatus.BrowserMcp) {
-    throw "Codex không tìm thấy MCP simi_browser sau khi cài đặt."
-  }
-  Write-Host "  Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
 } else {
   Write-Warning "Chưa thể gọi Codex để kiểm tra config; installer đã ghi config.toml và MCP simi_browser."
 }

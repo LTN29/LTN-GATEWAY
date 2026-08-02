@@ -124,6 +124,7 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /MCP-only/);
   assert.match(script, /verify_codex_managed_runtime_config/);
   assert.match(script, /mcp get simi_browser --json/);
+  assert.match(script, /mcp get simi_browser 2>\/dev\/null/);
   assert.match(script, /Codex config parser:/);
   assert.match(script, /Codex configured provider:/);
   assert.match(script, /CONFIG_CHANGED/);
@@ -169,6 +170,8 @@ test("Unix installer config merge removes only the LTN managed block and avoids 
   assert.ok(script.includes("/^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }"));
   assert.ok(script.includes("/^# END LTN CODEX MANAGED$/ { inside=0; next }"));
   assert.ok(script.includes("inside { next }"));
+  assert.match(script, /model_providers\\\.ltn_gateway\(\\\.auth\)\?/);
+  assert.match(script, /legacy=1/);
   assert.ok(script.includes("!seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }"));
   assert.ok(script.includes("!seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }"));
 });

@@ -87,6 +87,8 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /MCP-only/);
   assert.match(script, /Test-CodexManagedRuntimeConfig/);
   assert.match(script, /mcp get simi_browser --json/);
+  assert.match(script, /mcp get simi_browser 2>\$null/);
+  assert.match(script, /model_providers\\\.ltn_gateway\(\?:\\\.auth\)\?/);
   assert.match(script, /Codex config parser:/);
   assert.match(script, /Codex configured provider:/);
   assert.match(script, /\$configChanged/);

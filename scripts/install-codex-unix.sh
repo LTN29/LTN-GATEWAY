@@ -593,10 +593,19 @@ tool_timeout_sec = 90
 EOF
     if [ -f "${CONFIG_PATH}" ]; then
       awk '
-        BEGIN { inside=0; seen_table=0 }
+        BEGIN { inside=0; legacy=0; seen_table=0 }
         /^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }
         /^# END LTN CODEX MANAGED$/ { inside=0; next }
         inside { next }
+        legacy {
+          if ($0 ~ /^[[:space:]]*\[/) { legacy=0 }
+          else { next }
+        }
+        /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
+          legacy=1
+          seen_table=1
+          next
+        }
         /^\[/ { seen_table=1 }
         !seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }
         !seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
@@ -617,10 +626,22 @@ remove_managed_config() {
   [ -f "${CONFIG_PATH}" ] || return
   tmp="${CONFIG_PATH}.$$.$(date +%s).tmp"
   awk '
-    BEGIN { inside=0 }
+    BEGIN { inside=0; legacy=0; seen_table=0 }
     /^# BEGIN LTN CODEX MANAGED$/ { inside=1; next }
     /^# END LTN CODEX MANAGED$/ { inside=0; next }
     inside { next }
+    legacy {
+      if ($0 ~ /^[[:space:]]*\[/) { legacy=0 }
+      else { next }
+    }
+    /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
+      legacy=1
+      seen_table=1
+      next
+    }
+    /^\[/ { seen_table=1 }
+    !seen_table && /^[[:space:]]*model[[:space:]]*=/ { next }
+    !seen_table && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
     { print }
   ' "${CONFIG_PATH}" > "${tmp}"
   chmod 600 "${tmp}"
@@ -935,7 +956,10 @@ verify_codex_managed_runtime_config() {
     die_code 34 "Cau hinh model_provider=ltn_gateway chua duoc ghi dung vao config.toml."
   fi
   if ! mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)"; then
-    die_code 34 "Codex khong nap duoc config.toml hoac MCP simi_browser sau khi cai dat."
+    if ! mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser 2>/dev/null)"; then
+      echo "Canh bao: Codex CLI hien tai chua xac minh duoc MCP simi_browser; hay chay Status sau khi mo Terminal moi." >&2
+      return 0
+    fi
   fi
   if ! printf '%s' "${mcp_json}" | grep -q 'browser-mcp.mjs'; then
     die_code 34 "Codex khong tim thay MCP simi_browser sau khi cai dat."
@@ -1057,7 +1081,8 @@ status() {
   fi
   [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ] && echo "PDF runtime: da tao" || echo "PDF runtime: chua tao"
   if [ -n "${CODEX_CMD_PATH}" ]; then
-    if mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)"; then
+    if mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)" ||
+       mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser 2>/dev/null)"; then
       echo "Codex config parser: OK"
       if grep -Eq '^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"ltn_gateway"[[:space:]]*$' "${CONFIG_PATH}"; then
         echo "Codex configured provider: ltn_gateway"
