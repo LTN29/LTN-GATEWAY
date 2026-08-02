@@ -23,7 +23,7 @@ CODEX_VERSION=""
 CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
-BROWSER_MCP_ALREADY_CONFIGURED=0
+CONFIG_CHANGED=0
 MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch 9router-browser 9router-pdf"
 
 cleanup() {
@@ -604,6 +604,9 @@ EOF
       ' "${CONFIG_PATH}"
     fi
   } > "${tmp}"
+  if [ ! -f "${CONFIG_PATH}" ] || ! cmp -s "${tmp}" "${CONFIG_PATH}"; then
+    CONFIG_CHANGED=1
+  fi
   chmod 600 "${tmp}"
   mv "${tmp}" "${CONFIG_PATH}"
   chmod 600 "${CONFIG_PATH}"
@@ -926,6 +929,20 @@ EOF
   echo "Da cai lenh PDF: ltn-pdf"
 }
 
+verify_codex_managed_runtime_config() {
+  local mcp_json
+  if ! grep -Eq '^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"ltn_gateway"[[:space:]]*$' "${CONFIG_PATH}"; then
+    die_code 34 "Cau hinh model_provider=ltn_gateway chua duoc ghi dung vao config.toml."
+  fi
+  if ! mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)"; then
+    die_code 34 "Codex khong nap duoc config.toml hoac MCP simi_browser sau khi cai dat."
+  fi
+  if ! printf '%s' "${mcp_json}" | grep -q 'browser-mcp.mjs'; then
+    die_code 34 "Codex khong tim thay MCP simi_browser sau khi cai dat."
+  fi
+  echo "Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
+}
+
 install_or_repair() {
   local client_id
   ensure_dirs
@@ -933,9 +950,6 @@ install_or_repair() {
   require_basic_dependencies
   ensure_codex_cli_healthy
   ensure_runtime_dependencies
-  if [ -f "${CONFIG_PATH}" ] && grep -q '^\[mcp_servers\.simi_browser\]$' "${CONFIG_PATH}"; then
-    BROWSER_MCP_ALREADY_CONFIGURED=1
-  fi
   echo "[6/7] Cau hinh SIMI Gateway..."
   read_team_key
   fetch_and_validate_gateway
@@ -946,6 +960,7 @@ install_or_repair() {
   install_managed_9router_skills
   install_browser_bridge
   install_local_tools
+  verify_codex_managed_runtime_config
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."
@@ -963,10 +978,10 @@ install_or_repair() {
   echo "  3. Khởi động: codex"
   case "${OS_NAME}" in
     macos)
-      if [ "${BROWSER_MCP_ALREADY_CONFIGURED}" = "1" ]; then
-        echo "  4. Codex Desktop da co Browser MCP: chi tao New chat, khong can dong/mo hoac dang nhap lai."
+      if [ "${CONFIG_CHANGED}" = "0" ]; then
+        echo "  4. Cau hinh khong doi: chi tao New chat, khong can dong/mo hoac dang nhap lai."
       else
-        echo "  4. Lan dau cai Browser MCP: dong hoan toan ung dung, mo lai, roi tao New chat."
+        echo "  4. Provider/MCP da thay doi: dong va mo lai Codex Desktop mot lan de giao dien nap cau hinh moi."
       fi
       ;;
     linux)
@@ -976,7 +991,7 @@ install_or_repair() {
 }
 
 status() {
-  local client_id redacted skill_name skill_count
+  local client_id redacted skill_name skill_count mcp_json
   ensure_dirs
   echo "OS: ${OS_NAME}"
   detect_arch
@@ -1041,6 +1056,23 @@ status() {
     echo "Python: chua co"
   fi
   [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ] && echo "PDF runtime: da tao" || echo "PDF runtime: chua tao"
+  if [ -n "${CODEX_CMD_PATH}" ]; then
+    if mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)"; then
+      echo "Codex config parser: OK"
+      if grep -Eq '^[[:space:]]*model_provider[[:space:]]*=[[:space:]]*"ltn_gateway"[[:space:]]*$' "${CONFIG_PATH}"; then
+        echo "Codex configured provider: ltn_gateway"
+      else
+        echo "Codex configured provider: khong dung"
+      fi
+      if printf '%s' "${mcp_json}" | grep -q 'browser-mcp.mjs'; then
+        echo "Codex MCP registry: simi_browser"
+      else
+        echo "Codex MCP registry: khong tim thay"
+      fi
+    else
+      echo "Codex config parser: loi"
+    fi
+  fi
   gateway_health_status
 }
 

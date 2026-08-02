@@ -85,8 +85,12 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /Browser MCP runtime:/);
   assert.match(script, /Remove-Item -LiteralPath \$skillDir -Recurse -Force/);
   assert.match(script, /MCP-only/);
-  assert.match(script, /browserMcpAlreadyConfigured/);
-  assert.match(script, /không cần đóng\/mở hoặc đăng nhập lại/);
+  assert.match(script, /Test-CodexManagedRuntimeConfig/);
+  assert.match(script, /mcp get simi_browser --json/);
+  assert.match(script, /Codex config parser:/);
+  assert.match(script, /Codex configured provider:/);
+  assert.match(script, /\$configChanged/);
+  assert.match(script, /Cấu hình không đổi/);
   assert.match(script, /ltn-chrome-debug\.cmd/);
   assert.match(script, /9Router skills:/);
 });

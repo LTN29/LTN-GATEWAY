@@ -740,6 +740,35 @@ function Show-InstallerStatus {
   Write-Host "  Node.js: $(if ($nodeStatus) { (& $nodeStatus.Source --version 2>$null | Out-String).Trim() } else { "chưa có" })"
   Write-Host "  Python: $(if ($pythonStatus) { $pythonStatus.Source } else { "chưa có" })"
   Write-Host "  PDF runtime: $(if (Test-Path (Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime\Scripts\python.exe")) { "đã tạo" } else { "chưa tạo" })"
+  $runtimeConfig = Test-CodexManagedRuntimeConfig -ConfigPath $ConfigPath
+  if ($runtimeConfig.Supported) {
+    Write-Host "  Codex config parser: $(if ($runtimeConfig.ConfigValid) { "OK" } else { "lỗi" })"
+    Write-Host "  Codex configured provider: $(if ($runtimeConfig.Provider) { "ltn_gateway" } else { "không đúng" })"
+    Write-Host "  Codex MCP registry: $(if ($runtimeConfig.BrowserMcp) { "simi_browser" } else { "không tìm thấy" })"
+  }
+}
+
+function Test-CodexManagedRuntimeConfig {
+  param([string]$ConfigPath)
+
+  $codexStatus = Get-CodexCommandStatus
+  if (-not $codexStatus.Healthy) {
+    return [pscustomobject]@{ Supported = $false; ConfigValid = $false; Provider = $false; BrowserMcp = $false }
+  }
+
+  $configText = if (Test-Path -LiteralPath $ConfigPath) {
+    [IO.File]::ReadAllText($ConfigPath)
+  } else {
+    ""
+  }
+  $mcpJson = (& $codexStatus.Path mcp get simi_browser --json 2>$null | Out-String)
+  $configValid = $LASTEXITCODE -eq 0
+  return [pscustomobject]@{
+    Supported = $true
+    ConfigValid = $configValid
+    Provider = $configValid -and ($configText -match '(?m)^\s*model_provider\s*=\s*"ltn_gateway"\s*$')
+    BrowserMcp = $configValid -and ($mcpJson -match 'browser-mcp\.mjs')
+  }
 }
 
 function Invoke-LtnUninstall {
@@ -911,12 +940,10 @@ Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $Gat
 Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
 
 $existingConfig = ""
-$browserMcpAlreadyConfigured = $false
 if (Test-Path $configPath) {
   $backupPath = "$configPath.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
   Copy-Item -LiteralPath $configPath -Destination $backupPath
   $existingConfig = [IO.File]::ReadAllText($configPath)
-  $browserMcpAlreadyConfigured = $existingConfig -match '(?m)^\s*\[mcp_servers\.simi_browser\]\s*$'
   Write-Host "Đã sao lưu config cũ: $backupPath"
 }
 
@@ -948,6 +975,7 @@ tool_timeout_sec = 90
 "@
 
 $updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent $configContent
+$configChanged = $updatedConfig -ne $existingConfig
 [IO.File]::WriteAllText($configPath, $updatedConfig, [Text.UTF8Encoding]::new($false))
 [Environment]::SetEnvironmentVariable("LTN_TEAM_API_KEY", $TeamApiKey, "User")
 $env:LTN_TEAM_API_KEY = $TeamApiKey
@@ -960,6 +988,22 @@ $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
 $env:NINEROUTER_URL = $gatewayRoot
 $env:NINEROUTER_KEY = $TeamApiKey
 $env:LTN_BROWSER_BRIDGE_TOKEN = $browserBridgeToken
+
+$runtimeConfigStatus = Test-CodexManagedRuntimeConfig -ConfigPath $configPath
+if ($runtimeConfigStatus.Supported) {
+  if (-not $runtimeConfigStatus.ConfigValid) {
+    throw "Codex không nạp được config.toml hoặc MCP simi_browser sau khi cài đặt."
+  }
+  if (-not $runtimeConfigStatus.Provider) {
+    throw "Cấu hình model_provider=ltn_gateway chưa được ghi đúng vào config.toml."
+  }
+  if (-not $runtimeConfigStatus.BrowserMcp) {
+    throw "Codex không tìm thấy MCP simi_browser sau khi cài đặt."
+  }
+  Write-Host "  Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
+} else {
+  Write-Warning "Chưa thể gọi Codex để kiểm tra config; installer đã ghi config.toml và MCP simi_browser."
+}
 
 $installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""
@@ -975,8 +1019,8 @@ Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."
 Write-Host "  2. Kiểm tra: codex --version"
 Write-Host "  3. Khởi động: codex"
 Write-Host "  4. Prompt trực tiếp: Vào URL này tôi đã login và kiểm tra dữ liệu."
-if ($browserMcpAlreadyConfigured) {
-  Write-Host "  Codex Desktop đã có Browser MCP: chỉ tạo New chat, không cần đóng/mở hoặc đăng nhập lại."
+if (-not $configChanged) {
+  Write-Host "  Cấu hình không đổi: chỉ tạo New chat, không cần đóng/mở hoặc đăng nhập lại."
 } else {
-  Write-Host "  Lần đầu cài Browser MCP: đóng hoàn toàn Codex Desktop, mở lại rồi tạo New chat."
+  Write-Host "  Provider/MCP đã thay đổi: đóng và mở lại Codex Desktop một lần để giao diện nạp cấu hình mới."
 }
