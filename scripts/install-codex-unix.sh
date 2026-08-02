@@ -636,6 +636,10 @@ install_managed_9router_skills() {
     skill_path="${skill_dir}/SKILL.md"
     tmp="${skill_dir}/SKILL.md.$$.$(date +%s).tmp"
     skill_url="${gateway_root}/install/skills/${skill_name}/SKILL.md"
+    if [ "${skill_name}" = "9router-browser" ] && [ -d "${skill_dir}" ]; then
+      rm -rf -- "${skill_dir}"
+      echo "Da xoa skill 9router-browser cu truoc khi cai ban MCP-only."
+    fi
     mkdir -p "${skill_dir}"
     chmod 700 "${skill_dir}" 2>/dev/null || true
     if ! curl --fail --silent --show-error --max-redirs 0 \
@@ -653,7 +657,7 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 11 skill 9Router."
+  echo "Da cai/cap nhat 11 skill 9Router. Khoi dong lai Codex Desktop de nap skill moi."
 }
 
 get_or_create_browser_bridge_token() {

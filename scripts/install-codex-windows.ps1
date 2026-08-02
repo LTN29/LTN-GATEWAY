@@ -353,6 +353,10 @@ function Install-Managed9RouterSkills {
     $skillPath = Join-Path $skillDir "SKILL.md"
     $tempPath = Join-Path $skillDir ("SKILL.md.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
     $skillUri = [Uri]("$gatewayRoot/install/skills/$skillName/SKILL.md")
+    if ($skillName -eq "9router-browser" -and (Test-Path -LiteralPath $skillDir)) {
+      Remove-Item -LiteralPath $skillDir -Recurse -Force
+      Write-Host "Đã xóa skill 9router-browser cũ trước khi cài bản MCP-only."
+    }
     New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
     try {
       Invoke-WebRequest `
@@ -374,7 +378,7 @@ function Install-Managed9RouterSkills {
     }
   }
 
-  Write-Host "Đã cài/cập nhật $($skillNames.Count) skill 9Router."
+  Write-Host "Đã cài/cập nhật $($skillNames.Count) skill 9Router. Khởi động lại Codex Desktop để nạp skill mới."
 }
 
 function Get-OrCreateBrowserBridgeToken {

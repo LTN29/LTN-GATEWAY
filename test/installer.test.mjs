@@ -83,6 +83,8 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /tool_timeout_sec = 90/);
   assert.match(script, /Browser MCP config:/);
   assert.match(script, /Browser MCP runtime:/);
+  assert.match(script, /Remove-Item -LiteralPath \$skillDir -Recurse -Force/);
+  assert.match(script, /MCP-only/);
   assert.match(script, /ltn-chrome-debug\.cmd/);
   assert.match(script, /9Router skills:/);
 });
