@@ -545,10 +545,12 @@ escape_toml() {
 
 merge_config() {
   local client_id="$1"
-  local backup tmp escaped_base escaped_model escaped_helper
+  local backup tmp escaped_base escaped_model escaped_helper escaped_node escaped_browser_mcp
   escaped_base="$(escape_toml "${GATEWAY_BASE_URL%/}")"
   escaped_model="$(escape_toml "${DEFAULT_MODEL}")"
   escaped_helper="$(escape_toml "${HELPER_PATH}")"
+  escaped_node="$(escape_toml "${RUNTIME_NODE_CMD:-node}")"
+  escaped_browser_mcp="$(escape_toml "${CODEX_HOME}/browser-mcp.mjs")"
   mkdir -p "${CODEX_HOME}"
 
   if [ -f "${CONFIG_PATH}" ]; then
@@ -575,6 +577,12 @@ command = "${escaped_helper}"
 args = []
 timeout_ms = 5000
 refresh_interval_ms = 300000
+
+[mcp_servers.simi_browser]
+command = "${escaped_node}"
+args = ["${escaped_browser_mcp}"]
+startup_timeout_sec = 20
+tool_timeout_sec = 90
 # END LTN CODEX MANAGED
 EOF
     if [ -f "${CONFIG_PATH}" ]; then
@@ -665,13 +673,14 @@ get_or_create_browser_bridge_token() {
 }
 
 install_browser_bridge() {
-  local gateway_root bridge_path bridge_tmp page_client_path page_client_tmp cdp_client_path chrome_debug_path asset asset_path asset_tmp bridge_token
+  local gateway_root bridge_path bridge_tmp page_client_path page_client_tmp cdp_client_path chrome_debug_path browser_mcp_path asset asset_path asset_tmp bridge_token
   gateway_root="${GATEWAY_BASE_URL%/}"
   gateway_root="${gateway_root%/v1}"
   bridge_path="${CODEX_HOME}/browser-bridge.mjs"
   page_client_path="${CODEX_HOME}/browser-page.mjs"
   cdp_client_path="${CODEX_HOME}/browser-cdp.mjs"
   chrome_debug_path="${CODEX_HOME}/chrome-debug.mjs"
+  browser_mcp_path="${CODEX_HOME}/browser-mcp.mjs"
   bridge_tmp="${bridge_path}.$$.$(date +%s).tmp"
   if ! curl --fail --silent --show-error --max-redirs 0 \
     --output "${bridge_tmp}" "${gateway_root}/install/browser-bridge.mjs"; then
@@ -688,10 +697,11 @@ install_browser_bridge() {
   fi
   chmod 600 "${page_client_tmp}"
   mv "${page_client_tmp}" "${page_client_path}"
-  for asset in browser-cdp.mjs chrome-debug.mjs; do
+  for asset in browser-cdp.mjs chrome-debug.mjs browser-mcp.mjs; do
     case "${asset}" in
       browser-cdp.mjs) asset_path="${cdp_client_path}" ;;
       chrome-debug.mjs) asset_path="${chrome_debug_path}" ;;
+      browser-mcp.mjs) asset_path="${browser_mcp_path}" ;;
     esac
     asset_tmp="${asset_path}.$$.$(date +%s).tmp"
     if ! curl --fail --silent --show-error --max-redirs 0 \
@@ -750,6 +760,7 @@ exec "\${node_bin}" "${chrome_debug_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-chrome-debug"
   echo "Da cai Chrome CDP client: ${chrome_debug_path}"
+  echo "Da cai browser MCP tu dong: ${browser_mcp_path}"
   echo "  Tu dong mo profile Chrome khi 9router-browser duoc goi"
   echo "  User chi can dang nhap mot lan trong cua so Chrome moi"
 }
@@ -910,6 +921,7 @@ install_or_repair() {
   detect_arch
   require_basic_dependencies
   ensure_codex_cli_healthy
+  ensure_runtime_dependencies
   echo "[6/7] Cau hinh SIMI Gateway..."
   read_team_key
   fetch_and_validate_gateway
@@ -919,7 +931,6 @@ install_or_repair() {
   echo "[7/7] Cai full skill 9Router..."
   install_managed_9router_skills
   install_browser_bridge
-  ensure_runtime_dependencies
   install_local_tools
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
@@ -1019,7 +1030,7 @@ uninstall_ltn() {
   local account skill_name skill_dir
   account="$(id -un)"
   remove_managed_config
-  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs"
+  rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs" "${CODEX_HOME}/browser-mcp.mjs"
   rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
   rm -rf "${CODEX_HOME}/browser-extension"

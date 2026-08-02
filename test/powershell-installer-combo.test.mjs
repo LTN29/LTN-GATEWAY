@@ -133,7 +133,7 @@ async function runInstallerWithCombo({
       return;
     }
 
-    if (req.url === "/install/tools/browser-cdp.mjs" || req.url === "/install/tools/chrome-debug.mjs") {
+    if (req.url === "/install/tools/browser-cdp.mjs" || req.url === "/install/tools/chrome-debug.mjs" || req.url === "/install/tools/browser-mcp.mjs") {
       res.writeHead(200, { "content-type": "text/javascript" });
       res.end("console.log('browser cdp asset test');");
       return;
@@ -271,6 +271,9 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     output.config,
     /env_http_headers = \{ "X-LTN-Client-ID" = "LTN_CLIENT_ID" \}/
   );
+  assert.match(output.config, /\[mcp_servers\.simi_browser\]/);
+  assert.match(output.config, /args = \[".*browser-mcp\.mjs"\]/);
+  assert.match(output.config, /tool_timeout_sec = 90/);
   assert.doesNotMatch(output.config, /combo\/SIMI-AI/);
   assert.doesNotMatch(
     `${output.result.stdout}\n${output.result.stderr}`,

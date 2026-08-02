@@ -333,6 +333,12 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(routerClient.status, 200);
     assert.match(routerClient.body, /resolveApiKey/);
+    const browserMcp = await rawGet(
+      gatewayPort,
+      "/install/tools/browser-mcp.mjs"
+    );
+    assert.equal(browserMcp.status, 200);
+    assert.match(browserMcp.body, /browser_read_pages/);
     const pdfTool = await rawGet(
       gatewayPort,
       "/install/tools/pdf-extract.py"

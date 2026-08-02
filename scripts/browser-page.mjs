@@ -189,7 +189,9 @@ async function ensureChromeDebug(targetUrl) {
 async function main() {
   const cliArgs = process.argv.slice(2);
   const args = new Set(cliArgs);
-  if (args.has("--cdp") || String(process.env.LTN_BROWSER_MODE || "").toLowerCase() === "cdp") {
+  const browserMode = String(process.env.LTN_BROWSER_MODE || "").toLowerCase();
+  const useLegacyBridge = args.has("--bridge") || browserMode === "bridge";
+  if (!useLegacyBridge) {
     const targetUrls = [
       process.env.LTN_CHROME_TARGET_URL || "",
       ...cliArgs.filter((value) => /^https?:\/\//i.test(value))

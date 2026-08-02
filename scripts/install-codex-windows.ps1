@@ -163,19 +163,19 @@ function Update-CodexConfig {
 
   $lines = @($ExistingContent -split "\r?\n")
   $kept = [System.Collections.Generic.List[string]]::new()
-  $insideManagedProvider = $false
+  $insideManagedTable = $false
   $hasSeenTable = $false
 
   foreach ($line in $lines) {
-    if ($line -match '^\s*\[model_providers\.ltn_gateway\]\s*$') {
-      $insideManagedProvider = $true
+    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway|mcp_servers\.simi_browser)\]\s*$') {
+      $insideManagedTable = $true
       $hasSeenTable = $true
       continue
     }
-    if ($insideManagedProvider -and $line -match '^\s*\[') {
-      $insideManagedProvider = $false
+    if ($insideManagedTable -and $line -match '^\s*\[') {
+      $insideManagedTable = $false
     }
-    if ($insideManagedProvider) { continue }
+    if ($insideManagedTable) { continue }
     if ($line -match '^\s*\[') { $hasSeenTable = $true }
     if (-not $hasSeenTable -and $line -match '^\s*model\s*=') { continue }
     if (-not $hasSeenTable -and $line -match '^\s*model_provider\s*=') { continue }
@@ -409,6 +409,7 @@ function Install-BrowserBridge {
   $pageClientPath = Join-Path $CodexHome "browser-page.mjs"
   $cdpClientPath = Join-Path $CodexHome "browser-cdp.mjs"
   $chromeDebugPath = Join-Path $CodexHome "chrome-debug.mjs"
+  $browserMcpPath = Join-Path $CodexHome "browser-mcp.mjs"
   $bridgeTemp = "$bridgePath.$([Guid]::NewGuid().ToString('N')).tmp"
   try {
     Invoke-WebRequest -UseBasicParsing `
@@ -429,7 +430,8 @@ function Install-BrowserBridge {
   }
   foreach ($asset in @(
     @{ Name = "browser-cdp.mjs"; Path = $cdpClientPath },
-    @{ Name = "chrome-debug.mjs"; Path = $chromeDebugPath }
+    @{ Name = "chrome-debug.mjs"; Path = $chromeDebugPath },
+    @{ Name = "browser-mcp.mjs"; Path = $browserMcpPath }
   )) {
     $assetTemp = "$($asset.Path).$([Guid]::NewGuid().ToString('N')).tmp"
     try {
@@ -505,6 +507,7 @@ endlocal
   $chromeDebugWrapperText = $chromeDebugWrapperText.Replace('%CODEX_HOME%', $escapedCodexHome)
   [IO.File]::WriteAllText($chromeDebugWrapper, $chromeDebugWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài Chrome CDP client: $chromeDebugPath"
+  Write-Host "Đã cài browser MCP tự động: $browserMcpPath"
   Write-Host "  Tự động mở profile Chrome khi 9router-browser được gọi"
   Write-Host "  User chỉ cần đăng nhập một lần trong cửa sổ Chrome mới"
 }
@@ -775,6 +778,7 @@ function Invoke-LtnUninstall {
   $browserPagePath = Join-Path (Split-Path -Parent $ConfigPath) "browser-page.mjs"
   $browserCdpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-cdp.mjs"
   $chromeDebugPath = Join-Path (Split-Path -Parent $ConfigPath) "chrome-debug.mjs"
+  $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
   $browserTokenPath = Join-Path (Split-Path -Parent $ConfigPath) "credentials\ltn-browser-bridge-token"
   $browserExtensionPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-extension"
   $toolsPath = Join-Path (Split-Path -Parent $ConfigPath) "tools"
@@ -783,6 +787,7 @@ function Invoke-LtnUninstall {
   if (Test-Path -LiteralPath $browserPagePath) { Remove-Item -LiteralPath $browserPagePath -Force }
   if (Test-Path -LiteralPath $browserCdpPath) { Remove-Item -LiteralPath $browserCdpPath -Force }
   if (Test-Path -LiteralPath $chromeDebugPath) { Remove-Item -LiteralPath $chromeDebugPath -Force }
+  if (Test-Path -LiteralPath $browserMcpPath) { Remove-Item -LiteralPath $browserMcpPath -Force }
   if (Test-Path -LiteralPath $browserTokenPath) { Remove-Item -LiteralPath $browserTokenPath -Force }
   if (Test-Path -LiteralPath $browserExtensionPath) { Remove-Item -LiteralPath $browserExtensionPath -Recurse -Force }
   if (Test-Path -LiteralPath $toolsPath) { Remove-Item -LiteralPath $toolsPath -Recurse -Force }
@@ -906,6 +911,11 @@ if (Test-Path $configPath) {
 
 $escapedBaseUrl = Escape-TomlString $GatewayBaseUrl
 $escapedModel = Escape-TomlString $defaultModel
+$nodeCommand = "node"
+$installedNode = Get-Command node -ErrorAction SilentlyContinue
+if ($installedNode) { $nodeCommand = $installedNode.Source }
+$escapedNodeCommand = Escape-TomlString $nodeCommand
+$escapedBrowserMcpPath = Escape-TomlString (Join-Path $codexHome "browser-mcp.mjs")
 $configContent = @"
 # Managed by LTN Codex installer.
 # Change Combo members and fallback order in 9Router, not on this machine.
@@ -918,6 +928,12 @@ base_url = "$escapedBaseUrl"
 env_key = "LTN_TEAM_API_KEY"
 wire_api = "responses"
 env_http_headers = { "X-LTN-Client-ID" = "LTN_CLIENT_ID" }
+
+[mcp_servers.simi_browser]
+command = "$escapedNodeCommand"
+args = ["$escapedBrowserMcpPath"]
+startup_timeout_sec = 20
+tool_timeout_sec = 90
 "@
 
 $updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedContent $configContent
@@ -941,9 +957,10 @@ Write-Host "  Hệ điều hành: Windows"
 Write-Host "  Codex CLI: $(if ($installedCodexStatus.Healthy) { $installedCodexStatus.Version } else { "chưa xác định" })"
 Write-Host "  Gateway: $GatewayBaseUrl"
 Write-Host "  Model mặc định: $defaultModel"
-Write-Host "  Chrome CDP: dùng ltn-chrome-debug rồi đọc bằng ltn-browser-page --cdp"
+Write-Host "  Browser: MCP tự động, profile đăng nhập được giữ lại"
 Write-Host ""
 Write-Host "Bước tiếp theo:"
 Write-Host "  1. Mở cửa sổ PowerShell hoặc Command Prompt mới."
 Write-Host "  2. Kiểm tra: codex --version"
 Write-Host "  3. Khởi động: codex"
+Write-Host "  4. Prompt trực tiếp: Vào URL này tôi đã login và kiểm tra dữ liệu."

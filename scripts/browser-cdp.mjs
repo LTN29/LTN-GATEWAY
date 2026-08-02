@@ -294,7 +294,8 @@ const pageEvaluationExpression = `(() => ({
   title: document.title,
   text: document.body?.innerText || document.documentElement?.innerText || "",
   selectedText: window.getSelection?.()?.toString?.() || "",
-  readyState: document.readyState
+  readyState: document.readyState,
+  loginRequired: Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href)
 }))()`;
 
 async function evaluatePage(connection) {

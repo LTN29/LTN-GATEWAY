@@ -80,6 +80,10 @@ const localToolPaths = new Map([
     fileURLToPath(new URL("../scripts/chrome-debug.mjs", import.meta.url))
   ],
   [
+    "/install/tools/browser-mcp.mjs",
+    fileURLToPath(new URL("../scripts/browser-mcp.mjs", import.meta.url))
+  ],
+  [
     "/install/tools/9router-client.mjs",
     fileURLToPath(new URL("../scripts/9router-client.mjs", import.meta.url))
   ],
