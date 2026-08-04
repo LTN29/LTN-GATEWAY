@@ -598,9 +598,30 @@ function Ensure-NodeRuntime {
 
 function Get-PythonCommand {
   Refresh-ProcessPath
-  $python = Get-Command py -ErrorAction SilentlyContinue
-  if ($python) { return $python }
-  return Get-Command python -ErrorAction SilentlyContinue
+  $candidates = @(
+    Get-Command py, python, python3 -All -ErrorAction SilentlyContinue
+  ) | Where-Object {
+    $_.Source -and $_.Source -notmatch '(?i)[\\/]WindowsApps[\\/]python(?:3)?\.exe$'
+  }
+
+  foreach ($candidate in $candidates) {
+    try {
+      $probeArgs = if ($candidate.Name -match '^py(\.exe)?$') {
+        @('-3', '-c', 'import sys; print(sys.executable)')
+      } else {
+        @('-c', 'import sys; print(sys.executable)')
+      }
+      $executable = (& $candidate.Source @probeArgs 2>$null | Select-Object -Last 1 | Out-String).Trim()
+      if ($LASTEXITCODE -eq 0 -and
+          -not [string]::IsNullOrWhiteSpace($executable) -and
+          (Test-Path -LiteralPath $executable -PathType Leaf)) {
+        return $candidate
+      }
+    } catch {
+      # Ignore stale aliases and broken launchers, then try the next candidate.
+    }
+  }
+  return $null
 }
 
 function Ensure-PdfRuntime {
@@ -612,7 +633,10 @@ function Ensure-PdfRuntime {
   }
   $python = Get-PythonCommand
   if (-not $python) {
-    [void](Install-WingetPackage -PackageId "Python.Python.3.12")
+    if (-not (Install-WingetPackage -PackageId "Python.Python.3.12")) {
+      Write-Warning "Không cài được Python 3.12 tự động bằng winget."
+    }
+    Refresh-ProcessPath
     $python = Get-PythonCommand
   }
   if (-not $python) {

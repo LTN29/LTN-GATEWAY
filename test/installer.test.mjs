@@ -42,6 +42,14 @@ test("Windows installer remains Combo-first and does not embed model IDs or API 
   assert.doesNotMatch(managedRootBlock + managedTableBlock, /clientId|\$clientId/);
 });
 
+test("Windows installer rejects the Microsoft Store Python alias and installs Python automatically", async () => {
+  const script = await readFile(installerUrl, "utf8");
+
+  assert.ok(script.includes("WindowsApps[\\\\/]python"));
+  assert.match(script, /Install-WingetPackage -PackageId "Python\.Python\.3\.12"/);
+  assert.match(script, /import sys; print\(sys\.executable\)/);
+});
+
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {
   const script = await readFile(installerUrl, "utf8");
 
