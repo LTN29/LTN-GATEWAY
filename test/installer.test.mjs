@@ -50,6 +50,15 @@ test("Windows installer rejects the Microsoft Store Python alias and installs Py
   assert.match(script, /import sys; print\(sys\.executable\)/);
 });
 
+test("Windows installer treats TOML validator stderr as an exit-code result", async () => {
+  const script = await readFile(installerUrl, "utf8");
+
+  assert.match(script, /\$previousErrorActionPreference = \$ErrorActionPreference/);
+  assert.match(script, /\$ErrorActionPreference = "Continue"/);
+  assert.match(script, /2> \$stderrPath/);
+  assert.match(script, /\$exitCode = \$LASTEXITCODE/);
+});
+
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {
   const script = await readFile(installerUrl, "utf8");
 

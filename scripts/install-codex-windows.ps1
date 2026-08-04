@@ -699,8 +699,22 @@ with open(sys.argv[1], "rb") as handle:
 '@
   try {
     [IO.File]::WriteAllText($tempPath, $Content, [Text.UTF8Encoding]::new($false))
-    & $venvPython -c $validator $tempPath 2>$null
-    $exitCode = $LASTEXITCODE
+    # Windows PowerShell 5.1 promotes native stderr to ErrorRecord when the
+    # installer uses ErrorActionPreference=Stop. TOML parse failures are an
+    # expected validator result, so capture them via a temporary file and use
+    # the native exit code instead of aborting the whole installer.
+    $stderrPath = "$tempPath.stderr"
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+      $ErrorActionPreference = "Continue"
+      & $venvPython -c $validator $tempPath 2> $stderrPath
+      $exitCode = $LASTEXITCODE
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+      if (Test-Path -LiteralPath $stderrPath) {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+      }
+    }
     if ($exitCode -eq 2) {
       return [pscustomobject]@{ Supported = $false; Valid = $false }
     }
