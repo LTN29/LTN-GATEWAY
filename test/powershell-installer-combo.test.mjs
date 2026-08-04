@@ -165,7 +165,7 @@ async function runInstallerWithCombo({
 
   const gatewayPort = await listen(gateway);
   const root = await mkdtemp(join(tmpdir(), "ltn-installer-combo-test-"));
-  const codexHome = join(root, "codex-home");
+  const codexHome = join(root, "codex home with spaces");
   await mkdir(codexHome, { recursive: true });
   if (initialConfig) {
     await writeFile(join(codexHome, "config.toml"), initialConfig, "utf8");

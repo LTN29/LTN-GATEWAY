@@ -689,7 +689,7 @@ function Test-TomlConfigContent {
 
   $tempPath = Join-Path $CodexHome ("config.toml.validate-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
   $validator = @'
-import sys
+import os
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -697,7 +697,7 @@ except ModuleNotFoundError:
         import tomli as tomllib
     except ModuleNotFoundError:
         raise SystemExit(2)
-with open(sys.argv[1], "rb") as handle:
+with open(os.environ["LTN_TOML_VALIDATE_PATH"], "rb") as handle:
     tomllib.load(handle)
 '@
   try {
@@ -709,12 +709,22 @@ with open(sys.argv[1], "rb") as handle:
     $stderrPath = "$tempPath.stderr"
     $previousErrorActionPreference = $ErrorActionPreference
     $stderrText = ""
+    $previousValidatePath = $env:LTN_TOML_VALIDATE_PATH
     try {
       $ErrorActionPreference = "Continue"
-      & $venvPython -c $validator $tempPath 2> $stderrPath
+      # Pass the path through the environment. Windows PowerShell 5.1 can
+      # split native argv values containing spaces (for example a user profile
+      # named "TUF DASH FX516P") when invoking `python -c`.
+      $env:LTN_TOML_VALIDATE_PATH = $tempPath
+      & $venvPython -c $validator 2> $stderrPath
       $exitCode = $LASTEXITCODE
     } finally {
       $ErrorActionPreference = $previousErrorActionPreference
+      if ($null -eq $previousValidatePath) {
+        Remove-Item Env:LTN_TOML_VALIDATE_PATH -ErrorAction SilentlyContinue
+      } else {
+        $env:LTN_TOML_VALIDATE_PATH = $previousValidatePath
+      }
       if (Test-Path -LiteralPath $stderrPath) {
         $stderrText = [IO.File]::ReadAllText($stderrPath)
         Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
