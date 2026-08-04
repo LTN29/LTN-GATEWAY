@@ -315,18 +315,18 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     const imageSkill = await rawGet(
       gatewayPort,
-      "/install/skills/9router-image/SKILL.md"
+      "/install/skills/simi-tao-anh/SKILL.md"
     );
     assert.equal(imageSkill.status, 200);
     assert.match(imageSkill.headers["content-type"], /^text\/markdown/);
-    assert.match(imageSkill.body, /^---\r?\nname: 9router-image/m);
+    assert.match(imageSkill.body, /^---\r?\nname: simi-tao-anh/m);
     assert.match(imageSkill.body, /https:\/\/ai\.simi\.vn/);
     const pdfSkill = await rawGet(
       gatewayPort,
-      "/install/skills/9router-pdf/SKILL.md"
+      "/install/skills/simi-doc-pdf/SKILL.md"
     );
     assert.equal(pdfSkill.status, 200);
-    assert.match(pdfSkill.body, /^---\r?\nname: 9router-pdf/m);
+    assert.match(pdfSkill.body, /^---\r?\nname: simi-doc-pdf/m);
     const routerClient = await rawGet(
       gatewayPort,
       "/install/tools/9router-client.mjs"
@@ -350,7 +350,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       404
     );
     assert.equal(
-      (await rawGet(gatewayPort, "/install/skills/9router-image/SKILL.md?other=1")).status,
+      (await rawGet(gatewayPort, "/install/skills/simi-tao-anh/SKILL.md?other=1")).status,
       404
     );
 

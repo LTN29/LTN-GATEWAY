@@ -42,6 +42,14 @@ for (const marker of [
 ]) {
   if (!source.includes(marker)) throw new Error(`UI marker missing: ${marker}`);
 }
+for (const errorUiMarker of [
+  "function errorGuidance",
+  "function errorLogList",
+  "Nguyên nhân có thể",
+  "Đề xuất xử lý"
+]) {
+  if (!source.includes(errorUiMarker)) throw new Error(`Error log guidance missing: ${errorUiMarker}`);
+}
 for (const removedMarker of [
   "/admin/users/import",
   "Import CSV",

@@ -1,9 +1,9 @@
 ---
-name: 9router-pdf
-description: Read and analyze local PDF files with the installed Python PDF runtime, optionally combining extracted content with 9Router web/model capabilities.
+name: simi-doc-pdf
+description: Đọc, trích xuất và phân tích file PDF cục bộ bằng Python, có thể kết hợp tìm kiếm và model của Simi. Dùng khi user muốn xem, tóm tắt, hỏi đáp hoặc lấy nội dung từ PDF.
 ---
 
-# 9Router - PDF analysis
+# Simi - Đọc và phân tích PDF
 
 Use this skill when the user asks to read, summarize, compare, extract tables
 from, or analyze a local PDF. Use the installed `ltn-pdf` wrapper; it selects
@@ -31,8 +31,8 @@ of pretending that missing text was read.
 
 ## Network-assisted analysis
 
-For public URLs, use `9router-web-fetch`; for research or citations, use
-`9router-web-search`. The generated `ltn-9router` wrapper routes these calls
+For public URLs, use `simi-doc-trang-web`; for research or citations, use
+`simi-tim-kiem-web`. The generated `ltn-9router` wrapper routes these calls
 through the authenticated LTN Gateway without printing the API key:
 
 ```text

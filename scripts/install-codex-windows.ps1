@@ -356,17 +356,18 @@ function Install-Managed9RouterSkills {
   )
 
   $skillNames = @(
-    "9router",
-    "9router-chat",
-    "9router-image",
-    "9router-video",
-    "9router-tts",
-    "9router-stt",
-    "9router-embeddings",
-    "9router-web-search",
-    "9router-web-fetch",
-    "9router-browser",
-    "9router-pdf"
+    "simi",
+    "simi-tro-chuyen",
+    "simi-tao-anh",
+    "simi-tao-video",
+    "simi-doc-van-ban",
+    "simi-chep-loi",
+    "simi-vector",
+    "simi-tim-kiem-web",
+    "simi-doc-trang-web",
+    "simi-trinh-duyet",
+    "simi-doc-pdf",
+    "simi-cai-dat"
   )
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $skillsRoot = Join-Path $CodexHome "skills"
@@ -377,9 +378,9 @@ function Install-Managed9RouterSkills {
     $skillPath = Join-Path $skillDir "SKILL.md"
     $tempPath = Join-Path $skillDir ("SKILL.md.{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
     $skillUri = [Uri]("$gatewayRoot/install/skills/$skillName/SKILL.md")
-    if ($skillName -eq "9router-browser" -and (Test-Path -LiteralPath $skillDir)) {
+    if ($skillName -eq "simi-trinh-duyet" -and (Test-Path -LiteralPath $skillDir)) {
       Remove-Item -LiteralPath $skillDir -Recurse -Force
-      Write-Host "Đã xóa skill 9router-browser cũ trước khi cài bản MCP-only."
+      Write-Host "Đã xóa skill trình duyệt Simi cũ trước khi cài bản MCP-only."
     }
     New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
     try {
@@ -402,7 +403,7 @@ function Install-Managed9RouterSkills {
     }
   }
 
-  Write-Host "Đã cài/cập nhật $($skillNames.Count) skill 9Router. Khởi động lại Codex Desktop để nạp skill mới."
+  Write-Host "Đã cài/cập nhật $($skillNames.Count) skill Simi. Khởi động lại Codex Desktop để nạp skill mới."
 }
 
 function Get-OrCreateBrowserBridgeToken {
@@ -536,7 +537,7 @@ endlocal
   [IO.File]::WriteAllText($chromeDebugWrapper, $chromeDebugWrapperText.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài Chrome CDP client: $chromeDebugPath"
   Write-Host "Đã cài browser MCP tự động: $browserMcpPath"
-  Write-Host "  Tự động mở profile Chrome khi 9router-browser được gọi"
+  Write-Host "  Tự động mở profile Chrome khi skill simi-trinh-duyet được gọi"
   Write-Host "  User chỉ cần đăng nhập một lần trong cửa sổ Chrome mới"
 }
 
@@ -789,11 +790,11 @@ function Show-InstallerStatus {
   Write-Host "  Wrapper dir: $BinDir"
   $skillsRoot = Join-Path (Split-Path -Parent $ConfigPath) "skills"
   $skillCount = @(
-    "9router", "9router-chat", "9router-image", "9router-video",
-    "9router-tts", "9router-stt", "9router-embeddings",
-    "9router-web-search", "9router-web-fetch", "9router-browser", "9router-pdf"
+    "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
+    "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
+    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-cai-dat"
   ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
-  Write-Host "  9Router skills: $skillCount/11"
+  Write-Host "  Simi skills: $skillCount/12"
   $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
   Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
   $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
@@ -857,9 +858,12 @@ function Invoke-LtnUninstall {
   }
   $skillsRoot = Join-Path (Split-Path -Parent $ConfigPath) "skills"
   foreach ($skillName in @(
-    "9router", "9router-chat", "9router-image", "9router-video",
-    "9router-tts", "9router-stt", "9router-embeddings",
-    "9router-web-search", "9router-web-fetch", "9router-browser", "9router-pdf"
+    "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
+    "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
+    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-cai-dat",
+    "9router", "9router-chat", "9router-image", "9router-video", "9router-tts",
+    "9router-stt", "9router-embeddings", "9router-web-search", "9router-web-fetch",
+    "9router-browser", "9router-pdf"
   )) {
     $skillDir = Join-Path $skillsRoot $skillName
     $skillPath = Join-Path $skillDir "SKILL.md"

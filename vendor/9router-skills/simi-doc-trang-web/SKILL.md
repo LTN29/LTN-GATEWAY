@@ -1,9 +1,9 @@
 ---
-name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+name: simi-doc-trang-web
+description: Đọc URL công khai thành Markdown, văn bản hoặc HTML qua Simi Gateway. Dùng khi user muốn đọc bài viết, trích xuất nội dung trang, xem tài liệu cài đặt hoặc khi máy không truy cập trực tiếp được URL; không dùng như proxy tải file nhị phân.
 ---
 
-# 9Router — Web Fetch
+# Simi - Đọc nội dung trang web
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
 

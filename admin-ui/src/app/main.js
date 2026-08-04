@@ -296,8 +296,62 @@ function errorLogTable(errors) {
   );
 }
 
+function errorGuidance(item) {
+  const status = Number(item.status) || 0;
+  const haystack = `${item.code || ""} ${item.message || ""}`.toLowerCase();
+  if (status === 429 || /rate.?limit|quota|too many/.test(haystack)) {
+    return {
+      cause: "Upstream đang giới hạn tần suất hoặc tài khoản đã chạm hạn mức.",
+      fix: "Giảm số request đồng thời, thêm retry có backoff và kiểm tra quota của model/tài khoản."
+    };
+  }
+  if (status === 401 || status === 403 || /unauthor|forbidden|api.?key|permission/.test(haystack)) {
+    return {
+      cause: "Thông tin xác thực không hợp lệ, đã hết hạn hoặc chưa có quyền gọi model này.",
+      fix: "Kiểm tra lại API key, quyền truy cập model và cấu hình xác thực ở upstream."
+    };
+  }
+  if (status === 400 || /invalid|bad.?request|validation/.test(haystack)) {
+    return {
+      cause: "Upstream từ chối request vì tham số, model hoặc định dạng payload chưa hợp lệ.",
+      fix: "Đối chiếu thông báo lỗi và Request ID; kiểm tra model, endpoint cùng các tham số bắt buộc trước khi gửi lại."
+    };
+  }
+  if (status === 404 || /not.?found/.test(haystack)) {
+    return {
+      cause: "Endpoint hoặc model được chọn không tồn tại trên upstream hiện tại.",
+      fix: "Kiểm tra URL upstream, tên model và cấu hình ánh xạ tuyến rồi thử lại."
+    };
+  }
+  if (status >= 500 || /upstream|timeout|network|connect/.test(haystack)) {
+    return {
+      cause: "Dịch vụ upstream lỗi, quá tải, mất kết nối hoặc phản hồi quá thời gian.",
+      fix: "Thử lại với backoff, kiểm tra trạng thái upstream và chuyển sang tuyến dự phòng nếu lỗi lặp lại."
+    };
+  }
+  return {
+    cause: "Chưa đủ dữ liệu để xác định chính xác nguyên nhân từ mã lỗi hiện tại.",
+    fix: "Dùng Request ID để tra log gateway/upstream, sau đó kiểm tra endpoint, model và cấu hình tuyến."
+  };
+}
+
+function errorLogList(errors) {
+  const items = errors.items || [];
+  if (!items.length) return '<div class="emptyErrorLog">Chưa có log chi tiết. Các lỗi cũ có thể chỉ có số lượng tổng hợp.</div>';
+  return `<div class="errorLogList">${items.map((item) => {
+    const guidance = errorGuidance(item);
+    const route = item.selectedCombo || item.routeTier || "—";
+    return `<article class="errorLogItem">
+      <div class="errorLogItemHeader"><div><time>${escapeHtml(item.occurredAt || "Không rõ thời gian")}</time><strong>${escapeHtml(item.code || "UPSTREAM_ERROR")}</strong></div><span class="httpStatus">HTTP ${escapeHtml(item.status || "—")}</span></div>
+      <div class="errorLogMessage">${escapeHtml(item.message || "Không có nội dung lỗi từ upstream.")}</div>
+      <div class="errorGuidance"><div><span>Nguyên nhân có thể</span><p>${escapeHtml(guidance.cause)}</p></div><div><span>Đề xuất xử lý</span><p>${escapeHtml(guidance.fix)}</p></div></div>
+      <dl class="errorMetadata"><div><dt>Endpoint</dt><dd><code>${escapeHtml(item.endpoint || "—")}</code></dd></div><div><dt>Model / tuyến</dt><dd>${escapeHtml(route)}</dd></div><div><dt>Độ trễ</dt><dd>${escapeHtml(item.latencyMs || 0)} ms</dd></div><div><dt>Request ID</dt><dd><code>${escapeHtml(item.requestId || "—")}</code></dd></div></dl>
+    </article>`;
+  }).join("")}</div>`;
+}
+
 function errorLogModalHtml(userId, errors) {
-  return `<div class="modalBackdrop" data-action="close-error-log"><div class="modal errorLogModal" role="dialog" aria-modal="true" aria-labelledby="error-log-title" data-modal-panel><div class="modalHeader"><div><span class="eyebrow">NHẬT KÝ LỖI</span><h2 id="error-log-title">${escapeHtml(userId)}</h2><p>${escapeHtml(errors.total || 0)} log gần nhất có nội dung chi tiết.</p></div><button class="iconButton" data-action="close-error-log" aria-label="Đóng">×</button></div><div class="errorLogContent">${errorLogTable(errors)}</div><p class="privacyNote">Log đã được lọc API key và không lưu prompt hoặc nội dung phản hồi thô.</p></div></div>`;
+  return `<div class="modalBackdrop errorLogBackdrop" data-action="close-error-log"><div class="modal errorLogModal" role="dialog" aria-modal="true" aria-labelledby="error-log-title" data-modal-panel><div class="modalHeader"><div><span class="eyebrow">NHẬT KÝ LỖI</span><h2 id="error-log-title">${escapeHtml(userId)}</h2><p>${escapeHtml(errors.total || 0)} log gần nhất · Chọn Request ID để đối chiếu log hệ thống.</p></div><button class="iconButton" data-action="close-error-log" aria-label="Đóng">×</button></div><div class="errorLogContent">${errorLogList(errors)}</div><p class="privacyNote">Gợi ý được suy luận từ mã HTTP và nội dung lỗi. Log đã lọc API key, không lưu prompt hoặc phản hồi thô.</p></div></div>`;
 }
 
 function oneTimeKeyModal() {

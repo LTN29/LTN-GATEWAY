@@ -1,9 +1,9 @@
 ---
-name: 9router-stt
-description: Speech-to-text via 9Router /v1/audio/transcriptions using OpenAI Whisper / Groq / Gemini / Deepgram / AssemblyAI / NVIDIA / HuggingFace models. Use when the user wants to transcribe audio, convert speech to text, or get subtitles from audio files.
+name: simi-chep-loi
+description: Chuyển giọng nói thành văn bản qua Simi Gateway bằng Whisper, Groq, Gemini, Deepgram, AssemblyAI, NVIDIA hoặc HuggingFace. Dùng khi user muốn chép lời audio/video hoặc tạo phụ đề.
 ---
 
-# 9Router — Speech-to-Text
+# Simi - Chép lời âm thanh
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
 

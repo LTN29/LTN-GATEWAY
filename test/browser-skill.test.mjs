@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 test("browser skill is MCP-only and cannot fall back to slow terminal commands", async () => {
   const skill = await readFile(
-    new URL("../vendor/9router-skills/9router-browser/SKILL.md", import.meta.url),
+    new URL("../vendor/9router-skills/simi-trinh-duyet/SKILL.md", import.meta.url),
     "utf8"
   );
 

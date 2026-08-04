@@ -24,7 +24,7 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-MANAGED_SKILL_NAMES="9router 9router-chat 9router-image 9router-video 9router-tts 9router-stt 9router-embeddings 9router-web-search 9router-web-fetch 9router-browser 9router-pdf"
+MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-cai-dat"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -709,9 +709,9 @@ install_managed_9router_skills() {
     skill_path="${skill_dir}/SKILL.md"
     tmp="${skill_dir}/SKILL.md.$$.$(date +%s).tmp"
     skill_url="${gateway_root}/install/skills/${skill_name}/SKILL.md"
-    if [ "${skill_name}" = "9router-browser" ] && [ -d "${skill_dir}" ]; then
+    if [ "${skill_name}" = "simi-trinh-duyet" ] && [ -d "${skill_dir}" ]; then
       rm -rf -- "${skill_dir}"
-      echo "Da xoa skill 9router-browser cu truoc khi cai ban MCP-only."
+      echo "Da xoa skill trinh duyet Simi cu truoc khi cai ban MCP-only."
     fi
     mkdir -p "${skill_dir}"
     chmod 700 "${skill_dir}" 2>/dev/null || true
@@ -730,7 +730,7 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 11 skill 9Router. Khoi dong lai Codex Desktop de nap skill moi."
+  echo "Da cai/cap nhat 12 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
 }
 
 get_or_create_browser_bridge_token() {
@@ -843,7 +843,7 @@ EOF
   chmod 700 "${BIN_DIR}/ltn-chrome-debug"
   echo "Da cai Chrome CDP client: ${chrome_debug_path}"
   echo "Da cai browser MCP tu dong: ${browser_mcp_path}"
-  echo "  Tu dong mo profile Chrome khi 9router-browser duoc goi"
+  echo "  Tu dong mo profile Chrome khi skill simi-trinh-duyet duoc goi"
   echo "  User chi can dang nhap mot lan trong cua so Chrome moi"
 }
 
@@ -1110,7 +1110,7 @@ status() {
       skill_count=$((skill_count + 1))
     fi
   done
-  echo "9Router skills: ${skill_count}/11"
+  echo "Simi skills: ${skill_count}/12"
   if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
     echo "Browser bridge token: da tao"
   else

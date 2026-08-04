@@ -1,9 +1,9 @@
 ---
-name: 9router-image
-description: Generate images via 9Router /v1/images/generations using OpenAI / Gemini Imagen / DALL-E / FLUX / MiniMax / SDWebUI / ComfyUI / Codex models. Use when the user wants to create, generate, draw, or render an image, picture, or text-to-image (txt2img).
+name: simi-tao-anh
+description: Tạo ảnh qua Simi Gateway bằng OpenAI, Gemini Imagen, DALL-E, FLUX, MiniMax, SDWebUI, ComfyUI hoặc Codex. Dùng khi user muốn tạo, vẽ, render hay chỉnh sửa hình ảnh.
 ---
 
-# 9Router — Image Generation
+# Simi - Tạo ảnh
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
 

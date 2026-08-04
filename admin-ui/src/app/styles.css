@@ -681,16 +681,32 @@ td.actions {
   white-space: nowrap;
 }
 .errorLogCard .tableWrap { box-shadow: none; margin-top: 20px; }
-.errorLogModal { max-height: min(82vh, 760px); max-width: min(94vw, 1320px); width: min(94vw, 1320px); }
-.errorLogContent { margin-top: 20px; max-height: calc(82vh - 190px); overflow: auto; }
+.modal.errorLogModal { display: flex; flex-direction: column; max-height: min(90vh, 900px); max-width: min(92vw, 1040px); padding: 0; width: min(92vw, 1040px); }
+.errorLogModal .modalHeader { border-bottom: 1px solid var(--border); padding: 24px 28px 20px; }
+.errorLogContent { min-height: 0; overflow: auto; padding: 20px 28px; }
 .errorLogContent .tableWrap { box-shadow: none; overflow: visible; }
 .errorLogContent table { min-width: 1180px; }
 .errorLogContent th { position: sticky; top: 0; z-index: 1; }
 .errorMessage { line-height: 1.5; min-width: 260px; white-space: normal; }
+.errorLogList { display: grid; gap: 14px; }
+.errorLogItem { background: #fff; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); overflow: hidden; }
+.errorLogItemHeader { align-items: flex-start; background: #F8FAFC; border-bottom: 1px solid var(--border); display: flex; gap: 16px; justify-content: space-between; padding: 14px 16px; }
+.errorLogItemHeader > div { display: grid; gap: 5px; min-width: 0; }
+.errorLogItemHeader time { color: var(--text-muted); font-size: 12px; }
+.errorLogItemHeader strong { color: #991B1B; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.errorLogMessage { border-left: 3px solid #FB7185; color: var(--text-main); line-height: 1.55; margin: 16px; overflow-wrap: anywhere; padding: 9px 12px; }
+.errorGuidance { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px 16px; }
+.errorGuidance > div { background: #F8FAFC; border-radius: 9px; padding: 12px 14px; }
+.errorGuidance > div:last-child { background: #EFF6FF; }
+.errorGuidance span, .errorMetadata dt { color: var(--text-muted); display: block; font-size: 10px; font-weight: 800; letter-spacing: .55px; margin-bottom: 5px; text-transform: uppercase; }
+.errorGuidance p { font-size: 13px; line-height: 1.5; margin: 0; }
+.errorMetadata { border-top: 1px solid var(--border); display: grid; gap: 12px; grid-template-columns: 1.4fr 1fr .6fr 1.5fr; margin: 0; padding: 14px 16px; }
+.errorMetadata dd { font-size: 12px; margin: 0; overflow-wrap: anywhere; }
+.emptyErrorLog { color: var(--text-muted); padding: 48px 20px; text-align: center; }
 .nowrap { white-space: nowrap; }
 .eyebrow { color: var(--danger); display: block; font-size: 11px; font-weight: 800; letter-spacing: .8px; margin-bottom: 6px; }
 .iconButton { background: #F1F5F9; box-shadow: none; color: var(--text-main); font-size: 22px; height: 36px; padding: 0; width: 36px; }
-.privacyNote { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+.privacyNote { border-top: 1px solid var(--border); margin: 0; padding: 12px 28px 16px; }
 
 /* Status Badges */
 .status {
@@ -870,6 +886,7 @@ pre {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .twoCol { grid-template-columns: 1fr; }
   .formGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .errorMetadata { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .main { padding: 32px 24px; }
 }
 
@@ -950,4 +967,12 @@ pre {
     overflow-x: auto;
     padding-bottom: 4px;
   }
+}
+
+@media (max-width: 640px) {
+  .modal.errorLogModal { border-radius: 0; height: 100dvh; max-height: none; max-width: none; top: 0; transform: translateX(-50%); width: 100vw; }
+  .errorLogModal .modalHeader { padding: 18px 16px 14px; }
+  .errorLogContent { padding: 14px 12px; }
+  .errorGuidance, .errorMetadata { grid-template-columns: 1fr; }
+  .privacyNote { padding: 11px 16px 14px; }
 }

@@ -110,7 +110,7 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /install_managed_9router_skills\(\)/);
   assert.match(script, /install\/skills\/\$\{skill_name\}\/SKILL\.md/);
   assert.match(script, /MANAGED_SKILL_NAMES=/);
-  assert.match(script, /9Router skills: \$\{skill_count\}\/11/);
+  assert.match(script, /Simi skills: \$\{skill_count\}\/12/);
   assert.match(script, /ensure_runtime_dependencies\(\)/);
   assert.match(script, /install_local_tools\(\)/);
   assert.match(script, /install\/tools\/\$\{asset\}/);

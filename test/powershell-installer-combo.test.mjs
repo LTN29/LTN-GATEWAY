@@ -267,7 +267,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     output.requests.filter((request) =>
       /^\/install\/skills\/[^/]+\/SKILL\.md$/.test(request.url)
     ).length,
-    11
+    12
   );
   assert.match(output.config, /model = "SIMI-AI"/);
   assert.match(output.config, /name = "SIMI Gateway"/);

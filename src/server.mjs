@@ -117,17 +117,18 @@ function upstreamErrorDetail(captured, requestId, endpoint, status) {
   };
 }
 const managedSkillNames = [
-  "9router",
-  "9router-chat",
-  "9router-image",
-  "9router-video",
-  "9router-tts",
-  "9router-stt",
-  "9router-embeddings",
-  "9router-web-search",
-  "9router-web-fetch",
-  "9router-browser",
-  "9router-pdf"
+  "simi",
+  "simi-tro-chuyen",
+  "simi-tao-anh",
+  "simi-tao-video",
+  "simi-doc-van-ban",
+  "simi-chep-loi",
+  "simi-vector",
+  "simi-tim-kiem-web",
+  "simi-doc-trang-web",
+  "simi-trinh-duyet",
+  "simi-doc-pdf",
+  "simi-cai-dat"
 ];
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
   `/install/skills/${name}/SKILL.md`,

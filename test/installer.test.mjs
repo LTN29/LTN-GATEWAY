@@ -71,9 +71,10 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /NewGuid\(\)/);
   assert.match(script, /codex-fast\.cmd/);
   assert.match(script, /codex-power\.cmd/);
-  assert.match(script, /9router-web-fetch/);
-  assert.match(script, /9router-browser/);
-  assert.match(script, /9router-pdf/);
+  assert.match(script, /simi-doc-trang-web/);
+  assert.match(script, /simi-trinh-duyet/);
+  assert.match(script, /simi-doc-pdf/);
+  assert.match(script, /simi-cai-dat/);
   assert.match(script, /Install-BrowserBridge/);
   assert.match(script, /Install-LocalTools/);
   assert.match(script, /install\/tools\/\$asset/);
@@ -98,7 +99,7 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /\$configChanged/);
   assert.match(script, /Cấu hình không đổi/);
   assert.match(script, /ltn-chrome-debug\.cmd/);
-  assert.match(script, /9Router skills:/);
+  assert.match(script, /Simi skills:/);
 });
 
 test("Windows installer status and uninstall modes do not prompt for API key", async () => {

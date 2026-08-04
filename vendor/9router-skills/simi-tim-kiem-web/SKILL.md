@@ -1,9 +1,9 @@
 ---
-name: 9router-web-search
-description: Web search via 9Router /v1/search using Tavily / Exa / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity. Use when the user wants to search the web, look up information, find articles, or query a search engine.
+name: simi-tim-kiem-web
+description: Tìm kiếm Internet qua Simi Gateway bằng nhiều công cụ và tự động dự phòng. Dùng khi user muốn tra cứu thông tin mới, tìm bài viết, nguồn tải chính thức hoặc khi truy cập công cụ tìm kiếm trực tiếp bị chặn.
 ---
 
-# 9Router — Web Search
+# Simi - Tìm kiếm Internet
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
 

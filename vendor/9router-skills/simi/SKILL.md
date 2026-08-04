@@ -1,9 +1,9 @@
 ---
-name: 9router
-description: Entry point for 9Router — local/remote AI gateway with OpenAI-compatible REST for chat, image, TTS, embeddings, web search, web fetch, browser pages, and PDF analysis. Use when the user mentions 9Router, NINEROUTER_URL, or wants AI without writing provider boilerplate. This skill covers setup + indexes capability skills; fetch the relevant capability SKILL.md from the URLs below when needed.
+name: simi
+description: Cổng năng lực AI Simi cho trò chuyện, sinh mã, tạo ảnh/video, đọc và chép lời, vector, tìm kiếm web, đọc trang web, trình duyệt đã đăng nhập, PDF và cài dependency. Dùng khi user nhắc Simi, 9Router, SIMI Gateway, NINEROUTER_URL, cần vượt hạn chế mạng qua Gateway, hoặc cần chọn một skill Simi phù hợp.
 ---
 
-# 9Router
+# Simi - Cổng năng lực AI
 
 Local/remote AI gateway exposing OpenAI-compatible REST. One key, many providers, auto-fallback.
 
@@ -17,10 +17,11 @@ ltn-9router POST /search {"model":"search-combo","query":"latest AI news","max_r
 ltn-9router POST /web/fetch {"model":"fetch-combo","url":"https://example.com","format":"markdown"}
 ```
 
-Use `9router-web-search` for research, `9router-web-fetch` for public URL
-extraction, `9router-browser` for an authorized signed-in Chrome tab
-and `9router-pdf` for local PDF files.
-For that signed-in tab, invoke `9router-browser`; it uses Chrome DevTools
+Use `simi-tim-kiem-web` for research, `simi-doc-trang-web` for public URL
+extraction, `simi-trinh-duyet` for an authorized signed-in Chrome tab
+and `simi-doc-pdf` for local PDF files. Use `simi-cai-dat` when software,
+runtime, command or project dependencies are missing.
+For that signed-in tab, invoke `simi-trinh-duyet`; it uses Chrome DevTools
 Protocol through the managed debug profile and does not require a Chrome
 extension or `Chrome: Control Chrome`. Multiple signed-in URLs in one prompt
 are opened in separate managed tabs and read together.
@@ -75,21 +76,23 @@ Response shape:
 ]}
 ```
 
-## Capability skills
+## Các skill Simi
 
-When the user needs a specific capability, fetch that skill's `SKILL.md` from its raw URL:
+Chọn skill đã được installer cài cục bộ theo nhu cầu:
 
-| Capability | Raw URL |
+| Nhu cầu của user | Skill |
 |---|---|
-| Chat / code-gen | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-chat/SKILL.md |
-| Image generation | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-image/SKILL.md |
-| Text-to-speech | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-tts/SKILL.md |
-| Speech-to-text | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-stt/SKILL.md |
-| Embeddings | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-embeddings/SKILL.md |
-| Web search | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-search/SKILL.md |
-| Web fetch (URL → markdown) | https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router-web-fetch/SKILL.md |
-| Signed-in browser tab | Installed locally by the SIMI Gateway installer |
-| Local PDF analysis | Installed locally by the SIMI Gateway installer |
+| Hỏi AI, viết hoặc phân tích code | `simi-tro-chuyen` |
+| Tạo ảnh | `simi-tao-anh` |
+| Tạo video | `simi-tao-video` |
+| Đọc văn bản thành giọng nói | `simi-doc-van-ban` |
+| Chép lời audio/video | `simi-chep-loi` |
+| Tạo vector cho RAG/tìm kiếm ngữ nghĩa | `simi-vector` |
+| Tìm thông tin mới trên Internet | `simi-tim-kiem-web` |
+| Đọc nội dung URL công khai | `simi-doc-trang-web` |
+| Làm việc với trang Chrome đã đăng nhập | `simi-trinh-duyet` |
+| Đọc và phân tích PDF cục bộ | `simi-doc-pdf` |
+| Cài phần mềm, runtime hoặc dependency | `simi-cai-dat` |
 
 ## Errors
 
