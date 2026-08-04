@@ -291,12 +291,18 @@ test("Windows installer repairs legacy broken tables and keeps root settings at 
       'model_reasoning_effort = "high"',
       'approval_policy = "on-request"',
       '',
+      '[model_providers]',
+      'custom_provider_setting = "keep"',
+      '',
       '[model_providers.ltn_gateway]',
       'http_headers = { "X-LTN-Client-ID" = "Browser MCP config: chua co - chay Repair',
       '52287473-7284-449e-b10d-040f842c9956" }',
       '',
       '[model_providers.ltn_gateway.auth]',
       'command = "/old/helper"',
+      '',
+      '[mcp_servers]',
+      'custom_server_setting = "keep"',
       '',
       '[mcp_servers.simi_browser]',
       'command = "old-node"',
@@ -316,7 +322,11 @@ test("Windows installer repairs legacy broken tables and keeps root settings at 
   assert.doesNotMatch(output.config, /\/old\/helper|old-node/);
   assert.ok(output.config.indexOf('model_reasoning_effort = "high"') < output.config.indexOf("[model_providers.ltn_gateway]"));
   assert.ok(output.config.indexOf('approval_policy = "on-request"') < output.config.indexOf("[model_providers.ltn_gateway]"));
-  assert.ok(output.config.indexOf("[features]") > output.config.indexOf("[mcp_servers.simi_browser]"));
+  assert.ok(output.config.indexOf("[features]") < output.config.indexOf("[mcp_servers.simi_browser]"));
+  assert.ok(output.config.indexOf("[model_providers]") < output.config.indexOf("[model_providers.ltn_gateway]"));
+  assert.ok(output.config.indexOf("[mcp_servers]") < output.config.indexOf("[mcp_servers.simi_browser]"));
+  assert.match(output.config, /custom_provider_setting = "keep"/);
+  assert.match(output.config, /custom_server_setting = "keep"/);
 });
 
 test("Windows installer trims clipboard whitespace from the team API key", async (t) => {

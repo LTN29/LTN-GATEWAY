@@ -208,9 +208,12 @@ function Update-CodexConfig {
   if (-not [string]::IsNullOrWhiteSpace($ManagedRootContent)) { $parts.Add($ManagedRootContent.Trim()) }
   $preservedRoot = ($rootLines -join [Environment]::NewLine).Trim()
   if ($preservedRoot) { $parts.Add($preservedRoot) }
-  if (-not [string]::IsNullOrWhiteSpace($ManagedTableContent)) { $parts.Add($ManagedTableContent.Trim()) }
   $preservedTables = ($tableLines -join [Environment]::NewLine).Trim()
   if ($preservedTables) { $parts.Add($preservedTables) }
+  # Append managed child tables after user tables. TOML permits a child table
+  # after its parent, but defining a parent after an already-created child can
+  # fail with "Cannot declare ... twice" on otherwise valid Codex configs.
+  if (-not [string]::IsNullOrWhiteSpace($ManagedTableContent)) { $parts.Add($ManagedTableContent.Trim()) }
   if ($parts.Count -eq 0) { return "" }
   return ($parts -join ([Environment]::NewLine + [Environment]::NewLine)) + [Environment]::NewLine
 }
@@ -705,6 +708,7 @@ with open(sys.argv[1], "rb") as handle:
     # the native exit code instead of aborting the whole installer.
     $stderrPath = "$tempPath.stderr"
     $previousErrorActionPreference = $ErrorActionPreference
+    $stderrText = ""
     try {
       $ErrorActionPreference = "Continue"
       & $venvPython -c $validator $tempPath 2> $stderrPath
@@ -712,13 +716,28 @@ with open(sys.argv[1], "rb") as handle:
     } finally {
       $ErrorActionPreference = $previousErrorActionPreference
       if (Test-Path -LiteralPath $stderrPath) {
+        $stderrText = [IO.File]::ReadAllText($stderrPath)
         Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
       }
     }
     if ($exitCode -eq 2) {
       return [pscustomobject]@{ Supported = $false; Valid = $false }
     }
-    return [pscustomobject]@{ Supported = $true; Valid = ($exitCode -eq 0) }
+    $detail = ""
+    if ($exitCode -ne 0 -and $stderrText) {
+      $detailLine = @($stderrText -split "\r?\n" | Where-Object {
+        $_ -match 'TOMLDecodeError|line \d+|column \d+'
+      } | Select-Object -Last 1)
+      if ($detailLine.Count -gt 0) {
+        $detail = ([string]$detailLine[0]).Trim()
+        if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
+      }
+    }
+    return [pscustomobject]@{
+      Supported = $true
+      Valid = ($exitCode -eq 0)
+      Detail = $detail
+    }
   } finally {
     if (Test-Path -LiteralPath $tempPath) {
       Remove-Item -LiteralPath $tempPath -Force
@@ -1090,9 +1109,15 @@ tool_timeout_sec = 90
 
 $updatedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedRootContent $managedRootContent -ManagedTableContent $managedTableContent
 $configChanged = $updatedConfig -ne $existingConfig
+$managedOnlyConfig = Update-CodexConfig -ExistingContent "" -ManagedRootContent $managedRootContent -ManagedTableContent $managedTableContent
+$managedValidation = Test-TomlConfigContent -Content $managedOnlyConfig -CodexHome $codexHome
+if ($managedValidation.Supported -and -not $managedValidation.Valid) {
+  throw "Cấu hình Simi do installer tạo không hợp lệ. $($managedValidation.Detail)"
+}
 $tomlValidation = Test-TomlConfigContent -Content $updatedConfig -CodexHome $codexHome
 if ($tomlValidation.Supported -and -not $tomlValidation.Valid) {
-  throw "config.toml mới không hợp lệ; installer đã giữ nguyên config cũ."
+  $detail = if ($tomlValidation.Detail) { " Chi tiết: $($tomlValidation.Detail)" } else { "" }
+  throw "config.toml sau khi ghép không hợp lệ; installer đã giữ nguyên config cũ.$detail"
 }
 if (-not $tomlValidation.Supported) {
   Write-Warning "Python hiện tại chưa có tomllib/tomli; bỏ qua bước validate TOML bổ sung."

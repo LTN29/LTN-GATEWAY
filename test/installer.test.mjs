@@ -57,6 +57,8 @@ test("Windows installer treats TOML validator stderr as an exit-code result", as
   assert.match(script, /\$ErrorActionPreference = "Continue"/);
   assert.match(script, /2> \$stderrPath/);
   assert.match(script, /\$exitCode = \$LASTEXITCODE/);
+  assert.match(script, /TOMLDecodeError/);
+  assert.match(script, /config\.toml sau khi ghép không hợp lệ/);
 });
 
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {
