@@ -682,41 +682,49 @@ function Test-TomlConfigContent {
     [string]$CodexHome
   )
 
-  $venvPython = Join-Path $CodexHome "pdf-runtime\Scripts\python.exe"
+  $venvPython = if ($env:LTN_PYTHON_PATH) {
+    $env:LTN_PYTHON_PATH
+  } else {
+    Join-Path $CodexHome "pdf-runtime\Scripts\python.exe"
+  }
   if (-not (Test-Path -LiteralPath $venvPython)) {
     return [pscustomobject]@{ Supported = $false; Valid = $false }
   }
 
   $tempPath = Join-Path $CodexHome ("config.toml.validate-{0}.tmp" -f [guid]::NewGuid().ToString("N"))
+  $validatorPath = "$tempPath.py"
   $validator = @'
+import json
 import os
+result = {"supported": True, "valid": False, "detail": ""}
 try:
     import tomllib
 except ModuleNotFoundError:
     try:
         import tomli as tomllib
     except ModuleNotFoundError:
-        raise SystemExit(2)
-with open(os.environ["LTN_TOML_VALIDATE_PATH"], "rb") as handle:
-    tomllib.load(handle)
+        result = {"supported": False, "valid": False, "detail": "tomllib/tomli unavailable"}
+if result["supported"]:
+    try:
+        with open(os.environ["LTN_TOML_VALIDATE_PATH"], "rb") as handle:
+            tomllib.load(handle)
+        result["valid"] = True
+    except Exception as exc:
+        result["detail"] = f"{type(exc).__name__}: {exc}"
+print(json.dumps(result, ensure_ascii=True))
 '@
   try {
     [IO.File]::WriteAllText($tempPath, $Content, [Text.UTF8Encoding]::new($false))
-    # Windows PowerShell 5.1 promotes native stderr to ErrorRecord when the
-    # installer uses ErrorActionPreference=Stop. TOML parse failures are an
-    # expected validator result, so capture them via a temporary file and use
-    # the native exit code instead of aborting the whole installer.
-    $stderrPath = "$tempPath.stderr"
+    [IO.File]::WriteAllText($validatorPath, $validator, [Text.UTF8Encoding]::new($false))
     $previousErrorActionPreference = $ErrorActionPreference
-    $stderrText = ""
     $previousValidatePath = $env:LTN_TOML_VALIDATE_PATH
     try {
       $ErrorActionPreference = "Continue"
-      # Pass the path through the environment. Windows PowerShell 5.1 can
-      # split native argv values containing spaces (for example a user profile
-      # named "TUF DASH FX516P") when invoking `python -c`.
+      # Pass the config path through the environment and run a temporary .py
+      # file. Windows PowerShell 5.1 can corrupt both paths containing spaces
+      # and multiline source passed through `python -c`.
       $env:LTN_TOML_VALIDATE_PATH = $tempPath
-      & $venvPython -c $validator 2> $stderrPath
+      $validationOutput = (& $venvPython $validatorPath 2>&1 | Out-String).Trim()
       $exitCode = $LASTEXITCODE
     } finally {
       $ErrorActionPreference = $previousErrorActionPreference
@@ -725,32 +733,36 @@ with open(os.environ["LTN_TOML_VALIDATE_PATH"], "rb") as handle:
       } else {
         $env:LTN_TOML_VALIDATE_PATH = $previousValidatePath
       }
-      if (Test-Path -LiteralPath $stderrPath) {
-        $stderrText = [IO.File]::ReadAllText($stderrPath)
-        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($validationOutput)) {
+      return [pscustomobject]@{
+        Supported = $true
+        Valid = $false
+        Detail = "Python validator không trả kết quả JSON hợp lệ (exit $exitCode)."
       }
     }
-    if ($exitCode -eq 2) {
-      return [pscustomobject]@{ Supported = $false; Valid = $false }
-    }
-    $detail = ""
-    if ($exitCode -ne 0 -and $stderrText) {
-      $detailLine = @($stderrText -split "\r?\n" | Where-Object {
-        $_ -match 'TOMLDecodeError|line \d+|column \d+'
-      } | Select-Object -Last 1)
-      if ($detailLine.Count -gt 0) {
-        $detail = ([string]$detailLine[0]).Trim()
-        if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
+    try {
+      $validation = $validationOutput | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+      return [pscustomobject]@{
+        Supported = $true
+        Valid = $false
+        Detail = "Không đọc được JSON từ Python validator."
       }
     }
+    $detail = [string]$validation.detail
+    if ($detail.Length -gt 500) { $detail = $detail.Substring(0, 500) }
     return [pscustomobject]@{
-      Supported = $true
-      Valid = ($exitCode -eq 0)
+      Supported = [bool]$validation.supported
+      Valid = [bool]$validation.valid
       Detail = $detail
     }
   } finally {
     if (Test-Path -LiteralPath $tempPath) {
       Remove-Item -LiteralPath $tempPath -Force
+    }
+    if (Test-Path -LiteralPath $validatorPath) {
+      Remove-Item -LiteralPath $validatorPath -Force
     }
   }
 }

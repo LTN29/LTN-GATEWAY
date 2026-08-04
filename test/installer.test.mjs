@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 const installerUrl = new URL(
   "../scripts/install-codex-windows.ps1",
@@ -50,17 +54,56 @@ test("Windows installer rejects the Microsoft Store Python alias and installs Py
   assert.match(script, /import sys; print\(sys\.executable\)/);
 });
 
-test("Windows installer treats TOML validator stderr as an exit-code result", async () => {
+test("Windows installer receives a structured JSON result from the TOML validator", async () => {
   const script = await readFile(installerUrl, "utf8");
 
   assert.match(script, /\$previousErrorActionPreference = \$ErrorActionPreference/);
   assert.match(script, /\$ErrorActionPreference = "Continue"/);
-  assert.match(script, /2> \$stderrPath/);
+  assert.match(script, /json\.dumps\(result/);
+  assert.match(script, /ConvertFrom-Json/);
+  assert.match(script, /2>&1/);
   assert.match(script, /\$exitCode = \$LASTEXITCODE/);
-  assert.match(script, /TOMLDecodeError/);
+  assert.match(script, /type\(exc\)\.__name__/);
   assert.match(script, /config\.toml sau khi ghép không hợp lệ/);
   assert.match(script, /LTN_TOML_VALIDATE_PATH/);
-  assert.doesNotMatch(script, /-c \$validator \$tempPath/);
+  assert.match(script, /\$validatorPath = "\$tempPath\.py"/);
+  assert.doesNotMatch(script, /\$venvPython -c/);
+});
+
+test("Windows PowerShell 5 validates TOML inside a Codex path containing spaces", async (t) => {
+  const python = resolve(dirname(process.execPath), "..", "..", "python", "python.exe");
+  if (!existsSync(python)) {
+    t.skip("Bundled Python runtime is unavailable");
+    return;
+  }
+  const installer = await readFile(installerUrl, "utf8");
+  const functionSource = installer.match(
+    /function Test-TomlConfigContent \{[\s\S]*?\r?\n\}\r?\n\r?\nfunction Install-LocalTools/
+  )?.[0].replace(/\r?\nfunction Install-LocalTools$/, "");
+  assert.ok(functionSource, "Test-TomlConfigContent function was not found");
+
+  const root = await mkdtemp(join(tmpdir(), "simi validator "));
+  const codexHome = join(root, "TUF DASH FX516P", ".codex");
+  await mkdir(codexHome, { recursive: true });
+  const probePath = join(root, "validate.ps1");
+  await writeFile(probePath, [
+    '$ErrorActionPreference = "Stop"',
+    "Set-StrictMode -Version Latest",
+    functionSource,
+    `$result = Test-TomlConfigContent -Content 'model = "SIMI-GPT"' -CodexHome '${codexHome.replaceAll("'", "''")}'`,
+    "$result | ConvertTo-Json -Compress"
+  ].join("\r\n"), "utf8");
+
+  const output = spawnSync("powershell.exe", [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", probePath
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, LTN_PYTHON_PATH: python }
+  });
+  assert.equal(output.status, 0, output.stderr || output.stdout);
+  const result = JSON.parse(output.stdout.trim());
+  assert.equal(result.Supported, true);
+  assert.equal(result.Valid, true, result.Detail);
 });
 
 test("Windows installer supports idempotent repair, key rotation and uninstall cleanup", async () => {
