@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readCdpPages } from "./browser-cdp.mjs";
+import { downloadCdpWorkbook, readCdpPages } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const bridgeHost = process.env.LTN_BROWSER_BRIDGE_HOST || "127.0.0.1";
@@ -197,6 +197,19 @@ async function main() {
       ...cliArgs.filter((value) => /^https?:\/\//i.test(value))
     ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
     await ensureChromeDebug(targetUrls[0] || "");
+    if (args.has("--download-workbook")) {
+      if (targetUrls.length !== 1) throw new Error("Chế độ tải workbook yêu cầu đúng một URL.");
+      const downloadDir = process.env.LTN_BROWSER_DOWNLOAD_DIR || join(codexHome, "browser-downloads");
+      const result = await downloadCdpWorkbook({
+        host: cdpHost,
+        port: cdpPort,
+        targetUrl: targetUrls[0],
+        downloadDir,
+        timeoutMs
+      });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      return;
+    }
     const pages = await readCdpPages({
       host: cdpHost,
       port: cdpPort,

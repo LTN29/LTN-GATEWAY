@@ -28,6 +28,46 @@ do not ask the user to open or paste the URL manually.
 Use `data.text` for one page or `data.pages` for multiple pages. Do not use
 `simi-doc-trang-web` for a page that requires login.
 
+For Excel Online or SharePoint workbook links, the MCP reader waits for the
+workbook UI and extracts text from nested frames plus Chrome's accessibility
+tree. Use the returned `data.text` as the workbook's visible/accessible cell and
+sheet content. Do not conclude that only the filename is available until the
+tool returns `extraction.mode = "dom-frames-accessibility"`. If the requested
+rows are not currently exposed by Excel Online, state that limitation and ask
+the user to download the `.xlsx`; do not claim that the browser itself failed.
+
+## Structured Excel and link audits
+
+When the user asks to filter, validate, deduplicate, or audit an Excel workbook
+on SharePoint, use `simi_browser.browser_read_workbook` instead of
+`browser_read_pages`. Translate the user's wording into the tool fields:
+
+- month/date field -> `filter_column`, `filter_month`, and `filter_year` when stated;
+- URL field -> `link_column`;
+- mandatory KOC/contact fields -> `required_columns` or `required_range_start`/
+  `required_range_end`;
+- visible header row number -> `header_row`.
+
+Use the structured `rows`, `duplicateLinks`, and `missingRequired` results to
+report exact Excel row numbers. Then verify external post links by calling
+`browser_read_pages` with up to eight unique URLs per call. Check the returned
+page text and `publishedAtCandidates` for the required product/brand and
+publication period. Shortened URLs and Facebook outbound redirect URLs are
+followed automatically; use `finalUrl` as the canonical result and retain
+`requestedUrl` when reporting the original workbook value. Continue in
+batches until every returned unique link has been checked; never infer that all
+links passed from a sample. Report each row as passed, failed, or unverifiable,
+with a concrete reason. The workbook tool is read-only and deletes its temporary
+download after parsing; do not claim that it edited the online workbook.
+
+For Facebook, use only the persistent managed Chrome profile and the access the
+user already has. Never claim to bypass login, private-group membership,
+Facebook checkpoints, CAPTCHA, rate limits, or unavailable-content controls.
+When `accessStatus` is `login-required`, ask the user to sign in in the managed
+Chrome window. When it is `blocked`, mark the row unverifiable and state the
+visible blocker. The user must handle CAPTCHA, two-factor authentication, or
+account checkpoints themselves. Do not request passwords, cookies, or tokens.
+
 This is an MCP-only workflow. Never run Terminal commands, inspect local
 browser scripts, call the legacy command-line reader or Chrome launcher, or
 use a port-based bridge as a fallback. If `simi_browser.browser_read_pages` is not

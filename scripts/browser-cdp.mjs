@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { connect as connectTls } from "node:tls";
 import { createConnection as createTcpConnection } from "node:net";
+import { mkdir, rename, stat } from "node:fs/promises";
+import { join } from "node:path";
 
 function withTimeout(promise, timeoutMs, message) {
   let timer;
@@ -274,6 +276,21 @@ function targetMatchesUrl(target, targetUrl = "") {
   return actual === wanted || actual.startsWith(wanted);
 }
 
+export function resolveNavigationUrl(value) {
+  const original = String(value || "").trim();
+  let parsed;
+  try { parsed = new URL(original); } catch { return original; }
+  const host = parsed.hostname.toLowerCase();
+  const isFacebookRedirect = ["l.facebook.com", "lm.facebook.com"].includes(host) ||
+    (/facebook\.com$/.test(host) && /\/(?:l\.php|flx\/warn)\/?$/i.test(parsed.pathname));
+  if (!isFacebookRedirect) return original;
+  for (const key of ["u", "href"]) {
+    const nested = parsed.searchParams.get(key);
+    if (/^https?:\/\//i.test(String(nested || ""))) return nested;
+  }
+  return original;
+}
+
 function chooseTarget(targets, targetUrl = "") {
   const pages = targets.filter((target) =>
     target?.type === "page" &&
@@ -298,6 +315,84 @@ const pageEvaluationExpression = `(() => ({
   loginRequired: Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href)
 }))()`;
 
+const pageMetadataExpression = `(() => {
+  const bodyText = document.body?.innerText || document.documentElement?.innerText || "";
+  const publishedAtCandidates = [...document.querySelectorAll(
+    'meta[property="article:published_time"], meta[name="article:published_time"], time[datetime], [data-utime]'
+  )].slice(0, 100).map((element) => {
+    const epoch = element.getAttribute('data-utime');
+    if (epoch && /^\\d+$/.test(epoch)) return new Date(Number(epoch) * 1000).toISOString();
+    return element.getAttribute('content') || element.getAttribute('datetime') || element.textContent || '';
+  }).map((value) => String(value).trim()).filter(Boolean);
+  const loginRequired = Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href);
+  const blocked = /(?:checkpoint|captcha|temporarily blocked|content isn't available|content is not available|page isn't available)/i.test(location.href + '\n' + bodyText);
+  return {
+    publishedAtCandidates,
+    loginRequired,
+    accessStatus: loginRequired ? 'login-required' : blocked ? 'blocked' : 'ok'
+  };
+})()`;
+
+const frameEvaluationExpression = `(() => {
+  const bodyText = document.body?.innerText || document.documentElement?.innerText || "";
+  const semanticText = [...document.querySelectorAll(
+    '[role="gridcell"], [role="rowheader"], [role="columnheader"], [role="cell"], [aria-label]'
+  )].slice(0, 20000).map((element) => {
+    const label = element.getAttribute('aria-label') || '';
+    const value = element.getAttribute('aria-valuetext') || element.getAttribute('aria-valuenow') || '';
+    const text = element.innerText || element.textContent || '';
+    return [label, value, text].map((item) => String(item).trim()).filter(Boolean).join(' | ');
+  }).filter(Boolean).join('\n');
+  return {
+    url: location.href,
+    title: document.title,
+    text: bodyText.slice(0, 500000),
+    semanticText: semanticText.slice(0, 500000),
+    selectedText: window.getSelection?.()?.toString?.() || "",
+    readyState: document.readyState,
+    loginRequired: Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href)
+  };
+})()`;
+
+function frameIds(frameTree, result = []) {
+  const id = frameTree?.frame?.id;
+  if (id) result.push(id);
+  for (const child of frameTree?.childFrames || []) frameIds(child, result);
+  return result;
+}
+
+function cdpValue(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).replace(/\s+/g, " ").trim();
+}
+
+function accessibilityText(nodes = []) {
+  const lines = [];
+  for (const node of nodes) {
+    if (node?.ignored) continue;
+    const role = cdpValue(node?.role?.value);
+    const name = cdpValue(node?.name?.value);
+    const value = cdpValue(node?.value?.value);
+    const description = cdpValue(node?.description?.value);
+    const parts = [role && `[${role}]`, name, value && value !== name ? value : "", description]
+      .filter(Boolean);
+    if (parts.length > (role ? 1 : 0)) lines.push(parts.join(" "));
+  }
+  return [...new Set(lines)].join("\n");
+}
+
+function mergeTextParts(parts) {
+  const seen = new Set();
+  const output = [];
+  for (const part of parts) {
+    const text = String(part || "").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    output.push(text);
+  }
+  return output.join("\n\n");
+}
+
 async function evaluatePage(connection) {
   const evaluation = await connection.command("Runtime.evaluate", {
     awaitPromise: true,
@@ -306,6 +401,108 @@ async function evaluatePage(connection) {
   });
   const page = evaluation?.result?.value;
   if (!page || typeof page !== "object") throw new Error("CDP không trả nội dung trang.");
+  return page;
+}
+
+async function evaluateRichPage(connection) {
+  const topPage = await evaluatePage(connection);
+  let pageMetadata = { publishedAtCandidates: [], accessStatus: topPage.loginRequired ? "login-required" : "ok" };
+  try {
+    const metadataEvaluation = await connection.command("Runtime.evaluate", {
+      awaitPromise: true,
+      returnByValue: true,
+      expression: pageMetadataExpression
+    });
+    const metadata = metadataEvaluation?.result?.value;
+    if (metadata && typeof metadata === "object") {
+      pageMetadata = {
+        publishedAtCandidates: Array.isArray(metadata.publishedAtCandidates) ? metadata.publishedAtCandidates : [],
+        loginRequired: Boolean(metadata.loginRequired),
+        accessStatus: ["ok", "login-required", "blocked"].includes(metadata.accessStatus)
+          ? metadata.accessStatus
+          : (metadata.loginRequired ? "login-required" : "ok")
+      };
+    }
+  } catch {
+    // Metadata is optional when a page restricts script evaluation.
+  }
+  const frames = [];
+  try {
+    const tree = await connection.command("Page.getFrameTree");
+    for (const frameId of frameIds(tree?.frameTree)) {
+      try {
+        const world = await connection.command("Page.createIsolatedWorld", {
+          frameId,
+          worldName: "simi-browser-reader",
+          grantUniveralAccess: false
+        });
+        const evaluation = await connection.command("Runtime.evaluate", {
+          awaitPromise: true,
+          returnByValue: true,
+          contextId: world?.executionContextId,
+          expression: frameEvaluationExpression
+        });
+        const frame = evaluation?.result?.value;
+        if (frame && typeof frame === "object") frames.push(frame);
+      } catch {
+        // Frames can disappear while Office/SharePoint replaces its viewer.
+      }
+    }
+  } catch {
+    // Older CDP endpoints may not expose the frame tree; top-page text remains usable.
+  }
+
+  let axText = "";
+  let accessibilityNodeCount = 0;
+  try {
+    const accessibility = await connection.command("Accessibility.getFullAXTree");
+    accessibilityNodeCount = Array.isArray(accessibility?.nodes) ? accessibility.nodes.length : 0;
+    axText = accessibilityText(accessibility?.nodes);
+  } catch {
+    // Accessibility extraction is an enhancement, not a requirement for normal pages.
+  }
+
+  const text = mergeTextParts([
+    topPage.text,
+    ...frames.flatMap((frame) => [frame.text, frame.semanticText]),
+    axText
+  ]);
+  const loginRequired = Boolean(topPage.loginRequired || frames.some((frame) => frame.loginRequired));
+  return {
+    ...topPage,
+    ...pageMetadata,
+    text,
+    selectedText: mergeTextParts([topPage.selectedText, ...frames.map((frame) => frame.selectedText)]),
+    loginRequired,
+    accessStatus: loginRequired ? "login-required" : pageMetadata.accessStatus,
+    extraction: {
+      mode: "dom-frames-accessibility",
+      frameCount: frames.length,
+      accessibilityNodeCount
+    }
+  };
+}
+
+function isOnlineWorkbook(page, requestedUrl = "") {
+  const value = `${requestedUrl} ${page?.url || ""} ${page?.title || ""}`;
+  return /(?:\.xlsx?\b|\/:x:\/|excel\.officeapps\.live\.com|excel\.cloud\.microsoft)/i.test(value);
+}
+
+async function evaluateSettledPage(connection, requestedUrl, timeoutMs) {
+  let page = await evaluateRichPage(connection);
+  if (!isOnlineWorkbook(page, requestedUrl)) return page;
+
+  const deadline = Date.now() + Math.max(1_500, Math.min(timeoutMs, 8_000));
+  let stableReads = 0;
+  let previousLength = page.text.length;
+  while (Date.now() < deadline && stableReads < 2) {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    const next = await evaluateRichPage(connection);
+    const nextLength = next.text.length;
+    stableReads = nextLength === previousLength && nextLength > 0 ? stableReads + 1 : 0;
+    previousLength = nextLength;
+    page = next;
+  }
   return page;
 }
 
@@ -331,13 +528,59 @@ async function navigateAndWait(connection, targetUrl, timeoutMs) {
   throw new Error(`Chrome không điều hướng đến được trang ${targetUrl}.`);
 }
 
+async function navigateAndWaitRedirects(connection, targetUrl, timeoutMs) {
+  await connection.command("Page.enable");
+  let previousUrl = "";
+  try { previousUrl = String((await evaluatePage(connection))?.url || ""); } catch {}
+  const directUrl = resolveNavigationUrl(targetUrl);
+  await connection.command("Page.navigate", { url: directUrl });
+
+  const deadline = Date.now() + Math.max(1_000, Math.min(timeoutMs, 10_000));
+  let lastPage = null;
+  let stableUrl = "";
+  let stableReads = 0;
+  while (Date.now() < deadline) {
+    try {
+      lastPage = await evaluatePage(connection);
+      const currentUrl = String(lastPage.url || "");
+      const navigationCommitted = targetMatchesUrl({ url: currentUrl }, directUrl) ||
+        (currentUrl && currentUrl !== previousUrl);
+      stableReads = currentUrl === stableUrl ? stableReads + 1 : 0;
+      stableUrl = currentUrl;
+      if (navigationCommitted && stableReads >= 1 &&
+          ["interactive", "complete"].includes(lastPage.readyState)) {
+        return lastPage;
+      }
+    } catch {
+      // Redirecting pages can briefly replace the execution context.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (lastPage && /^https?:\/\//i.test(String(lastPage.url || "")) && String(lastPage.url) !== previousUrl) {
+    return lastPage;
+  }
+  throw new Error(`Chrome could not finish navigation to ${targetUrl}.`);
+}
+
 async function readTarget(target, targetUrl, timeoutMs, navigate = false) {
   const connection = await new WebSocketConnection(target.webSocketDebuggerUrl, timeoutMs).connect();
   try {
-    const page = navigate && targetUrl && !targetMatchesUrl(target, targetUrl)
-      ? await navigateAndWait(connection, targetUrl, timeoutMs)
-      : await evaluatePage(connection);
-    return { ...page, capturedAt: new Date().toISOString(), source: "chrome-cdp" };
+    if (navigate && targetUrl && !targetMatchesUrl(target, targetUrl)) {
+      await navigateAndWaitRedirects(connection, targetUrl, timeoutMs);
+    } else {
+      await connection.command("Page.enable");
+    }
+    await connection.command("Runtime.enable");
+    const page = await evaluateSettledPage(connection, targetUrl, timeoutMs);
+    const requestedUrl = String(targetUrl || target?.url || page.url || "");
+    return {
+      ...page,
+      requestedUrl,
+      finalUrl: page.url,
+      redirected: Boolean(requestedUrl && page.url && requestedUrl !== page.url),
+      capturedAt: new Date().toISOString(),
+      source: "chrome-cdp"
+    };
   } finally {
     connection.close();
   }
@@ -388,4 +631,90 @@ export async function readCdpPage({ host = "127.0.0.1", port = 9222, targetUrl =
     timeoutMs
   });
   return page;
+}
+
+function sharePointDownloadUrl(value) {
+  const url = new URL(value);
+  if (!/\.sharepoint\.com$/i.test(url.hostname) && !/\.sharepoint-df\.com$/i.test(url.hostname)) {
+    throw new Error("Tải workbook tự động hiện chỉ hỗ trợ URL SharePoint.");
+  }
+  url.searchParams.set("download", "1");
+  return url.href;
+}
+
+function safeDownloadName(value) {
+  const cleaned = String(value || "workbook.xlsx")
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .slice(0, 180);
+  return /\.xlsx?$/i.test(cleaned) ? cleaned : `${cleaned || "workbook"}.xlsx`;
+}
+
+export async function downloadCdpWorkbook({
+  host = "127.0.0.1",
+  port = 9222,
+  targetUrl,
+  downloadDir,
+  timeoutMs = 60_000
+} = {}) {
+  const wanted = String(targetUrl || "").trim();
+  if (!/^https?:\/\//i.test(wanted)) throw new Error("URL workbook không hợp lệ.");
+  if (!downloadDir) throw new Error("Thiếu thư mục tải workbook.");
+  const downloadUrl = sharePointDownloadUrl(wanted);
+  await mkdir(downloadDir, { recursive: true });
+  const target = await createCdpTarget({ host, port, targetUrl: wanted, timeoutMs: Math.min(timeoutMs, 10_000) });
+  const connection = await new WebSocketConnection(target.webSocketDebuggerUrl, timeoutMs).connect();
+  let downloadDomain = "Browser";
+  let downloadedWithGuid = true;
+  try {
+    await connection.command("Page.enable");
+    try {
+      await connection.command("Browser.setDownloadBehavior", {
+        behavior: "allowAndName",
+        downloadPath: downloadDir,
+        eventsEnabled: true
+      });
+    } catch {
+      downloadDomain = "Page";
+      downloadedWithGuid = false;
+      await connection.command("Page.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloadDir
+      });
+    }
+    const beginPromise = connection.waitFor((message) =>
+      message.method === `${downloadDomain}.downloadWillBegin`
+    );
+    await connection.command("Page.navigate", { url: downloadUrl });
+    const begin = await beginPromise;
+    const guid = begin?.params?.guid;
+    if (!guid) throw new Error("Chrome không trả mã tải workbook.");
+
+    let progress;
+    do {
+      progress = await connection.waitFor((message) =>
+        message.method === `${downloadDomain}.downloadProgress` && message.params?.guid === guid
+      );
+    } while (!["completed", "canceled"].includes(progress?.params?.state));
+    if (progress.params.state !== "completed") throw new Error("Chrome đã hủy tải workbook.");
+
+    const filename = safeDownloadName(begin.params.suggestedFilename);
+    const temporaryPath = join(downloadDir, downloadedWithGuid ? guid : filename);
+    const finalPath = join(downloadDir, `${Date.now()}-${filename}`);
+    await stat(temporaryPath);
+    await rename(temporaryPath, finalPath);
+    return {
+      object: "browser.workbook.download",
+      data: {
+        url: wanted,
+        filename,
+        path: finalPath,
+        downloadedAt: new Date().toISOString()
+      }
+    };
+  } finally {
+    try { await connection.command(`${downloadDomain}.setDownloadBehavior`, { behavior: "default" }); } catch {}
+    try { await connection.command("Page.close"); } catch {}
+    connection.close();
+  }
 }

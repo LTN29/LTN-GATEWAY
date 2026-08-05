@@ -345,6 +345,12 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(pdfTool.status, 200);
     assert.match(pdfTool.body, /pypdf/);
+    const spreadsheetTool = await rawGet(
+      gatewayPort,
+      "/install/tools/spreadsheet-audit.py"
+    );
+    assert.equal(spreadsheetTool.status, 200);
+    assert.match(spreadsheetTool.body, /openpyxl/);
     assert.equal(
       (await rawGet(gatewayPort, "/install/skills/unknown/SKILL.md")).status,
       404

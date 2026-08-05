@@ -31,8 +31,13 @@ test("browser MCP exposes prompt-first multi-page tools over stdio", async () =>
 
   assert.equal(messages.find((message) => message.id === 1)?.result?.serverInfo?.name, "simi-browser");
   const listed = messages.find((message) => message.id === 2)?.result?.tools || [];
-  assert.deepEqual(listed.map((tool) => tool.name), ["browser_read_pages", "browser_status"]);
+  assert.deepEqual(listed.map((tool) => tool.name), [
+    "browser_read_pages",
+    "browser_status",
+    "browser_read_workbook"
+  ]);
   assert.equal(listed[0].inputSchema.properties.urls.maxItems, 8);
+  assert.equal(listed[2].inputSchema.properties.max_rows.maximum, 5000);
   const status = messages.find((message) => message.id === 3)?.result?.structuredContent;
   assert.equal(status.running, false);
   assert.equal(status.mode, "persistent-managed-profile");

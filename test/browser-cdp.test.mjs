@@ -2,7 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { createHash } from "node:crypto";
-import { readCdpPage, readCdpPages } from "../scripts/browser-cdp.mjs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  downloadCdpWorkbook,
+  readCdpPage,
+  readCdpPages,
+  resolveNavigationUrl
+} from "../scripts/browser-cdp.mjs";
+
+test("Facebook redirect links are unwrapped without changing ordinary short URLs", () => {
+  const destination = "https://www.facebook.com/groups/example/posts/123?mibextid=abc";
+  const redirect = `https://l.facebook.com/l.php?u=${encodeURIComponent(destination)}&h=token`;
+  assert.equal(resolveNavigationUrl(redirect), destination);
+  assert.equal(resolveNavigationUrl("https://bit.ly/example"), "https://bit.ly/example");
+});
 
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -87,6 +102,7 @@ test("CDP client reads visible DOM text without a Chrome extension", async () =>
       const frame = readClientFrame(buffer);
       if (!frame) return;
       buffer = buffer.subarray(frame.consumed);
+      if (!frame.payload.length) return;
       const command = JSON.parse(frame.payload.toString("utf8"));
       socket.write(serverFrame({
         id: command.id,
@@ -118,10 +134,12 @@ test("CDP client reads visible DOM text without a Chrome extension", async () =>
   }
 });
 
-test("CDP client navigates the debug tab when the requested URL is different", async () => {
+test("CDP client accepts a final URL after a shortened link redirects", async () => {
   let server;
   let port;
   let navigatedTo = "";
+  const shortUrl = "https://bit.ly/koc-post";
+  const finalUrl = "https://www.facebook.com/groups/example/posts/123";
   const sockets = new Set();
   server = http.createServer((req, res) => {
     if (req.url !== "/json/list") {
@@ -160,11 +178,16 @@ test("CDP client navigates the debug tab when the requested URL is different", a
       buffer = buffer.subarray(frame.consumed);
       const command = JSON.parse(frame.payload.toString("utf8"));
       if (command.method === "Page.navigate") navigatedTo = command.params.url;
-      const pageUrl = navigatedTo || "https://inventory.simi.vn/inventory";
+      const pageUrl = navigatedTo ? finalUrl : "https://inventory.simi.vn/inventory";
+      const isMetadata = command.params?.expression?.includes("publishedAtCandidates");
       const result = command.method === "Runtime.evaluate"
         ? {
             result: {
-              value: {
+              value: isMetadata ? {
+                publishedAtCandidates: ["2026-07-18T08:00:00.000Z"],
+                loginRequired: false,
+                accessStatus: "ok"
+              } : {
                 url: pageUrl,
                 title: "Inventory",
                 text: "Đơn Shopee 12",
@@ -182,11 +205,15 @@ test("CDP client navigates the debug tab when the requested URL is different", a
   try {
     const page = await readCdpPage({
       port,
-      targetUrl: "https://inventory.simi.vn/admin/shopee/orders",
+      targetUrl: shortUrl,
       timeoutMs: 2_000
     });
-    assert.equal(navigatedTo, "https://inventory.simi.vn/admin/shopee/orders");
-    assert.equal(page.url, navigatedTo);
+    assert.equal(navigatedTo, shortUrl);
+    assert.equal(page.requestedUrl, shortUrl);
+    assert.equal(page.finalUrl, finalUrl);
+    assert.equal(page.redirected, true);
+    assert.deepEqual(page.publishedAtCandidates, ["2026-07-18T08:00:00.000Z"]);
+    assert.equal(page.accessStatus, "ok");
     assert.equal(page.text, "Đơn Shopee 12");
   } finally {
     for (const socket of sockets) socket.destroy();
@@ -292,5 +319,188 @@ test("CDP client opens separate tabs for multiple requested URLs", async () => {
   } finally {
     for (const socket of sockets) socket.destroy();
     await close(server);
+  }
+});
+
+test("CDP client reads Excel cell content from frames and the accessibility tree", async () => {
+  let server;
+  let port;
+  const sockets = new Set();
+  const workbookUrl = "https://simigo.sharepoint.com/:x:/s/marketing/workbook";
+  server = http.createServer((req, res) => {
+    if (req.url !== "/json/list") {
+      res.writeHead(404).end();
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify([{
+      type: "page",
+      url: workbookUrl,
+      title: "Marketing.xlsx",
+      webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/excel`
+    }]));
+  });
+
+  server.on("upgrade", (request, socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    const key = request.headers["sec-websocket-key"] || "";
+    const accept = createHash("sha1")
+      .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest("base64");
+    socket.write([
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${accept}`,
+      "\r\n"
+    ].join("\r\n"));
+
+    let buffer = Buffer.alloc(0);
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const frame = readClientFrame(buffer);
+      if (!frame) return;
+      buffer = buffer.subarray(frame.consumed);
+      const command = JSON.parse(frame.payload.toString("utf8"));
+      let result = {};
+      if (command.method === "Page.getFrameTree") {
+        result = {
+          frameTree: {
+            frame: { id: "top" },
+            childFrames: [{ frame: { id: "excel-frame" } }]
+          }
+        };
+      } else if (command.method === "Page.createIsolatedWorld") {
+        result = { executionContextId: command.params.frameId === "excel-frame" ? 2 : 1 };
+      } else if (command.method === "Accessibility.getFullAXTree") {
+        result = {
+          nodes: [{
+            ignored: false,
+            role: { value: "gridcell" },
+            name: { value: "C5" },
+            value: { value: "125000" }
+          }]
+        };
+      } else if (command.method === "Runtime.evaluate" && command.params.contextId === 2) {
+        result = {
+          result: {
+            value: {
+              url: "https://excel.officeapps.live.com/x/_layouts/xlviewerinternal.aspx",
+              title: "Workbook frame",
+              text: "SHEET GUI KOC",
+              semanticText: "C5 | 125000",
+              selectedText: "",
+              readyState: "complete"
+            }
+          }
+        };
+      } else if (command.method === "Runtime.evaluate") {
+        result = {
+          result: {
+            value: {
+              url: workbookUrl,
+              title: "Marketing.xlsx",
+              text: "Marketing.xlsx",
+              selectedText: "",
+              readyState: "complete"
+            }
+          }
+        };
+      }
+      socket.write(serverFrame({ id: command.id, result }));
+    });
+  });
+
+  port = await listen(server);
+  try {
+    const page = await readCdpPage({ port, targetUrl: workbookUrl, timeoutMs: 2_000 });
+    assert.match(page.text, /SHEET GUI KOC/);
+    assert.match(page.text, /C5 \| 125000/);
+    assert.match(page.text, /\[gridcell\] C5 125000/);
+    assert.deepEqual(page.extraction, {
+      mode: "dom-frames-accessibility",
+      frameCount: 2,
+      accessibilityNodeCount: 1
+    });
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await close(server);
+  }
+});
+
+test("CDP client downloads a SharePoint workbook with browser download events", async () => {
+  let server;
+  let port;
+  const sockets = new Set();
+  const downloadDir = await mkdtemp(join(tmpdir(), "simi-workbook-"));
+  const guid = "download-guid";
+  server = http.createServer((req, res) => {
+    if (req.method === "PUT" && req.url.startsWith("/json/new?")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        type: "page",
+        url: "https://simigo.sharepoint.com/:x:/s/marketing/workbook",
+        title: "Workbook",
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/download`
+      }));
+      return;
+    }
+    res.writeHead(404).end();
+  });
+
+  server.on("upgrade", (request, socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    const key = request.headers["sec-websocket-key"] || "";
+    const accept = createHash("sha1")
+      .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+      .digest("base64");
+    socket.write([
+      "HTTP/1.1 101 Switching Protocols",
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Accept: ${accept}`,
+      "\r\n"
+    ].join("\r\n"));
+
+    let buffer = Buffer.alloc(0);
+    socket.on("data", async (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const frame = readClientFrame(buffer);
+      if (!frame) return;
+      buffer = buffer.subarray(frame.consumed);
+      if (!frame.payload.length) return;
+      const command = JSON.parse(frame.payload.toString("utf8"));
+      socket.write(serverFrame({ id: command.id, result: {} }));
+      if (command.method === "Page.navigate") {
+        await writeFile(join(downloadDir, guid), "mock workbook bytes");
+        socket.write(serverFrame({
+          method: "Browser.downloadWillBegin",
+          params: { guid, suggestedFilename: "DATA KOC.xlsx", url: command.params.url }
+        }));
+        socket.write(serverFrame({
+          method: "Browser.downloadProgress",
+          params: { guid, state: "completed", receivedBytes: 19, totalBytes: 19 }
+        }));
+      }
+    });
+  });
+
+  port = await listen(server);
+  try {
+    const result = await downloadCdpWorkbook({
+      port,
+      targetUrl: "https://simigo.sharepoint.com/:x:/s/marketing/workbook?e=abc",
+      downloadDir,
+      timeoutMs: 2_000
+    });
+    assert.equal(result.object, "browser.workbook.download");
+    assert.equal(result.data.filename, "DATA KOC.xlsx");
+    assert.equal(await readFile(result.data.path, "utf8"), "mock workbook bytes");
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await close(server);
+    await rm(downloadDir, { recursive: true, force: true });
   }
 });

@@ -942,11 +942,11 @@ ensure_runtime_dependencies() {
       return 0
     fi
   fi
-  marker="${runtime_dir}/.ltn-pdf-deps-v2"
+  marker="${runtime_dir}/.ltn-pdf-deps-v3"
   if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
-    echo "Dang cai thu vien PDF: pypdf, pdfplumber, pymupdf, tomli..."
-    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf tomli; then
-      printf 'pypdf\npdfplumber\npymupdf\ntomli\n' > "${marker}"
+    echo "Dang cai thu vien tai lieu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
+    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
+      printf 'pypdf\npdfplumber\npymupdf\nopenpyxl\ntomli\n' > "${marker}"
       chmod 600 "${marker}"
     else
       echo "Canh bao: khong tai duoc thu vien PDF. Kiem tra mang roi chay Repair." >&2
@@ -962,7 +962,7 @@ install_local_tools() {
   tools_dir="${CODEX_HOME}/tools"
   mkdir -p "${tools_dir}"
   chmod 700 "${tools_dir}"
-  for asset in 9router-client.mjs pdf-extract.py; do
+  for asset in 9router-client.mjs pdf-extract.py spreadsheet-audit.py; do
     asset_path="${tools_dir}/${asset}"
     asset_tmp="${asset_path}.$$.$(date +%s).tmp"
     if ! curl --fail --silent --show-error --max-redirs 0 \

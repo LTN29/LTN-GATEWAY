@@ -662,15 +662,15 @@ function Ensure-PdfRuntime {
     }
   }
 
-  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v2"
+  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v3"
   if (-not (Test-Path -LiteralPath $marker)) {
-    Write-Host "Đang cài thư viện PDF: pypdf, pdfplumber, pymupdf, tomli..."
-    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf tomli | Out-Host
+    Write-Host "Đang cài thư viện tài liệu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
+    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli | Out-Host
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
       return $false
     }
-    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`ntomli`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`nopenpyxl`ntomli`n", [Text.UTF8Encoding]::new($false))
   }
   Write-Host "Python PDF runtime: $venvPython"
   return $true
@@ -778,7 +778,7 @@ function Install-LocalTools {
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $toolsDir = Join-Path $CodexHome "tools"
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-  foreach ($asset in @("9router-client.mjs", "pdf-extract.py")) {
+  foreach ($asset in @("9router-client.mjs", "pdf-extract.py", "spreadsheet-audit.py")) {
     $assetPath = Join-Path $toolsDir $asset
     $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
     try {

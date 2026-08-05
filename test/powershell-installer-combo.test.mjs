@@ -140,9 +140,9 @@ async function runInstallerWithCombo({
       return;
     }
 
-    if (req.url === "/install/tools/pdf-extract.py") {
+    if (req.url === "/install/tools/pdf-extract.py" || req.url === "/install/tools/spreadsheet-audit.py") {
       res.writeHead(200, { "content-type": "text/x-python" });
-      res.end("print('pdf test')\n");
+      res.end("print('document tool test')\n");
       return;
     }
 

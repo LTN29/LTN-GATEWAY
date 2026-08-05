@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
@@ -9,6 +10,10 @@ const browserPagePath = process.env.LTN_BROWSER_PAGE_PATH || join(codexHome, "br
 const cdpHost = process.env.LTN_CHROME_DEBUG_HOST || "127.0.0.1";
 const cdpPort = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
 const defaultTimeoutMs = Math.max(10_000, Number(process.env.LTN_BROWSER_CAPTURE_TIMEOUT_MS || 60_000));
+const spreadsheetAuditPath = process.env.LTN_SPREADSHEET_AUDIT_PATH || join(codexHome, "tools", "spreadsheet-audit.py");
+const pythonPath = process.env.LTN_PYTHON_PATH || (process.platform === "win32"
+  ? join(codexHome, "pdf-runtime", "Scripts", "python.exe")
+  : join(codexHome, "pdf-runtime", "bin", "python"));
 
 const tools = [
   {
@@ -40,6 +45,28 @@ const tools = [
     name: "browser_status",
     description: "Check whether the managed SIMI Chrome profile is currently reachable. Do not ask the user to run a terminal command; browser_read_pages starts it automatically.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false }
+  },
+  {
+    name: "browser_read_workbook",
+    description: "Download an authorized SharePoint Excel workbook through the signed-in SIMI Chrome profile, read rows structurally, filter by a month column, detect duplicate links, and report missing required fields. The temporary workbook copy is deleted after reading.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        workbook_url: { type: "string", format: "uri", description: "Authorized SharePoint .xlsx sharing URL." },
+        sheet: { type: "string", description: "Exact worksheet name. Omit to use the first sheet." },
+        header_row: { type: "integer", minimum: 1, maximum: 100, default: 1 },
+        filter_column: { type: "string", description: "Excel column letter or exact header used for the month filter." },
+        filter_month: { type: "integer", minimum: 1, maximum: 12 },
+        filter_year: { type: "integer", minimum: 2000, maximum: 2200 },
+        link_column: { type: "string", description: "Excel column letter or exact header containing URLs." },
+        required_columns: { type: "array", maxItems: 100, items: { type: "string" }, description: "Column letters or exact headers that must be filled." },
+        required_range_start: { type: "string", description: "First required column letter/header, for example S." },
+        required_range_end: { type: "string", description: "Last required column letter/header. Omit to continue through the final used column." },
+        max_rows: { type: "integer", minimum: 1, maximum: 5000, default: 1000 }
+      },
+      required: ["workbook_url"],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -59,13 +86,13 @@ function validUrls(values) {
   });
 }
 
-function runBrowserPage(urls) {
+function runBrowserPage(urls, extraArgs = []) {
   if (!existsSync(browserPagePath)) {
     throw new Error(`Browser runtime is missing at ${browserPagePath}. Run installer option 2 (Repair), then restart Codex.`);
   }
   const nodeBin = process.env.LTN_BROWSER_NODE_PATH || process.execPath;
   return new Promise((resolve, reject) => {
-    const child = spawn(nodeBin, [browserPagePath, "--cdp", ...urls], {
+    const child = spawn(nodeBin, [browserPagePath, ...extraArgs, "--cdp", ...urls], {
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env
@@ -102,6 +129,57 @@ function runBrowserPage(urls) {
         reject(new Error("Browser reader returned invalid JSON."));
       }
     });
+  });
+}
+
+function runSpreadsheetAudit(path, options) {
+  if (!existsSync(spreadsheetAuditPath)) {
+    throw new Error(`Spreadsheet audit runtime is missing at ${spreadsheetAuditPath}. Run installer option 2 (Repair), then restart Codex.`);
+  }
+  if (!existsSync(pythonPath)) {
+    throw new Error("Python spreadsheet runtime is missing. Run installer option 2 (Repair), then restart Codex.");
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(pythonPath, [spreadsheetAuditPath], {
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env
+    });
+    let stdout = "";
+    let stderr = "";
+    const limit = 24 * 1024 * 1024;
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Timed out while reading the workbook."));
+    }, defaultTimeoutMs);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+      if (stdout.length > limit) child.kill();
+    });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (stdout.length > limit) {
+        reject(new Error("Workbook response exceeded the local safety limit."));
+        return;
+      }
+      let payload;
+      try { payload = JSON.parse(stdout.trim()); } catch { payload = null; }
+      if (code !== 0 || payload?.error) {
+        reject(new Error(payload?.error?.message || stderr.trim() || `Workbook reader exited with code ${code}.`));
+        return;
+      }
+      if (!payload) {
+        reject(new Error("Workbook reader returned invalid JSON."));
+        return;
+      }
+      resolve(payload);
+    });
+    child.stdin.end(JSON.stringify({ path, options }));
   });
 }
 
@@ -142,6 +220,37 @@ async function browserStatus() {
 
 async function callTool(name, args = {}) {
   if (name === "browser_status") return browserStatus();
+  if (name === "browser_read_workbook") {
+    const [url] = validUrls([args.workbook_url]);
+    let temporaryPath = "";
+    try {
+      const download = await runBrowserPage([url], ["--download-workbook"]);
+      temporaryPath = String(download?.data?.path || "");
+      if (!temporaryPath) throw new Error("Chrome did not return the downloaded workbook path.");
+      const audit = await runSpreadsheetAudit(temporaryPath, {
+        sheet: args.sheet,
+        header_row: args.header_row,
+        filter_column: args.filter_column,
+        filter_month: args.filter_month,
+        filter_year: args.filter_year,
+        link_column: args.link_column,
+        required_columns: args.required_columns,
+        required_range_start: args.required_range_start,
+        required_range_end: args.required_range_end,
+        max_rows: args.max_rows
+      });
+      return {
+        ...audit,
+        data: {
+          ...audit.data,
+          sourceUrl: url,
+          downloadedFilename: download?.data?.filename
+        }
+      };
+    } finally {
+      if (temporaryPath) await unlink(temporaryPath).catch(() => {});
+    }
+  }
   if (name !== "browser_read_pages") throw new Error(`Unknown tool: ${name}`);
   const urls = validUrls(args.urls);
   const maxChars = Math.max(1_000, Math.min(500_000, Number(args.max_chars_per_page || 120_000)));

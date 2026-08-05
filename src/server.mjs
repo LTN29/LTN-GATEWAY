@@ -90,6 +90,10 @@ const localToolPaths = new Map([
   [
     "/install/tools/pdf-extract.py",
     fileURLToPath(new URL("../scripts/pdf-extract.py", import.meta.url))
+  ],
+  [
+    "/install/tools/spreadsheet-audit.py",
+    fileURLToPath(new URL("../scripts/spreadsheet-audit.py", import.meta.url))
   ]
 ]);
 

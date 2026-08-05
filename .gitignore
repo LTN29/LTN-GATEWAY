@@ -34,3 +34,4 @@ memory/**/*.backup-*
 .DS_Store
 npm-debug.log*
 admin-ui/dist/
+.tmp/
