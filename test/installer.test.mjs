@@ -150,6 +150,7 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /browser-mcp\.mjs/);
   assert.match(script, /spreadsheet-audit\.py/);
   assert.match(script, /openpyxl/);
+  assert.match(script, /Browser và các chức năng khác vẫn dùng được/);
   assert.match(script, /\[mcp_servers\.simi_browser\]/);
   assert.match(script, /tool_timeout_sec = 90/);
   assert.match(script, /Browser MCP config:/);

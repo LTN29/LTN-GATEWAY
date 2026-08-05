@@ -118,6 +118,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /browser-cdp\.mjs/);
   assert.match(script, /chrome-debug\.mjs/);
   assert.match(script, /browser-mcp\.mjs/);
+  assert.match(script, /spreadsheet-audit\.py/);
+  assert.match(script, /Browser va cac chuc nang khac van dung duoc/);
   assert.match(script, /\[mcp_servers\.simi_browser\]/);
   assert.match(script, /tool_timeout_sec = 90/);
   assert.match(script, /Browser MCP config:/);
