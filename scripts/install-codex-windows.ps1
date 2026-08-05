@@ -778,7 +778,7 @@ function Install-LocalTools {
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $toolsDir = Join-Path $CodexHome "tools"
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-  foreach ($asset in @("9router-client.mjs", "pdf-extract.py", "spreadsheet-audit.py")) {
+  foreach ($asset in @("9router-client.mjs", "pdf-extract.py")) {
     $assetPath = Join-Path $toolsDir $asset
     $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
     try {
@@ -789,6 +789,22 @@ function Install-LocalTools {
     } finally {
       if (Test-Path -LiteralPath $assetTemp) { Remove-Item -LiteralPath $assetTemp -Force -ErrorAction SilentlyContinue }
     }
+  }
+
+  $spreadsheetAsset = "spreadsheet-audit.py"
+  $spreadsheetPath = Join-Path $toolsDir $spreadsheetAsset
+  $spreadsheetTemp = "$spreadsheetPath.$([Guid]::NewGuid().ToString('N')).tmp"
+  try {
+    try {
+      Invoke-WebRequest -UseBasicParsing `
+        -Uri ([Uri]"$gatewayRoot/install/tools/$spreadsheetAsset").AbsoluteUri `
+        -OutFile $spreadsheetTemp -MaximumRedirection 0
+      Move-Item -LiteralPath $spreadsheetTemp -Destination $spreadsheetPath -Force
+    } catch {
+      Write-Warning "Chưa tải được công cụ Excel có cấu trúc; Browser và các chức năng khác vẫn dùng được. Admin cần triển khai spreadsheet-audit.py rồi chạy Repair."
+    }
+  } finally {
+    if (Test-Path -LiteralPath $spreadsheetTemp) { Remove-Item -LiteralPath $spreadsheetTemp -Force -ErrorAction SilentlyContinue }
   }
 
   $escapedCodexHome = $CodexHome.Replace('"', '')

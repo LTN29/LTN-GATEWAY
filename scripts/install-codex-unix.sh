@@ -962,7 +962,7 @@ install_local_tools() {
   tools_dir="${CODEX_HOME}/tools"
   mkdir -p "${tools_dir}"
   chmod 700 "${tools_dir}"
-  for asset in 9router-client.mjs pdf-extract.py spreadsheet-audit.py; do
+  for asset in 9router-client.mjs pdf-extract.py; do
     asset_path="${tools_dir}/${asset}"
     asset_tmp="${asset_path}.$$.$(date +%s).tmp"
     if ! curl --fail --silent --show-error --max-redirs 0 \
@@ -973,6 +973,18 @@ install_local_tools() {
     chmod 700 "${asset_tmp}"
     mv "${asset_tmp}" "${asset_path}"
   done
+
+  asset="spreadsheet-audit.py"
+  asset_path="${tools_dir}/${asset}"
+  asset_tmp="${asset_path}.$$.$(date +%s).tmp"
+  if curl --fail --silent --show-error --max-redirs 0 \
+    --output "${asset_tmp}" "${gateway_root}/install/tools/${asset}"; then
+    chmod 700 "${asset_tmp}"
+    mv "${asset_tmp}" "${asset_path}"
+  else
+    rm -f "${asset_tmp}"
+    echo "Canh bao: Chua tai duoc cong cu Excel co cau truc; Browser va cac chuc nang khac van dung duoc. Admin can trien khai spreadsheet-audit.py roi chay Repair." >&2
+  fi
 
   cat > "${BIN_DIR}/ltn-9router" <<EOF
 #!/usr/bin/env bash
