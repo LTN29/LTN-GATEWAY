@@ -16,6 +16,7 @@ OS_NAME=""
 AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
+HOMEBREW_INSTALLER_FILE=""
 MODE="${1:-}"
 CODEX_CMD_PATH=""
 CODEX_INSTALL_KIND="missing"
@@ -24,11 +25,15 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
+HOMEBREW_CMD=""
 MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-cai-dat"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
     rm -f "${REMOTE_CONFIG_FILE}"
+  fi
+  if [ -n "${HOMEBREW_INSTALLER_FILE}" ] && [ -f "${HOMEBREW_INSTALLER_FILE}" ]; then
+    rm -f "${HOMEBREW_INSTALLER_FILE}"
   fi
 }
 trap cleanup EXIT HUP INT TERM
@@ -849,8 +854,65 @@ EOF
 
 runtime_node_major() {
   local node_command="$1" version
-  version="$(${node_command} --version 2>/dev/null || true)"
+  version="$("${node_command}" --version 2>/dev/null || true)"
   printf '%s' "${version#v}" | cut -d. -f1
+}
+
+resolve_homebrew_command() {
+  local candidate
+  HOMEBREW_CMD=""
+  for candidate in \
+    "$(command -v brew 2>/dev/null || true)" \
+    /opt/homebrew/bin/brew \
+    /usr/local/bin/brew; do
+    if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
+      HOMEBREW_CMD="${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+activate_homebrew() {
+  local shellenv_line profile_path
+  [ -n "${HOMEBREW_CMD}" ] || return 1
+  eval "$("${HOMEBREW_CMD}" shellenv)"
+
+  profile_path="${HOME}/.zprofile"
+  shellenv_line="eval \"\$(${HOMEBREW_CMD} shellenv)\""
+  if [ ! -f "${profile_path}" ] || ! grep -Fqx "${shellenv_line}" "${profile_path}"; then
+    printf '\n%s\n' "${shellenv_line}" >> "${profile_path}"
+  fi
+}
+
+install_homebrew() {
+  local installer_url
+  if resolve_homebrew_command; then
+    activate_homebrew
+    return 0
+  fi
+
+  [ -r /dev/tty ] || die_code 12 "Can terminal tuong tac de cai Homebrew va Command Line Tools tren macOS."
+  installer_url="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+  HOMEBREW_INSTALLER_FILE="$(mktemp "${TMPDIR:-/tmp}/ltn-homebrew-install.XXXXXX")"
+  echo "MacOS chua co Homebrew. Dang mo bo cai chinh thuc; co the can mat khau quan tri va xac nhan Command Line Tools..."
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "${HOMEBREW_INSTALLER_FILE}" "${installer_url}"; then
+    rm -f "${HOMEBREW_INSTALLER_FILE}"
+    HOMEBREW_INSTALLER_FILE=""
+    die_code 12 "Khong tai duoc bo cai Homebrew chinh thuc. Kiem tra mang roi chay lai."
+  fi
+  chmod 700 "${HOMEBREW_INSTALLER_FILE}"
+  if ! /bin/bash "${HOMEBREW_INSTALLER_FILE}" < /dev/tty; then
+    rm -f "${HOMEBREW_INSTALLER_FILE}"
+    HOMEBREW_INSTALLER_FILE=""
+    die_code 12 "Homebrew/Command Line Tools chua cai xong. Hoan tat hop thoai macOS roi chay Repair."
+  fi
+  rm -f "${HOMEBREW_INSTALLER_FILE}"
+  HOMEBREW_INSTALLER_FILE=""
+
+  resolve_homebrew_command || die_code 12 "Homebrew da chay bo cai nhung chua tim thay lenh brew. Mo Terminal moi roi chay Repair."
+  activate_homebrew
 }
 
 run_privileged() {
@@ -865,8 +927,9 @@ run_privileged() {
 
 install_runtime_packages() {
   [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" = "1" ] && return 1
-  if [ "${OS_NAME}" = "macos" ] && command -v brew >/dev/null 2>&1; then
-    brew install node python
+  if [ "${OS_NAME}" = "macos" ]; then
+    install_homebrew
+    "${HOMEBREW_CMD}" install node python
     return $?
   fi
 
@@ -898,8 +961,37 @@ install_runtime_packages() {
 }
 
 resolve_runtime_commands() {
-  RUNTIME_NODE_CMD="$(command -v node 2>/dev/null || true)"
-  RUNTIME_PYTHON_CMD="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+  local candidate python_candidate
+  RUNTIME_NODE_CMD=""
+  RUNTIME_PYTHON_CMD=""
+
+  for candidate in \
+    "${LTN_NODE_PATH:-}" \
+    /opt/homebrew/bin/node \
+    /usr/local/bin/node \
+    "$(command -v node 2>/dev/null || true)"; do
+    if [ -n "${candidate}" ] && [ -x "${candidate}" ] && "${candidate}" --version >/dev/null 2>&1; then
+      RUNTIME_NODE_CMD="${candidate}"
+      break
+    fi
+  done
+
+  for python_candidate in \
+    "${LTN_PYTHON_PATH:-}" \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    "$(command -v python3 2>/dev/null || true)" \
+    "$(command -v python 2>/dev/null || true)"; do
+    [ -n "${python_candidate}" ] && [ -x "${python_candidate}" ] || continue
+    if [ "${OS_NAME}" = "macos" ] && [ "${python_candidate}" = "/usr/bin/python3" ] && \
+       ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
+      continue
+    fi
+    if "${python_candidate}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+      RUNTIME_PYTHON_CMD="${python_candidate}"
+      break
+    fi
+  done
 }
 
 ensure_runtime_dependencies() {
@@ -913,9 +1005,22 @@ ensure_runtime_dependencies() {
   if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
     echo "Kiem tra Node.js 20+ va Python 3..."
     if [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ] && ! install_runtime_packages; then
+      if [ "${OS_NAME}" = "macos" ]; then
+        die_code 12 "Khong tu dong cai duoc Node.js/Python tren macOS. Kiem tra mang/quyen quan tri roi chay Repair."
+      fi
       echo "Canh bao: khong tu dong cai duoc Node.js/Python. Hay cai thu cong roi chay Repair." >&2
     fi
     resolve_runtime_commands
+  fi
+
+  if [ "${OS_NAME}" = "macos" ]; then
+    node_major=0
+    if [ -n "${RUNTIME_NODE_CMD}" ]; then
+      node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+    fi
+    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+      die_code 12 "Node.js 20+ hoac Python 3 chua san sang sau khi cai. Mo Terminal moi roi chay Repair."
+    fi
   fi
 
   if [ -n "${RUNTIME_NODE_CMD}" ]; then

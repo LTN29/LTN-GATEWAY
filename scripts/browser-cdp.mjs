@@ -291,6 +291,17 @@ export function resolveNavigationUrl(value) {
   return original;
 }
 
+export function isLikelyRedirectUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || "")); } catch { return false; }
+  const host = parsed.hostname.toLowerCase();
+  if ([
+    "bit.ly", "tinyurl.com", "t.co", "fb.watch", "vt.tiktok.com",
+    "vm.tiktok.com", "youtu.be", "shorturl.at"
+  ].includes(host)) return true;
+  return /(?:^|\.)tiktok\.com$/.test(host) && /^\/t\//i.test(parsed.pathname);
+}
+
 function chooseTarget(targets, targetUrl = "") {
   const pages = targets.filter((target) =>
     target?.type === "page" &&
@@ -324,8 +335,16 @@ const pageMetadataExpression = `(() => {
     if (epoch && /^\\d+$/.test(epoch)) return new Date(Number(epoch) * 1000).toISOString();
     return element.getAttribute('content') || element.getAttribute('datetime') || element.textContent || '';
   }).map((value) => String(value).trim()).filter(Boolean);
+  const scriptText = [...document.scripts].slice(0, 200).map((script) => script.textContent || '').join('\\n').slice(0, 3000000);
+  for (const match of scriptText.matchAll(/"createTime"\\s*:\\s*"?(\\d{9,13})"?/g)) {
+    const raw = Number(match[1]);
+    if (!Number.isFinite(raw)) continue;
+    const milliseconds = raw > 9999999999 ? raw : raw * 1000;
+    try { publishedAtCandidates.push(new Date(milliseconds).toISOString()); } catch {}
+    if (publishedAtCandidates.length >= 100) break;
+  }
   const loginRequired = Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href);
-  const blocked = /(?:checkpoint|captcha|temporarily blocked|content isn't available|content is not available|page isn't available)/i.test(location.href + '\n' + bodyText);
+  const blocked = /(?:checkpoint|captcha|temporarily blocked|content isn't available|content is not available|page isn't available)/i.test(location.href + '\\n' + bodyText);
   return {
     publishedAtCandidates,
     loginRequired,
@@ -342,7 +361,7 @@ const frameEvaluationExpression = `(() => {
     const value = element.getAttribute('aria-valuetext') || element.getAttribute('aria-valuenow') || '';
     const text = element.innerText || element.textContent || '';
     return [label, value, text].map((item) => String(item).trim()).filter(Boolean).join(' | ');
-  }).filter(Boolean).join('\n');
+  }).filter(Boolean).join('\\n');
   return {
     url: location.href,
     title: document.title,
@@ -353,6 +372,13 @@ const frameEvaluationExpression = `(() => {
     loginRequired: Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href)
   };
 })()`;
+
+export function validateBrowserEvaluationExpressions() {
+  for (const expression of [pageEvaluationExpression, pageMetadataExpression, frameEvaluationExpression]) {
+    new Function(`return (${expression});`);
+  }
+  return true;
+}
 
 function frameIds(frameTree, result = []) {
   const id = frameTree?.frame?.id;
@@ -565,7 +591,7 @@ async function navigateAndWaitRedirects(connection, targetUrl, timeoutMs) {
 async function readTarget(target, targetUrl, timeoutMs, navigate = false) {
   const connection = await new WebSocketConnection(target.webSocketDebuggerUrl, timeoutMs).connect();
   try {
-    if (navigate && targetUrl && !targetMatchesUrl(target, targetUrl)) {
+    if (navigate && targetUrl) {
       await navigateAndWaitRedirects(connection, targetUrl, timeoutMs);
     } else {
       await connection.command("Page.enable");
@@ -604,7 +630,7 @@ export async function readCdpPages({
     const matchingIndex = available.findIndex((target) => targetMatchesUrl(target, wanted));
     if (matchingIndex >= 0) {
       const [target] = available.splice(matchingIndex, 1);
-      plans.push({ target, wanted, navigate: false });
+      plans.push({ target, wanted, navigate: isLikelyRedirectUrl(wanted) });
       continue;
     }
 
@@ -615,7 +641,11 @@ export async function readCdpPages({
       continue;
     }
     const target = await createCdpTarget({ host, port, targetUrl: wanted, timeoutMs });
-    plans.push({ target, wanted, navigate: !targetMatchesUrl(target, wanted) });
+    plans.push({
+      target,
+      wanted,
+      navigate: isLikelyRedirectUrl(wanted) || !targetMatchesUrl(target, wanted)
+    });
   }
 
   return Promise.all(plans.map(({ target, wanted, navigate }) =>

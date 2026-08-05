@@ -112,6 +112,14 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /MANAGED_SKILL_NAMES=/);
   assert.match(script, /Simi skills: \$\{skill_count\}\/12/);
   assert.match(script, /ensure_runtime_dependencies\(\)/);
+  assert.match(script, /install_homebrew\(\)/);
+  assert.match(script, /https:\/\/raw\.githubusercontent\.com\/Homebrew\/install\/HEAD\/install\.sh/);
+  assert.match(script, /\/opt\/homebrew\/bin\/brew/);
+  assert.match(script, /\/usr\/local\/bin\/brew/);
+  assert.match(script, /\/bin\/bash "\$\{HOMEBREW_INSTALLER_FILE\}" < \/dev\/tty/);
+  assert.match(script, /"\$\{HOMEBREW_CMD\}" install node python/);
+  assert.match(script, /\/usr\/bin\/xcode-select -p/);
+  assert.match(script, /sys\.version_info >= \(3, 8\)/);
   assert.match(script, /install_local_tools\(\)/);
   assert.match(script, /install\/tools\/\$\{asset\}/);
   assert.match(script, /install\/tools\/browser-page\.mjs/);

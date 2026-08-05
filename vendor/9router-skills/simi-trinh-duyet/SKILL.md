@@ -68,6 +68,14 @@ Chrome window. When it is `blocked`, mark the row unverifiable and state the
 visible blocker. The user must handle CAPTCHA, two-factor authentication, or
 account checkpoints themselves. Do not request passwords, cookies, or tokens.
 
+TikTok short links such as `vt.tiktok.com` and `vm.tiktok.com` must be opened
+through `browser_read_pages`; the reader waits for the canonical
+`www.tiktok.com/@.../video/...` URL before extracting content. Use
+`publishedAtCandidates` when TikTok exposes `createTime` metadata. TikTok login,
+CAPTCHA, region restrictions, removed/private videos, and anti-automation
+interstitials are not bypassable; report those rows as unverifiable with the
+returned `accessStatus` and visible reason.
+
 This is an MCP-only workflow. Never run Terminal commands, inspect local
 browser scripts, call the legacy command-line reader or Chrome launcher, or
 use a port-based bridge as a fallback. If `simi_browser.browser_read_pages` is not

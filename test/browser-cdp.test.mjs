@@ -7,9 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   downloadCdpWorkbook,
+  isLikelyRedirectUrl,
   readCdpPage,
   readCdpPages,
-  resolveNavigationUrl
+  resolveNavigationUrl,
+  validateBrowserEvaluationExpressions
 } from "../scripts/browser-cdp.mjs";
 
 test("Facebook redirect links are unwrapped without changing ordinary short URLs", () => {
@@ -17,6 +19,13 @@ test("Facebook redirect links are unwrapped without changing ordinary short URLs
   const redirect = `https://l.facebook.com/l.php?u=${encodeURIComponent(destination)}&h=token`;
   assert.equal(resolveNavigationUrl(redirect), destination);
   assert.equal(resolveNavigationUrl("https://bit.ly/example"), "https://bit.ly/example");
+  assert.equal(isLikelyRedirectUrl("https://vt.tiktok.com/ZSabc/"), true);
+  assert.equal(isLikelyRedirectUrl("https://vm.tiktok.com/ZSabc/"), true);
+  assert.equal(isLikelyRedirectUrl("https://www.tiktok.com/@creator/video/123"), false);
+});
+
+test("browser page evaluation expressions compile before they are sent to Chrome", () => {
+  assert.equal(validateBrowserEvaluationExpressions(), true);
 });
 
 function listen(server) {
@@ -176,6 +185,7 @@ test("CDP client accepts a final URL after a shortened link redirects", async ()
       const frame = readClientFrame(buffer);
       if (!frame) return;
       buffer = buffer.subarray(frame.consumed);
+      if (!frame.payload.length) return;
       const command = JSON.parse(frame.payload.toString("utf8"));
       if (command.method === "Page.navigate") navigatedTo = command.params.url;
       const pageUrl = navigatedTo ? finalUrl : "https://inventory.simi.vn/inventory";
@@ -279,8 +289,14 @@ test("CDP client opens separate tabs for multiple requested URLs", async () => {
       const frame = readClientFrame(buffer);
       if (!frame) return;
       buffer = buffer.subarray(frame.consumed);
+      if (!frame.payload.length) return;
       const command = JSON.parse(frame.payload.toString("utf8"));
-      const url = targets.get(new URL(`ws://localhost${request.url}`).pathname) || initialUrl;
+      const targetPath = new URL(`ws://localhost${request.url}`).pathname;
+      let url = targets.get(targetPath) || initialUrl;
+      if (command.method === "Page.navigate" && /vt\.tiktok\.com/.test(command.params.url)) {
+        url = "https://www.tiktok.com/@creator/video/123";
+        targets.set(targetPath, url);
+      }
       const result = command.method === "Runtime.evaluate"
         ? {
             result: {
@@ -305,17 +321,21 @@ test("CDP client opens separate tabs for multiple requested URLs", async () => {
       targetUrls: [
         initialUrl,
         "https://inventory.simi.vn/admin/shopee/orders",
-        "https://simigo-my.sharepoint.com/sites/sales"
+        "https://simigo-my.sharepoint.com/sites/sales",
+        "https://vt.tiktok.com/ZSabc/"
       ],
       timeoutMs: 2_000
     });
-    assert.equal(pages.length, 3);
+    assert.equal(pages.length, 4);
     assert.deepEqual(pages.map((page) => page.url), [
       initialUrl,
       "https://inventory.simi.vn/admin/shopee/orders",
-      "https://simigo-my.sharepoint.com/sites/sales"
+      "https://simigo-my.sharepoint.com/sites/sales",
+      "https://www.tiktok.com/@creator/video/123"
     ]);
-    assert.equal(targets.size, 3);
+    assert.equal(pages[3].requestedUrl, "https://vt.tiktok.com/ZSabc/");
+    assert.equal(pages[3].redirected, true);
+    assert.equal(targets.size, 4);
   } finally {
     for (const socket of sockets) socket.destroy();
     await close(server);

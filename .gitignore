@@ -35,3 +35,7 @@ memory/**/*.backup-*
 npm-debug.log*
 admin-ui/dist/
 .tmp/
+
+# Generated training materials and installation guides.
+output/pdf/giao-an-*.pdf
+output/pdf/huong-dan-*.pdf
