@@ -68,6 +68,13 @@ Treat the output as generated media: never claim it is an authentic photograph,
 official brand asset, verified document, or faithful reproduction unless the
 user supplied and requested that exact asset.
 
+When an image request needs Gateway access, distinguish the actual failure:
+if the environment says network access needs approval or is sandbox-blocked,
+ask the user to approve internet access for this request. Do not tell the user
+to run Repair for that case and do not call it a DNS error. Report DNS only when
+name resolution itself failed in the returned error. Repair is appropriate only
+when the installer-managed credential or installed skill/runtime is missing.
+
 For an ordinary user, announce image work and report the saved result in natural
 language. Do not show request JSON, API calls, `<tool_call>` markup, or internal
 image-provider parameters in the chat response.
