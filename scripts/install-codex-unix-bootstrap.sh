@@ -25,12 +25,20 @@ fi
 TEMP_INSTALLER="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-installer.XXXXXX")"
 chmod 700 "${TEMP_INSTALLER}"
 
-METADATA="$(curl --fail --silent --show-error --location \
+if ! METADATA="$(curl --fail --silent --show-error --location \
   --proto '=https' \
   --proto-redir '=https' \
+  --connect-timeout 10 \
+  --max-time 45 \
+  --retry 2 \
+  --retry-delay 2 \
   --write-out '%{http_code} %{url_effective}' \
   --output "${TEMP_INSTALLER}" \
-  "${INSTALLER_URL}")"
+  "${INSTALLER_URL}")"; then
+  echo "Không thể kết nối tới ${INSTALLER_HOST} trong 45 giây." >&2
+  echo "Kiểm tra Internet, VPN/proxy hoặc tường lửa; sau đó chạy lại installer." >&2
+  exit 1
+fi
 HTTP_CODE="${METADATA%% *}"
 EFFECTIVE_URL="${METADATA#* }"
 

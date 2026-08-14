@@ -26,6 +26,10 @@ test("Unix bootstrap is safe for curl pipe bash", async () => {
   assert.match(script, /trap cleanup EXIT HUP INT TERM/);
   assert.match(script, /--proto '=https'/);
   assert.match(script, /--proto-redir '=https'/);
+  assert.match(script, /--connect-timeout 10/);
+  assert.match(script, /--max-time 45/);
+  assert.match(script, /--retry 2/);
+  assert.match(script, /Không thể kết nối tới \$\{INSTALLER_HOST\} trong 45 giây/);
   assert.match(script, /%{url_effective}/);
   assert.match(script, /if \[ "\$\{EFFECTIVE_URL\}" != "\$\{INSTALLER_URL\}" \]/);
   assert.match(script, /bash "\$\{TEMP_INSTALLER\}" "\$@"/);
