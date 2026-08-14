@@ -20,10 +20,57 @@ This skill is distributed by the SIMI installer. Route every request through
   `NINEROUTER_KEY`, then the installer-managed credential). Never ask the user
   to enter or create another key.
 
-Do not print, persist, or include `NINEROUTER_KEY` in command output. For image
-requests, call `/v1/images/generations`; do not substitute SVG/HTML/Canvas drawing.
+Do not print, persist, or include `NINEROUTER_KEY` in command output. For a new
+image, call `/v1/images/generations`; use `/v1/images/edits` for edits and outpaint.
+Do not substitute SVG/HTML/Canvas drawing.
 Use a finite client timeout (180 seconds by default) and report only the HTTP
 status or a sanitized timeout/network error.
+
+## Operating workflow
+
+First classify the request, then act without asking a follow-up when the user
+has supplied enough detail:
+
+| User intent | Route | Required input | Expected result |
+|---|---|---|---|
+| Create a new image | `/v1/images/generations` | Prompt | New image |
+| Change, remove, retouch, or restyle an image | `/v1/images/edits` | Source image plus edit prompt | Edited image |
+| Expand image beyond an edge (outpaint) | `/v1/images/edits` | Source image plus direction/extra scene prompt | Larger canvas with the source preserved |
+| Combine visual references | `/v1/images/edits` | All reference images plus composition prompt | New combined image |
+
+For an edit or outpaint, use the image the user attached or explicitly named.
+Do not silently generate a replacement from text alone. Preserve the parts the
+user did not ask to change: subject identity, text, logo, product geometry,
+lighting, camera angle, and image style when applicable. For an outpaint, state
+the exact direction (left, right, top, bottom, or all sides), what must remain
+unaltered, and what should appear in the new area.
+
+Build the prompt in this order: subject and action; composition/crop; required
+visible details; visual style and lighting; negative constraints; output ratio.
+Keep factual text in the image short and exact. When legible text, brand marks,
+or a specific person must be preserved, explicitly say so and flag any unclear
+result instead of claiming it is correct.
+
+Choose an output size that matches the intended placement: square for posts,
+portrait for stories/posters, landscape for banners/slides. Respect an exact
+size or ratio supplied by the user. If no ratio is supplied, choose the most
+natural ratio for the requested use and state it in the completion message.
+
+Before the final response, inspect the returned image: verify the requested
+edit is visible, the main subject is not cropped unintentionally, text is
+readable where required, and no obvious artifacts conflict with the prompt. On
+failure, make one focused retry that fixes the observed issue; do not perform
+unbounded retries. Save a successful binary response in the workspace
+`outputs/` directory with a descriptive filename, retain the original input,
+and show the saved image with its full path in the final response.
+
+Treat the output as generated media: never claim it is an authentic photograph,
+official brand asset, verified document, or faithful reproduction unless the
+user supplied and requested that exact asset.
+
+For an ordinary user, announce image work and report the saved result in natural
+language. Do not show request JSON, API calls, `<tool_call>` markup, or internal
+image-provider parameters in the chat response.
 
 ## Discover
 

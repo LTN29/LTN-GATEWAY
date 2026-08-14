@@ -10,6 +10,10 @@ This mode uses Chrome DevTools Protocol on localhost and evaluates a read-only
 DOM expression in the debug profile. It does not read passwords, cookies, or
 browser session stores.
 
+For an ordinary user, describe browser work in natural language. Call only the
+actual `simi_browser` MCP tools; never display their arguments, XML tool-call
+syntax, JSON payloads, or an invented spreadsheet/browser tool in chat.
+
 ## Automatic setup and reading
 
 Always call the local `simi_browser.browser_read_pages` MCP tool first. Pass all
@@ -37,6 +41,44 @@ rows are not currently exposed by Excel Online, state that limitation and ask
 the user to download the `.xlsx`; do not claim that the browser itself failed.
 
 ## Structured Excel and link audits
+
+### Downloaded candidate workbook and CV assessment
+
+When the user has downloaded an `.xlsx` or `.xlsm` candidate file and asks to
+read every CV link, call `simi_browser.browser_read_candidate_cvs` once. Pass
+the absolute file path, the candidate sheet if known, the header row, and the
+CV URL column as `link_column`. The tool reads the values and actual Excel
+hyperlink targets, then attempts every unique HTTP/HTTPS CV link in batches of
+at most eight without modifying the workbook. It supports up to 1,000 rows.
+
+Before analysing results, verify `data.complete` is `true` and report
+`processedUniqueLinks` against `totalUniqueLinks`. For example, a file with
+154 unique CV links must report 154 attempted links; do not provide a final
+candidate ranking for a partial run. If `complete` is false, state the exact
+count and retry only the remaining links.
+
+Use `data.rows` to retain each candidate's Excel `rowNumber` and identifying
+fields. Use `data.cvs` as the authoritative page result list and attach each
+result to every returned `rowNumbers`. Use `simi_browser.browser_read_local_workbook` only
+when the user wants to inspect the workbook without opening any CV links.
+If the workbook has multiple sheets or the intended URL column is unclear,
+report `sheetNames` and `headers` and ask the user which sheet/column to use;
+do not guess based on a sample row.
+
+Do not call `browser_read_pages` again for CV links already returned by
+`browser_read_candidate_cvs` unless retrying a specific failed link. Do not
+infer the status of unvisited links from a sample. Links that are missing,
+malformed, login-required, blocked, or have insufficient visible CV content
+are `unverifiable`, with the specific reason returned by the reader.
+
+For each readable CV, evaluate fit only against the vacancy requirements the
+user provides. Return a concise, row-level result with: candidate identifier,
+Excel row, CV link, evidence from the CV, matching strengths, gaps/risks,
+recommendation (`strong-fit`, `potential-fit`, `not-a-fit`, or
+`unverifiable`), and questions for interview. Clearly distinguish documented
+evidence from inference. Never invent skills, experience, education, or dates
+that are not visible in the CV. Do not write scores, decisions, or notes back
+to the workbook unless the user explicitly asks to edit it.
 
 When the user asks to filter, validate, deduplicate, or audit an Excel workbook
 on SharePoint, use `simi_browser.browser_read_workbook` instead of

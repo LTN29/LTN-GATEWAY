@@ -424,14 +424,9 @@ function editUserModalHtml(user, teams) {
   `;
 }
 
-function comboOptions(items, selected) {
-  const values = [...new Set([
-    ...(items || []).map((item) => item.id).filter(Boolean),
-    selected
-  ].filter(Boolean))];
-  return `<option value="">Kế thừa Combo mặc định</option>${values.map((id) =>
-    `<option value="${escapeHtml(id)}" ${id === selected ? "selected" : ""}>${escapeHtml(id)}</option>`
-  ).join("")}`;
+function comboOptions(items) {
+  const values = [...new Set((items || []).map((item) => item.id).filter(Boolean))];
+  return values.map((id) => `<option value="${escapeHtml(id)}"></option>`).join("");
 }
 
 function teamModalHtml(team = null, combos = []) {
@@ -455,9 +450,10 @@ function teamModalHtml(team = null, combos = []) {
           <label>Trạng thái<select id="teamEnabled"><option value="true" ${team?.enabled !== false ? "selected" : ""}>Hoạt động</option><option value="false" ${team?.enabled === false ? "selected" : ""}>Đã khóa</option></select></label>
           <label>Chính sách AI<select id="teamPolicyMode"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Kế thừa mặc định</option><option value="limited_daily" ${mode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${mode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${mode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${mode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="teamPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
-          <label>Combo Premium<select id="teamPremiumCombo">${comboOptions(combos, premiumCombo)}</select></label>
-          <label>Combo Free<select id="teamFreeCombo">${comboOptions(combos, freeCombo)}</select></label>
-          <label>Combo Test<select id="teamTestCombo">${comboOptions(combos, testCombo)}</select></label>
+          <datalist id="codex-combos-list">${comboOptions(combos)}</datalist>
+          <label>Combo Premium<input id="teamPremiumCombo" list="codex-combos-list" value="${escapeHtml(premiumCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
+          <label>Combo Free<input id="teamFreeCombo" list="codex-combos-list" value="${escapeHtml(freeCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
+          <label>Combo Test<input id="teamTestCombo" list="codex-combos-list" value="${escapeHtml(testCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
           ${editing ? "" : `<label style="grid-column: 1 / -1;">API key bộ phận (nếu đang dùng legacy key)<input id="teamApiKey" type="password" autocomplete="new-password" placeholder="Bắt buộc khi LTN_LEGACY_TEAM_KEYS_ENABLED=true" /></label>`}
         </div>
         <div class="actions" style="margin-top: 24px; justify-content: flex-end;">

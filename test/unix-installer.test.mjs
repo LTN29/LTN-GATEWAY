@@ -129,7 +129,7 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /spreadsheet-audit\.py/);
   assert.match(script, /Browser va cac chuc nang khac van dung duoc/);
   assert.match(script, /\[mcp_servers\.simi_browser\]/);
-  assert.match(script, /tool_timeout_sec = 90/);
+  assert.match(script, /tool_timeout_sec = 600/);
   assert.match(script, /Browser MCP config:/);
   assert.match(script, /Browser MCP runtime:/);
   assert.match(script, /rm -rf -- "\$\{skill_dir\}"/);
@@ -142,6 +142,11 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /CONFIG_CHANGED/);
   assert.match(script, /Cau hinh khong doi/);
   assert.match(script, /ltn-chrome-debug/);
+  assert.match(script, /install_linux_browser_autostart\(\)/);
+  assert.match(script, /simi-browser\.desktop/);
+  assert.match(script, /X-GNOME-Autostart-enabled=true/);
+  assert.match(script, /install_browser_bridge\n  install_linux_browser_autostart\n  install_local_tools/);
+  assert.match(script, /SIMI Browser autostart: da bat/);
   assert.match(script, /page_client_path="\$\{CODEX_HOME\}\/browser-page\.mjs"/);
   assert.match(script, /exec .*page_client_path/);
   assert.doesNotMatch(script, /\bsk-[A-Za-z0-9_-]{12,}\b/);

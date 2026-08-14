@@ -7,6 +7,16 @@ description: Cổng năng lực AI Simi cho trò chuyện, sinh mã, tạo ảnh
 
 Local/remote AI gateway exposing OpenAI-compatible REST. One key, many providers, auto-fallback.
 
+## User-facing tool use
+
+For ordinary users, show a short natural-language progress update and then the
+result. Call only tools that are actually exposed in the active session. Never
+invent a tool such as `ReadSpreadsheet`, and never print tool/function-call
+syntax, XML such as `<tool_call>`, JSON argument payloads, API snippets, or
+terminal commands as though they are an action being performed. If no callable
+tool can access the requested file or service, say that plainly and provide the
+next user action.
+
 The SIMI-managed installation has network access through the authenticated
 Gateway. Prefer the generated `ltn-9router` command so the API key and client
 ID are resolved by the installer without printing them:

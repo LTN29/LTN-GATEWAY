@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -6,6 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const port = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
 const profile = process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile");
+const logPath = process.env.LTN_CHROME_DEBUG_LOG_PATH || join(codexHome, "logs", "simi-browser.log");
 const url = String(process.argv[2] || "").trim();
 
 function findChrome() {
@@ -13,14 +14,21 @@ function findChrome() {
     ? [
         join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
         join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
-        join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe")
+        join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
+        join(process.env.PROGRAMFILES || "", "Microsoft", "Edge", "Application", "msedge.exe"),
+        join(process.env["PROGRAMFILES(X86)"] || "", "Microsoft", "Edge", "Application", "msedge.exe"),
+        join(process.env.LOCALAPPDATA || "", "Microsoft", "Edge", "Application", "msedge.exe"),
+        join(process.env.LOCALAPPDATA || "", "Chromium", "Application", "chrome.exe")
       ]
     : process.platform === "darwin"
       ? [
           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          join(homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+          "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium",
+          join(homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+          join(homedir(), "Applications/Chromium.app/Contents/MacOS/Chromium")
         ]
-      : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+      : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "microsoft-edge-stable"];
 
   for (const candidate of candidates) {
     if (candidate && (candidate.includes("\\") || candidate.includes("/") ? existsSync(candidate) : spawnSync(candidate, ["--version"], { stdio: "ignore" }).status === 0)) {
@@ -33,17 +41,30 @@ function findChrome() {
 const chrome = process.env.LTN_CHROME_BIN || findChrome();
 const args = [
   `--remote-debugging-port=${port}`,
+  "--remote-debugging-address=127.0.0.1",
   `--user-data-dir=${profile}`,
   "--no-first-run",
-  "--no-default-browser-check"
+  "--no-default-browser-check",
+  "--disable-dev-shm-usage"
 ];
+if (process.platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0) {
+  args.push("--no-sandbox");
+}
 if (url) args.push(url);
 
+mkdirSync(join(codexHome, "logs"), { recursive: true, mode: 0o700 });
+const logFd = openSync(logPath, "a", 0o600);
 const child = spawn(chrome, args, {
   detached: true,
   windowsHide: true,
-  stdio: "ignore",
+  stdio: ["ignore", "ignore", logFd],
   env: process.env
+});
+closeSync(logFd);
+let chromeExit = "";
+child.once("error", (error) => { chromeExit = error.message || String(error); });
+child.once("exit", (code, signal) => {
+  chromeExit = `Chrome exited${code === null ? "" : ` with code ${code}`}${signal ? ` (${signal})` : ""}.`;
 });
 
 async function waitForCdp() {
@@ -77,6 +98,6 @@ try {
   ].join("\n") + "\n");
 } catch (error) {
   child.kill();
-  process.stderr.write(`ltn-chrome-debug: ${error?.message || String(error)}\n`);
+  process.stderr.write(`ltn-chrome-debug: ${error?.message || String(error)}. Startup log: ${logPath}\n`);
   process.exitCode = 1;
 }

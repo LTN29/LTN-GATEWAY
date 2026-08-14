@@ -627,7 +627,7 @@ refresh_interval_ms = 300000
 command = "${escaped_node}"
 args = ["${escaped_browser_mcp}"]
 startup_timeout_sec = 20
-tool_timeout_sec = 90
+tool_timeout_sec = 600
 # END LTN CODEX MANAGED TABLES
 EOF
     cat "${preserved_tables}"
@@ -850,6 +850,41 @@ EOF
   echo "Da cai browser MCP tu dong: ${browser_mcp_path}"
   echo "  Tu dong mo profile Chrome khi skill simi-trinh-duyet duoc goi"
   echo "  User chi can dang nhap mot lan trong cua so Chrome moi"
+}
+
+install_linux_browser_autostart() {
+  local autostart_dir desktop_path desktop_tmp escaped_exec
+  [ "${OS_NAME}" = "linux" ] || return 0
+
+  autostart_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart"
+  desktop_path="${autostart_dir}/simi-browser.desktop"
+  desktop_tmp="${desktop_path}.$$.$(date +%s).tmp"
+  mkdir -p "${autostart_dir}"
+  chmod 700 "${autostart_dir}" 2>/dev/null || true
+
+  escaped_exec="$(printf '%s' "${BIN_DIR}/ltn-chrome-debug" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g')"
+  cat > "${desktop_tmp}" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SIMI Browser
+Comment=Start the persistent SIMI Chrome profile for Codex
+Exec="${escaped_exec}"
+Terminal=false
+Hidden=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=5
+EOF
+  chmod 600 "${desktop_tmp}"
+  mv "${desktop_tmp}" "${desktop_path}"
+  chmod 600 "${desktop_path}"
+  echo "Da bat tu dong mo SIMI Browser khi dang nhap Linux: ${desktop_path}"
+
+  # Make Repair effective immediately in an active desktop session. The
+  # autostart entry remains the durable path for subsequent logins.
+  if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    "${BIN_DIR}/ltn-chrome-debug" >/dev/null 2>&1 &
+  fi
 }
 
 runtime_node_major() {
@@ -1148,6 +1183,7 @@ install_or_repair() {
   echo "[7/7] Cai full skill 9Router..."
   install_managed_9router_skills
   install_browser_bridge
+  install_linux_browser_autostart
   install_local_tools
   verify_codex_managed_runtime_config
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
@@ -1180,7 +1216,7 @@ install_or_repair() {
 }
 
 status() {
-  local client_id redacted skill_name skill_count mcp_json
+  local client_id redacted skill_name skill_count mcp_json linux_autostart_path
   ensure_dirs
   echo "OS: ${OS_NAME}"
   detect_arch
@@ -1245,6 +1281,10 @@ status() {
     echo "Python: chua co"
   fi
   [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ] && echo "PDF runtime: da tao" || echo "PDF runtime: chua tao"
+  if [ "${OS_NAME}" = "linux" ]; then
+    linux_autostart_path="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart/simi-browser.desktop"
+    [ -f "${linux_autostart_path}" ] && echo "SIMI Browser autostart: da bat" || echo "SIMI Browser autostart: chua bat - chay Repair"
+  fi
   if [ -n "${CODEX_CMD_PATH}" ]; then
     if mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser --json 2>/dev/null)" ||
        mcp_json="$("${CODEX_CMD_PATH}" mcp get simi_browser 2>/dev/null)"; then
@@ -1267,7 +1307,7 @@ status() {
 }
 
 uninstall_ltn() {
-  local account skill_name skill_dir
+  local account skill_name skill_dir linux_autostart_path
   account="$(id -un)"
   remove_managed_config
   rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs" "${CODEX_HOME}/browser-mcp.mjs"
@@ -1275,6 +1315,10 @@ uninstall_ltn() {
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
   rm -rf "${CODEX_HOME}/browser-extension"
   rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page" "${BIN_DIR}/ltn-chrome-debug"
+  if [ "${OS_NAME}" = "linux" ]; then
+    linux_autostart_path="${XDG_CONFIG_HOME:-${HOME}/.config}/autostart/simi-browser.desktop"
+    rm -f "${linux_autostart_path}"
+  fi
   for skill_name in ${MANAGED_SKILL_NAMES}; do
     skill_dir="${CODEX_HOME}/skills/${skill_name}"
     rm -f "${skill_dir}/SKILL.md"

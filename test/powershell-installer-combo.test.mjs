@@ -277,7 +277,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
   );
   assert.match(output.config, /\[mcp_servers\.simi_browser\]/);
   assert.match(output.config, /args = \[".*browser-mcp\.mjs"\]/);
-  assert.match(output.config, /tool_timeout_sec = 90/);
+  assert.match(output.config, /tool_timeout_sec = 600/);
   assert.doesNotMatch(output.config, /combo\/SIMI-AI/);
   assert.doesNotMatch(
     `${output.result.stdout}\n${output.result.stderr}`,

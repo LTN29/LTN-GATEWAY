@@ -1141,7 +1141,7 @@ env_http_headers = { "X-LTN-Client-ID" = "LTN_CLIENT_ID" }
 command = "$escapedNodeCommand"
 args = ["$escapedBrowserMcpPath"]
 startup_timeout_sec = 20
-tool_timeout_sec = 90
+tool_timeout_sec = 600
 # END LTN CODEX MANAGED TABLES
 "@
 

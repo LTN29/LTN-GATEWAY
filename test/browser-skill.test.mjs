@@ -9,6 +9,11 @@ test("browser skill is MCP-only and cannot fall back to slow terminal commands",
   );
 
   assert.match(skill, /simi_browser\.browser_read_pages/);
+  assert.match(skill, /simi_browser\.browser_read_local_workbook/);
+  assert.match(skill, /simi_browser\.browser_read_candidate_cvs/);
+  assert.match(skill, /154 unique CV links must report 154 attempted links/);
+  assert.match(skill, /Downloaded candidate workbook and CV assessment/);
+  assert.match(skill, /at most eight without modifying the workbook/);
   assert.match(skill, /MCP-only workflow/);
   assert.match(skill, /Never run Terminal commands/);
   assert.match(skill, /option 2 \(Repair\)/);
