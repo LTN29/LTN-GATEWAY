@@ -1004,7 +1004,7 @@ export function createGatewayServer() {
         res,
         401,
         openAiError(
-          "API key ch?a ???c ??ng k?",
+          "API key chưa được đăng ký",
           "authentication_error"
         )
       );
@@ -1015,7 +1015,7 @@ export function createGatewayServer() {
       sendJson(
         res,
         403,
-        openAiError("Principal ?? b? v? hi?u h?a", "permission_error")
+        openAiError("Principal đã bị vô hiệu hóa", "permission_error")
       );
       return;
     }
@@ -1024,7 +1024,7 @@ export function createGatewayServer() {
       sendJson(
         res,
         403,
-        openAiError("Team ?? b? v? hi?u h?a", "permission_error")
+        openAiError("Team đã bị vô hiệu hóa", "permission_error")
       );
       return;
     }

@@ -1,6 +1,14 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+try {
+  [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {
+  # Ignore if host environment does not support changing console encoding
+}
+
 $installerUri = [Uri]"https://ai.simi.vn/install/codex-full.ps1"
 if ($installerUri.Scheme -ne "https") {
   throw "Codex installer chỉ được tải qua HTTPS."

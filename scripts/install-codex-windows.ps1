@@ -11,6 +11,14 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+try {
+  [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch {
+  # Ignore if host environment does not support changing console encoding
+}
+
 function Get-ConfiguredValue {
   param([string]$Name, [string]$Fallback)
 
