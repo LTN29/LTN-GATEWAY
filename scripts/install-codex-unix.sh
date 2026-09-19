@@ -5,6 +5,12 @@ GATEWAY_BASE_URL="${LTN_GATEWAY_BASE_URL:-https://ai.simi.vn/v1}"
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
 CONFIG_PATH="${CODEX_HOME}/config.toml"
 BIN_DIR="${CODEX_HOME}/bin"
+LTN_RUNTIME_DIR="${CODEX_HOME}/runtime"
+LTN_NODE_RUNTIME_DIR="${LTN_RUNTIME_DIR}/node"
+LTN_UV_RUNTIME_DIR="${LTN_RUNTIME_DIR}/uv"
+LTN_PYTHON_RUNTIME_DIR="${LTN_RUNTIME_DIR}/python"
+LTN_PYTHON_MANAGED_DIR="${LTN_PYTHON_RUNTIME_DIR}/managed"
+LTN_PYTHON_BIN_DIR="${LTN_PYTHON_RUNTIME_DIR}/bin"
 CLIENT_ID_PATH="${CODEX_HOME}/ltn-client-id"
 CREDENTIAL_DIR="${CODEX_HOME}/credentials"
 LINUX_KEY_PATH="${CREDENTIAL_DIR}/ltn-team-key"
@@ -16,7 +22,6 @@ OS_NAME=""
 AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
-HOMEBREW_INSTALLER_FILE=""
 MODE="${1:-}"
 CODEX_CMD_PATH=""
 CODEX_INSTALL_KIND="missing"
@@ -25,15 +30,11 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-HOMEBREW_CMD=""
 MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-cai-dat"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
     rm -f "${REMOTE_CONFIG_FILE}"
-  fi
-  if [ -n "${HOMEBREW_INSTALLER_FILE}" ] && [ -f "${HOMEBREW_INSTALLER_FILE}" ]; then
-    rm -f "${HOMEBREW_INSTALLER_FILE}"
   fi
 }
 trap cleanup EXIT HUP INT TERM
@@ -828,21 +829,21 @@ cat > "${BIN_DIR}/ltn-browser-bridge" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export LTN_BROWSER_BRIDGE_TOKEN="\${LTN_BROWSER_BRIDGE_TOKEN:-\$(cat "${BRIDGE_TOKEN_PATH}")}"
-node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+node_bin="\${LTN_BROWSER_NODE_PATH:-${RUNTIME_NODE_CMD:-node}}"
 exec "\${node_bin}" "${bridge_path}"
 EOF
   chmod 700 "${BIN_DIR}/ltn-browser-bridge"
 cat > "${BIN_DIR}/ltn-browser-page" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+node_bin="\${LTN_BROWSER_NODE_PATH:-${RUNTIME_NODE_CMD:-node}}"
 exec "\${node_bin}" "${page_client_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-browser-page"
 cat > "${BIN_DIR}/ltn-chrome-debug" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-node_bin="\${LTN_BROWSER_NODE_PATH:-node}"
+node_bin="\${LTN_BROWSER_NODE_PATH:-${RUNTIME_NODE_CMD:-node}}"
 exec "\${node_bin}" "${chrome_debug_path}" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-chrome-debug"
@@ -893,61 +894,146 @@ runtime_node_major() {
   printf '%s' "${version#v}" | cut -d. -f1
 }
 
-resolve_homebrew_command() {
-  local candidate
-  HOMEBREW_CMD=""
-  for candidate in \
-    "$(command -v brew 2>/dev/null || true)" \
-    /opt/homebrew/bin/brew \
-    /usr/local/bin/brew; do
-    if [ -n "${candidate}" ] && [ -x "${candidate}" ]; then
-      HOMEBREW_CMD="${candidate}"
-      return 0
-    fi
-  done
-  return 1
-}
+install_macos_node_runtime() {
+  local node_arch node_line dist_base sums_file filename expected actual archive staging extracted
+  node_line="${LTN_NODE_MAJOR:-22}"
 
-activate_homebrew() {
-  local shellenv_line profile_path
-  [ -n "${HOMEBREW_CMD}" ] || return 1
-  eval "$("${HOMEBREW_CMD}" shellenv)"
+  case "$(uname -m)" in
+    arm64|aarch64) node_arch="arm64" ;;
+    x86_64|amd64) node_arch="x64" ;;
+    *) die_code 12 "Kien truc macOS khong ho tro Node runtime: $(uname -m)" ;;
+  esac
 
-  profile_path="${HOME}/.zprofile"
-  shellenv_line="eval \"\$(${HOMEBREW_CMD} shellenv)\""
-  if [ ! -f "${profile_path}" ] || ! grep -Fqx "${shellenv_line}" "${profile_path}"; then
-    printf '\n%s\n' "${shellenv_line}" >> "${profile_path}"
-  fi
-}
-
-install_homebrew() {
-  local installer_url
-  if resolve_homebrew_command; then
-    activate_homebrew
+  if [ -x "${LTN_NODE_RUNTIME_DIR}/bin/node" ] && \
+     [ "$(runtime_node_major "${LTN_NODE_RUNTIME_DIR}/bin/node")" -ge 20 ]; then
     return 0
   fi
 
-  [ -r /dev/tty ] || die_code 12 "Can terminal tuong tac de cai Homebrew va Command Line Tools tren macOS."
-  installer_url="https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
-  HOMEBREW_INSTALLER_FILE="$(mktemp "${TMPDIR:-/tmp}/ltn-homebrew-install.XXXXXX")"
-  echo "MacOS chua co Homebrew. Dang mo bo cai chinh thuc; co the can mat khau quan tri va xac nhan Command Line Tools..."
-  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
-    --output "${HOMEBREW_INSTALLER_FILE}" "${installer_url}"; then
-    rm -f "${HOMEBREW_INSTALLER_FILE}"
-    HOMEBREW_INSTALLER_FILE=""
-    die_code 12 "Khong tai duoc bo cai Homebrew chinh thuc. Kiem tra mang roi chay lai."
-  fi
-  chmod 700 "${HOMEBREW_INSTALLER_FILE}"
-  if ! /bin/bash "${HOMEBREW_INSTALLER_FILE}" < /dev/tty; then
-    rm -f "${HOMEBREW_INSTALLER_FILE}"
-    HOMEBREW_INSTALLER_FILE=""
-    die_code 12 "Homebrew/Command Line Tools chua cai xong. Hoan tat hop thoai macOS roi chay Repair."
-  fi
-  rm -f "${HOMEBREW_INSTALLER_FILE}"
-  HOMEBREW_INSTALLER_FILE=""
+  command -v shasum >/dev/null 2>&1 || die_code 12 "macOS thieu shasum; khong the xac minh Node runtime."
+  command -v tar >/dev/null 2>&1 || die_code 12 "macOS thieu tar; khong the giai nen Node runtime."
 
-  resolve_homebrew_command || die_code 12 "Homebrew da chay bo cai nhung chua tim thay lenh brew. Mo Terminal moi roi chay Repair."
-  activate_homebrew
+  dist_base="https://nodejs.org/dist/latest-v${node_line}.x"
+  sums_file="$(mktemp "${TMPDIR:-/tmp}/ltn-node-shasums.XXXXXX")"
+  archive="$(mktemp "${TMPDIR:-/tmp}/ltn-node.XXXXXX")"
+  staging="${LTN_NODE_RUNTIME_DIR}.new.$$"
+
+  echo "Dang cai Node.js ${node_line} LTS runtime rieng cho LTN (khong dung Homebrew)..."
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "${sums_file}" "${dist_base}/SHASUMS256.txt"; then
+    rm -f "${sums_file}" "${archive}"
+    die_code 12 "Khong tai duoc danh sach checksum Node.js. Kiem tra mang roi chay Repair."
+  fi
+
+  filename="$(awk -v arch="${node_arch}" '$2 ~ ("^node-v[0-9.]+-darwin-" arch "\\.tar\\.gz$") {print $2; exit}' "${sums_file}")"
+  [ -n "${filename}" ] || {
+    rm -f "${sums_file}" "${archive}"
+    die_code 12 "Node.js ${node_line} khong co binary macOS ${node_arch} phu hop."
+  }
+  expected="$(awk -v file="${filename}" '$2 == file {print $1; exit}' "${sums_file}")"
+
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "${archive}" "${dist_base}/${filename}"; then
+    rm -f "${sums_file}" "${archive}"
+    die_code 12 "Khong tai duoc Node.js runtime. Kiem tra mang roi chay Repair."
+  fi
+  actual="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
+    rm -f "${sums_file}" "${archive}"
+    die_code 12 "Checksum Node.js khong hop le; da huy cai dat runtime."
+  fi
+
+  rm -rf "${staging}"
+  mkdir -p "${staging}"
+  tar -xzf "${archive}" -C "${staging}"
+  extracted="${staging}/${filename%.tar.gz}"
+  [ -x "${extracted}/bin/node" ] || {
+    rm -rf "${staging}"
+    rm -f "${sums_file}" "${archive}"
+    die_code 12 "Node.js runtime giai nen khong hop le."
+  }
+
+  mkdir -p "${LTN_RUNTIME_DIR}"
+  rm -rf "${LTN_NODE_RUNTIME_DIR}"
+  mv "${extracted}" "${LTN_NODE_RUNTIME_DIR}"
+  rm -rf "${staging}"
+  rm -f "${sums_file}" "${archive}"
+  chmod -R u+rwX,go-rwx "${LTN_NODE_RUNTIME_DIR}" 2>/dev/null || true
+  echo "Node.js LTN runtime: $("${LTN_NODE_RUNTIME_DIR}/bin/node" --version)"
+}
+
+install_macos_uv_runtime() {
+  local installer_file
+  if [ -x "${LTN_UV_RUNTIME_DIR}/uv" ] && "${LTN_UV_RUNTIME_DIR}/uv" --version >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -x "${LTN_UV_RUNTIME_DIR}/bin/uv" ] && "${LTN_UV_RUNTIME_DIR}/bin/uv" --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  mkdir -p "${LTN_UV_RUNTIME_DIR}"
+  installer_file="$(mktemp "${TMPDIR:-/tmp}/ltn-uv-install.XXXXXX")"
+  echo "Dang cai uv runtime rieng cho LTN..."
+  if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
+    --output "${installer_file}" "https://astral.sh/uv/install.sh"; then
+    rm -f "${installer_file}"
+    die_code 12 "Khong tai duoc uv installer. Kiem tra mang roi chay Repair."
+  fi
+  chmod 700 "${installer_file}"
+  if ! env UV_UNMANAGED_INSTALL="${LTN_UV_RUNTIME_DIR}" UV_NO_MODIFY_PATH=1 sh "${installer_file}"; then
+    rm -f "${installer_file}"
+    die_code 12 "Khong cai duoc uv runtime cho LTN."
+  fi
+  rm -f "${installer_file}"
+
+  if [ ! -x "${LTN_UV_RUNTIME_DIR}/uv" ] && [ ! -x "${LTN_UV_RUNTIME_DIR}/bin/uv" ]; then
+    die_code 12 "uv installer hoan tat nhung khong tim thay uv binary."
+  fi
+}
+
+resolve_ltn_uv_command() {
+  if [ -x "${LTN_UV_RUNTIME_DIR}/uv" ]; then
+    printf '%s' "${LTN_UV_RUNTIME_DIR}/uv"
+    return 0
+  fi
+  if [ -x "${LTN_UV_RUNTIME_DIR}/bin/uv" ]; then
+    printf '%s' "${LTN_UV_RUNTIME_DIR}/bin/uv"
+    return 0
+  fi
+  return 1
+}
+
+install_macos_python_runtime() {
+  local uv_bin managed_python python_link
+  python_link="${LTN_PYTHON_BIN_DIR}/python3"
+  if [ -x "${python_link}" ] && \
+     "${python_link}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  install_macos_uv_runtime
+  uv_bin="$(resolve_ltn_uv_command)" || die_code 12 "Khong tim thay uv runtime sau khi cai."
+  mkdir -p "${LTN_PYTHON_MANAGED_DIR}" "${LTN_PYTHON_BIN_DIR}"
+
+  echo "Dang cai Python 3.12 managed runtime cho Skills (PDF/Excel)..."
+  if ! UV_PYTHON_INSTALL_DIR="${LTN_PYTHON_MANAGED_DIR}" \
+       "${uv_bin}" python install 3.12 --install-dir "${LTN_PYTHON_MANAGED_DIR}" --no-progress; then
+    die_code 12 "Khong cai duoc Python 3.12 managed runtime cho LTN Skills."
+  fi
+  managed_python="$(UV_PYTHON_INSTALL_DIR="${LTN_PYTHON_MANAGED_DIR}" \
+    "${uv_bin}" python find --managed-python --no-progress 3.12 2>/dev/null | head -n 1 || true)"
+  [ -n "${managed_python}" ] && [ -x "${managed_python}" ] || \
+    die_code 12 "Python managed runtime da tai nhung khong tim thay interpreter."
+
+  rm -f "${python_link}" "${LTN_PYTHON_BIN_DIR}/python"
+  ln -s "${managed_python}" "${python_link}"
+  ln -s "${managed_python}" "${LTN_PYTHON_BIN_DIR}/python"
+  chmod 700 "${LTN_PYTHON_BIN_DIR}" 2>/dev/null || true
+  echo "Python LTN runtime: $("${python_link}" --version 2>&1)"
+}
+
+install_macos_managed_runtimes() {
+  install_macos_node_runtime
+  install_macos_python_runtime
 }
 
 run_privileged() {
@@ -960,58 +1046,11 @@ run_privileged() {
   fi
 }
 
-brew_install_bottle_only() {
-  local formula="$1"
-  [ -n "${HOMEBREW_CMD}" ] || return 1
-
-  # Installer may run on office Macs where a source build can take hours
-  # (for example Homebrew pulling LLVM/toolchains). LTN never needs that.
-  # Require a prebuilt Homebrew bottle and fail fast if this macOS/arch has
-  # no compatible bottle instead of silently compiling from source.
-  HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
-    "${HOMEBREW_CMD}" install --force-bottle "${formula}"
-}
-
 install_runtime_packages() {
-  local node_major=0
   [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" = "1" ] && return 1
   if [ "${OS_NAME}" = "macos" ]; then
-    install_homebrew
-    resolve_runtime_commands
-
-    if [ -n "${RUNTIME_NODE_CMD}" ]; then
-      node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
-      case "${node_major}" in
-        ''|*[!0-9]*) node_major=0 ;;
-      esac
-    fi
-
-    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
-      echo "Dang cai Node.js bang Homebrew bottle (LTN se KHONG build LLVM/toolchain tu source)..."
-      if ! brew_install_bottle_only node; then
-        echo "Khong co Homebrew bottle Node.js phu hop cho macOS/CPU hien tai." >&2
-        echo "LTN da dung som de tranh compile LLVM/Rust/GCC hang gio." >&2
-        echo "Hay cap nhat macOS + Xcode Command Line Tools, sau do chay Repair lai." >&2
-        return 1
-      fi
-    fi
-
-    # Python is only used by optional local PDF/spreadsheet helpers. It is
-    # deliberately NOT a hard dependency of the LTN Gateway/browser runtime.
-    # Admins that want the document runtime provisioned automatically may opt
-    # in with LTN_INSTALL_OPTIONAL_PYTHON=1; even then we only accept a bottle.
-    resolve_runtime_commands
-    if [ -z "${RUNTIME_PYTHON_CMD}" ]; then
-      if [ "${LTN_INSTALL_OPTIONAL_PYTHON:-0}" = "1" ]; then
-        echo "Dang cai Python tuy chon bang Homebrew bottle..."
-        if ! brew_install_bottle_only python; then
-          echo "Canh bao: khong cai duoc Python bottle; bo qua PDF/spreadsheet runtime. Gateway van tiep tuc." >&2
-        fi
-      else
-        echo "Python 3 chua co: bo qua cai tu dong tren macOS (chi anh huong PDF/spreadsheet local tools)."
-      fi
-    fi
-    return 0
+    install_macos_managed_runtimes
+    return $?
   fi
 
   if [ "${OS_NAME}" != "linux" ]; then
@@ -1048,6 +1087,7 @@ resolve_runtime_commands() {
 
   for candidate in \
     "${LTN_NODE_PATH:-}" \
+    "${LTN_NODE_RUNTIME_DIR}/bin/node" \
     /opt/homebrew/bin/node \
     /usr/local/bin/node \
     "$(command -v node 2>/dev/null || true)"; do
@@ -1059,6 +1099,7 @@ resolve_runtime_commands() {
 
   for python_candidate in \
     "${LTN_PYTHON_PATH:-}" \
+    "${LTN_PYTHON_BIN_DIR}/python3" \
     /opt/homebrew/bin/python3 \
     /usr/local/bin/python3 \
     "$(command -v python3 2>/dev/null || true)" \
@@ -1076,38 +1117,23 @@ resolve_runtime_commands() {
 }
 
 ensure_runtime_dependencies() {
-  local node_major runtime_dir venv_python marker needs_runtime_install
+  local node_major runtime_dir venv_python marker venv_base_prefix
   [ -f "${CODEX_HOME}/browser-mcp.mjs" ] && echo "Browser MCP runtime: da cai" || echo "Browser MCP runtime: chua co - chay Repair"
   resolve_runtime_commands
+  if [ "${OS_NAME}" = "macos" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
+    echo "Kiem tra LTN managed runtime cho macOS..."
+    install_macos_managed_runtimes
+    resolve_runtime_commands
+  fi
   node_major=0
   if [ -n "${RUNTIME_NODE_CMD}" ]; then
     node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
-    case "${node_major}" in
-      ''|*[!0-9]*) node_major=0 ;;
-    esac
   fi
-
-  needs_runtime_install=0
-  if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
-    needs_runtime_install=1
-  elif [ "${OS_NAME}" = "linux" ] && [ -z "${RUNTIME_PYTHON_CMD}" ]; then
-    # Keep the existing Linux behavior: package managers can install the
-    # document runtime cheaply without triggering a macOS toolchain build.
-    needs_runtime_install=1
-  elif [ "${OS_NAME}" = "macos" ] && [ -z "${RUNTIME_PYTHON_CMD}" ] && \
-       [ "${LTN_INSTALL_OPTIONAL_PYTHON:-0}" = "1" ]; then
-    needs_runtime_install=1
-  fi
-
-  if [ "${needs_runtime_install}" = "1" ]; then
-    if [ "${OS_NAME}" = "macos" ]; then
-      echo "Kiem tra Node.js 20+ (Python chi la tuy chon cho PDF/spreadsheet)..."
-    else
-      echo "Kiem tra Node.js 20+ va Python 3..."
-    fi
+  if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+    echo "Kiem tra Node.js 20+ va Python 3..."
     if [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ] && ! install_runtime_packages; then
       if [ "${OS_NAME}" = "macos" ]; then
-        die_code 12 "Khong tu dong cai duoc Node.js 20+ bang Homebrew bottle. Cap nhat macOS/Xcode Command Line Tools roi chay Repair."
+        die_code 12 "Khong tu dong cai duoc Node.js/Python runtime rieng cho LTN tren macOS. Kiem tra mang roi chay Repair."
       fi
       echo "Canh bao: khong tu dong cai duoc Node.js/Python. Hay cai thu cong roi chay Repair." >&2
     fi
@@ -1118,12 +1144,9 @@ ensure_runtime_dependencies() {
     node_major=0
     if [ -n "${RUNTIME_NODE_CMD}" ]; then
       node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
-      case "${node_major}" in
-        ''|*[!0-9]*) node_major=0 ;;
-      esac
     fi
-    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
-      die_code 12 "Node.js 20+ chua san sang sau khi cai. Mo Terminal moi roi chay Repair."
+    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+      die_code 12 "Node.js 20+ hoac Python 3 chua san sang sau khi cai LTN runtime. Chay Repair hoac lien he IT."
     fi
   fi
 
@@ -1138,30 +1161,65 @@ ensure_runtime_dependencies() {
   fi
 
   if [ -z "${RUNTIME_PYTHON_CMD}" ]; then
-    echo "Canh bao: chua co Python 3; phan tich PDF se bao loi cho den khi cai Python." >&2
+    if [ "${OS_NAME}" = "macos" ]; then
+      die_code 12 "Khong co Python runtime cho LTN Skills sau khi cai dat."
+    fi
+    echo "Canh bao: chua co Python 3; phan tich PDF/Excel se bao loi cho den khi cai Python." >&2
     return 0
   fi
 
   runtime_dir="${CODEX_HOME}/pdf-runtime"
   venv_python="${runtime_dir}/bin/python"
+  if [ "${OS_NAME}" = "macos" ] && [ -x "${venv_python}" ]; then
+    venv_base_prefix="$("${venv_python}" -c 'import sys; print(sys.base_prefix)' 2>/dev/null || true)"
+    case "${venv_base_prefix}" in
+      "${LTN_PYTHON_MANAGED_DIR}"/*) ;;
+      *)
+        echo "Dang chuyen Python Skill runtime cu sang LTN managed runtime..."
+        rm -rf "${runtime_dir}"
+        ;;
+    esac
+  fi
   mkdir -p "${runtime_dir}"
   if [ ! -x "${venv_python}" ]; then
-    if ! "${RUNTIME_PYTHON_CMD}" -m venv "${runtime_dir}" >/dev/null 2>&1; then
-      echo "Canh bao: khong tao duoc Python venv cho PDF." >&2
+    if [ "${OS_NAME}" = "macos" ]; then
+      local uv_bin
+      uv_bin="$(resolve_ltn_uv_command 2>/dev/null || true)"
+      [ -n "${uv_bin}" ] || die_code 12 "Khong co uv runtime de tao moi truong Python cho Skills."
+      if ! UV_PYTHON_INSTALL_DIR="${LTN_PYTHON_MANAGED_DIR}" \
+           "${uv_bin}" venv --python "${RUNTIME_PYTHON_CMD}" --no-progress "${runtime_dir}"; then
+        die_code 12 "Khong tao duoc Python venv cho LTN Skills."
+      fi
+    elif ! "${RUNTIME_PYTHON_CMD}" -m venv "${runtime_dir}" >/dev/null 2>&1; then
+      echo "Canh bao: khong tao duoc Python venv cho PDF/Excel." >&2
       return 0
     fi
   fi
-  marker="${runtime_dir}/.ltn-pdf-deps-v3"
+  marker="${runtime_dir}/.ltn-document-deps-v4"
   if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
-    echo "Dang cai thu vien tai lieu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
-    if "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
-      printf 'pypdf\npdfplumber\npymupdf\nopenpyxl\ntomli\n' > "${marker}"
-      chmod 600 "${marker}"
-    else
-      echo "Canh bao: khong tai duoc thu vien PDF. Kiem tra mang roi chay Repair." >&2
+    echo "Dang cai thu vien Skills tai lieu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
+    if [ "${OS_NAME}" = "macos" ]; then
+      local uv_bin
+      uv_bin="$(resolve_ltn_uv_command 2>/dev/null || true)"
+      [ -n "${uv_bin}" ] || die_code 12 "Khong co uv runtime de cai dependency LTN Skills."
+      if ! "${uv_bin}" pip install --python "${venv_python}" --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
+        die_code 12 "Khong tai duoc dependency PDF/Excel cho LTN Skills. Kiem tra mang roi chay Repair."
+      fi
+    elif ! "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
+      echo "Canh bao: khong tai duoc thu vien PDF/Excel. Kiem tra mang roi chay Repair." >&2
+      return 0
     fi
+    printf 'pypdf\npdfplumber\npymupdf\nopenpyxl\ntomli\n' > "${marker}"
+    chmod 600 "${marker}"
   fi
-  echo "Python PDF runtime: ${venv_python}"
+
+  if ! "${venv_python}" -c 'import pypdf, pdfplumber, pymupdf, openpyxl, tomli' >/dev/null 2>&1; then
+    if [ "${OS_NAME}" = "macos" ]; then
+      die_code 12 "LTN Skill runtime chua day du dependency PDF/Excel sau khi cai."
+    fi
+    echo "Canh bao: Python runtime thieu dependency PDF/Excel." >&2
+  fi
+  echo "Python Skill runtime: ${venv_python}"
 }
 
 install_local_tools() {
@@ -1198,7 +1256,7 @@ install_local_tools() {
   cat > "${BIN_DIR}/ltn-9router" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-node_bin="\${LTN_NODE_PATH:-\${LTN_BROWSER_NODE_PATH:-node}}"
+node_bin="\${LTN_NODE_PATH:-\${LTN_BROWSER_NODE_PATH:-${RUNTIME_NODE_CMD:-node}}}"
 exec "\${node_bin}" "${tools_dir}/9router-client.mjs" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-9router"
@@ -1381,7 +1439,7 @@ uninstall_ltn() {
   remove_managed_config
   rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs" "${CODEX_HOME}/browser-mcp.mjs"
   rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
-  rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime"
+  rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime" "${LTN_RUNTIME_DIR}"
   rm -rf "${CODEX_HOME}/browser-extension"
   rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page" "${BIN_DIR}/ltn-chrome-debug"
   if [ "${OS_NAME}" = "linux" ]; then
