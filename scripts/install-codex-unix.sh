@@ -960,12 +960,58 @@ run_privileged() {
   fi
 }
 
+brew_install_bottle_only() {
+  local formula="$1"
+  [ -n "${HOMEBREW_CMD}" ] || return 1
+
+  # Installer may run on office Macs where a source build can take hours
+  # (for example Homebrew pulling LLVM/toolchains). LTN never needs that.
+  # Require a prebuilt Homebrew bottle and fail fast if this macOS/arch has
+  # no compatible bottle instead of silently compiling from source.
+  HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
+    "${HOMEBREW_CMD}" install --force-bottle "${formula}"
+}
+
 install_runtime_packages() {
+  local node_major=0
   [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" = "1" ] && return 1
   if [ "${OS_NAME}" = "macos" ]; then
     install_homebrew
-    "${HOMEBREW_CMD}" install node python
-    return $?
+    resolve_runtime_commands
+
+    if [ -n "${RUNTIME_NODE_CMD}" ]; then
+      node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+      case "${node_major}" in
+        ''|*[!0-9]*) node_major=0 ;;
+      esac
+    fi
+
+    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
+      echo "Dang cai Node.js bang Homebrew bottle (LTN se KHONG build LLVM/toolchain tu source)..."
+      if ! brew_install_bottle_only node; then
+        echo "Khong co Homebrew bottle Node.js phu hop cho macOS/CPU hien tai." >&2
+        echo "LTN da dung som de tranh compile LLVM/Rust/GCC hang gio." >&2
+        echo "Hay cap nhat macOS + Xcode Command Line Tools, sau do chay Repair lai." >&2
+        return 1
+      fi
+    fi
+
+    # Python is only used by optional local PDF/spreadsheet helpers. It is
+    # deliberately NOT a hard dependency of the LTN Gateway/browser runtime.
+    # Admins that want the document runtime provisioned automatically may opt
+    # in with LTN_INSTALL_OPTIONAL_PYTHON=1; even then we only accept a bottle.
+    resolve_runtime_commands
+    if [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+      if [ "${LTN_INSTALL_OPTIONAL_PYTHON:-0}" = "1" ]; then
+        echo "Dang cai Python tuy chon bang Homebrew bottle..."
+        if ! brew_install_bottle_only python; then
+          echo "Canh bao: khong cai duoc Python bottle; bo qua PDF/spreadsheet runtime. Gateway van tiep tuc." >&2
+        fi
+      else
+        echo "Python 3 chua co: bo qua cai tu dong tren macOS (chi anh huong PDF/spreadsheet local tools)."
+      fi
+    fi
+    return 0
   fi
 
   if [ "${OS_NAME}" != "linux" ]; then
@@ -1030,18 +1076,38 @@ resolve_runtime_commands() {
 }
 
 ensure_runtime_dependencies() {
-  local node_major runtime_dir venv_python marker
+  local node_major runtime_dir venv_python marker needs_runtime_install
   [ -f "${CODEX_HOME}/browser-mcp.mjs" ] && echo "Browser MCP runtime: da cai" || echo "Browser MCP runtime: chua co - chay Repair"
   resolve_runtime_commands
   node_major=0
   if [ -n "${RUNTIME_NODE_CMD}" ]; then
     node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+    case "${node_major}" in
+      ''|*[!0-9]*) node_major=0 ;;
+    esac
   fi
-  if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
-    echo "Kiem tra Node.js 20+ va Python 3..."
+
+  needs_runtime_install=0
+  if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
+    needs_runtime_install=1
+  elif [ "${OS_NAME}" = "linux" ] && [ -z "${RUNTIME_PYTHON_CMD}" ]; then
+    # Keep the existing Linux behavior: package managers can install the
+    # document runtime cheaply without triggering a macOS toolchain build.
+    needs_runtime_install=1
+  elif [ "${OS_NAME}" = "macos" ] && [ -z "${RUNTIME_PYTHON_CMD}" ] && \
+       [ "${LTN_INSTALL_OPTIONAL_PYTHON:-0}" = "1" ]; then
+    needs_runtime_install=1
+  fi
+
+  if [ "${needs_runtime_install}" = "1" ]; then
+    if [ "${OS_NAME}" = "macos" ]; then
+      echo "Kiem tra Node.js 20+ (Python chi la tuy chon cho PDF/spreadsheet)..."
+    else
+      echo "Kiem tra Node.js 20+ va Python 3..."
+    fi
     if [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ] && ! install_runtime_packages; then
       if [ "${OS_NAME}" = "macos" ]; then
-        die_code 12 "Khong tu dong cai duoc Node.js/Python tren macOS. Kiem tra mang/quyen quan tri roi chay Repair."
+        die_code 12 "Khong tu dong cai duoc Node.js 20+ bang Homebrew bottle. Cap nhat macOS/Xcode Command Line Tools roi chay Repair."
       fi
       echo "Canh bao: khong tu dong cai duoc Node.js/Python. Hay cai thu cong roi chay Repair." >&2
     fi
@@ -1052,9 +1118,12 @@ ensure_runtime_dependencies() {
     node_major=0
     if [ -n "${RUNTIME_NODE_CMD}" ]; then
       node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+      case "${node_major}" in
+        ''|*[!0-9]*) node_major=0 ;;
+      esac
     fi
-    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ] || [ -z "${RUNTIME_PYTHON_CMD}" ]; then
-      die_code 12 "Node.js 20+ hoac Python 3 chua san sang sau khi cai. Mo Terminal moi roi chay Repair."
+    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
+      die_code 12 "Node.js 20+ chua san sang sau khi cai. Mo Terminal moi roi chay Repair."
     fi
   fi
 
