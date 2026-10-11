@@ -6,6 +6,13 @@ Không gọi tên Combo trong request nên không chạy fallback của Combo.
 
 ## Gán nhóm cho tài khoản
 
+Để tự áp dụng cho mọi tài khoản đang kế thừa, đặt
+`CODEX_MODEL_SELECTION=combo_members` trong `.env` server rồi restart Gateway.
+Gateway sử dụng Combo đã gán cho user/bộ phận hoặc Combo mặc định; không cần sửa
+từng tài khoản hay nạp lại key. Máy user chạy Update để nhận catalog và mở lại
+Codex. Lựa chọn `modelSelection` riêng của user/bộ phận ưu tiên hơn mặc định
+server, kể cả `combo` (Combo tự routing). Mặc định khi chưa đặt biến vẫn là `combo`.
+
 Trong Admin Console → chỉnh sửa nhân viên hoặc bộ phận:
 
 1. Chọn **Quyền chọn model → User chọn model trong Combo**.
@@ -28,7 +35,7 @@ Ví dụ phần `aiPolicy` của user trong `config/users.json` (không thay key
 }
 ```
 
-Không có `modelSelection`, hoặc đặt `combo`, sẽ giữ hành vi routing cũ.
+Không có `modelSelection` sẽ kế thừa mặc định server. Đặt `combo` sẽ giữ hành vi routing cũ.
 
 ## Nguồn danh sách và quyền
 

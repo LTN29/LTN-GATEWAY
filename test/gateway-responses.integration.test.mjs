@@ -535,6 +535,16 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     assert.equal(extractionCalls, 1);
     assert.match(await readFile(join(memoryDir, "SALES.md"), "utf8"), /confirmed durable workflow/);
+    // Local memory is written before the asynchronous SharePoint sync completes.
+    await waitFor(async () => {
+      try {
+        return (await readFile(join(syncDir, "teams", "SALES.md"), "utf8"))
+          .includes("confirmed durable workflow");
+      } catch (error) {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      }
+    });
     assert.match(await readFile(join(syncDir, "teams", "SALES.md"), "utf8"), /confirmed durable workflow/);
 
     const streamed = await fetch(`${baseUrl}/v1/responses`, {

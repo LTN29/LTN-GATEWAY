@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { membersOfCombos, memberSelectionEnabled, codexModelEntry } from "../src/combo-model-access.mjs";
-import { normalizeAiPolicy } from "../src/config.mjs";
+import { config, normalizeAiPolicy } from "../src/config.mjs";
 import { safePolicy } from "../src/admin/admin-validation.mjs";
 import { resolvePrincipalCodexPolicy } from "../src/codex-routing.mjs";
 
@@ -34,6 +34,29 @@ test("admin policy accepts member selection and rejects invalid choices", () => 
   assert.equal(normalizeAiPolicy(safePolicy(policy)).modelSelection, "combo_members");
   assert.throws(() => safePolicy({ modelSelection: "all" }), { statusCode: 400 });
   assert.throws(() => normalizeAiPolicy({ modelSelection: "all" }), /modelSelection/);
+});
+
+test("server default enables inherited member selection without editing every account", () => {
+  const previous = config.codexModelSelection;
+  try {
+    config.codexModelSelection = "combo_members";
+    const principal = {
+      principalType: "user",
+      aiPolicy: { mode: "premium_always" },
+      team: { aiPolicy: { premiumCombo: "SIMI-GEMINI" } }
+    };
+    assert.equal(memberSelectionEnabled(principal), true);
+    assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo_members");
+    assert.equal(resolvePrincipalCodexPolicy(principal).combos.premium, "SIMI-GEMINI");
+    principal.team.aiPolicy.modelSelection = "combo";
+    assert.equal(memberSelectionEnabled(principal), false);
+    assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo");
+    principal.aiPolicy.modelSelection = "combo_members";
+    assert.equal(memberSelectionEnabled(principal), true);
+    assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo_members");
+  } finally {
+    config.codexModelSelection = previous;
+  }
 });
 
 test("catalog does not invent reasoning levels or context capacity", () => {

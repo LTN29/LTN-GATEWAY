@@ -61,6 +61,13 @@ export const config = {
     process.env.CODEX_DEFAULT_POLICY || "limited_daily",
     "limited_daily"
   ),
+  codexModelSelection: (() => {
+    const value = process.env.CODEX_MODEL_SELECTION || "combo";
+    if (!["combo", "combo_members"].includes(value)) {
+      throw new Error("CODEX_MODEL_SELECTION không hợp lệ");
+    }
+    return value;
+  })(),
   codexDefaultPremiumLimit: number(
     process.env.CODEX_DEFAULT_PREMIUM_LIMIT || 3,
     3

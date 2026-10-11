@@ -80,7 +80,7 @@ export function resolveTeamCodexPolicy(team) {
 
   const policy = {
     mode,
-    modelSelection: raw.modelSelection || "combo",
+    modelSelection: raw.modelSelection ?? config.codexModelSelection,
     usageScope,
     premiumLimit,
     resetTimezone: config.codexUsageTimezone,
