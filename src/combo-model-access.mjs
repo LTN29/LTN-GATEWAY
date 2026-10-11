@@ -71,6 +71,19 @@ export async function assertComboModelAllowed(principal, model, requestId, combo
   }
 }
 
+function modelDisplayName(model) {
+  const explicit = typeof model.display_name === "string" ? model.display_name.trim() : "";
+  if (explicit && explicit !== model.id && !explicit.includes("/")) return explicit;
+  const name = String(model.id).split("/").at(-1);
+  const match = /^(gpt|claude-(?:opus|sonnet|haiku)|gemini)-(.+)$/i.exec(name);
+  if (!match) return name;
+  const family = match[1].toLowerCase() === "gpt" ? "GPT"
+    : match[1].split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+  const suffix = match[2].replace(/^(\d+)-(\d+)(?=-|$)/, "$1.$2")
+    .split("-").map((word) => /^\d/.test(word) ? word : word[0].toUpperCase() + word.slice(1)).join(" ");
+  return `${family} ${suffix}`;
+}
+
 export function codexModelEntry(model, priority = 0, principal = null) {
   // Known Claude 5.5 capabilities supplement upstream catalogs without metadata.
   const advertised = Array.isArray(model.supported_reasoning_levels) && model.supported_reasoning_levels.length
@@ -84,7 +97,7 @@ export function codexModelEntry(model, priority = 0, principal = null) {
   const preferred = model.default_reasoning_level || (isAdaptiveClaudeModel(model.id) ? "medium" : null);
   return {
     slug: model.id,
-    display_name: model.display_name || model.id,
+    display_name: modelDisplayName(model),
     description: model.description || "Model thuộc Combo được cấp",
     default_reasoning_level: levels.some((level) => level.effort === preferred) ? preferred : levels[0]?.effort || null,
     supported_reasoning_levels: levels,

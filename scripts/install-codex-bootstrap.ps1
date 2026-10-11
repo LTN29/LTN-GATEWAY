@@ -35,6 +35,11 @@ try {
     throw "Không tải được Codex installer."
   }
 
+  # Windows PowerShell 5.1 parses BOM-less .ps1 files using the ANSI code page.
+  # Decode the HTTP asset explicitly and add a BOM before launching with -File.
+  $installerText = [IO.File]::ReadAllText($tempInstaller, [Text.UTF8Encoding]::new($false, $true))
+  [IO.File]::WriteAllText($tempInstaller, $installerText, [Text.UTF8Encoding]::new($true))
+
   $powerShellExecutable = (Get-Process -Id $PID -ErrorAction Stop).Path
   & $powerShellExecutable `
     -NoLogo `

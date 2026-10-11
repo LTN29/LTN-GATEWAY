@@ -527,3 +527,33 @@ test("Windows installer rejects empty, CR/LF and overlong combo IDs before /v1/m
     );
   }
 });
+
+test("Windows runtime config probe survives native stderr and preserves caller error policy", async (t) => {
+  const shell = findCommand("powershell.exe");
+  if (!shell) return t.skip("Windows PowerShell 5.1 unavailable");
+  const root = await mkdtemp(join(tmpdir(), "ltn-runtime-stderr-"));
+  const commandPath = join(root, "codex-probe.cmd");
+  const configPath = join(root, "config.toml");
+  await writeFile(configPath, 'model_provider = "ltn_gateway"\n', "utf8");
+  await writeFile(commandPath, '@echo off\r\nif "%4"=="--json" (\r\n echo unsupported flag 1>&2\r\n exit /b 2\r\n)\r\necho browser-mcp.mjs\r\nexit /b 0\r\n');
+  const start = installerSource.indexOf("function Test-CodexManagedRuntimeConfig {");
+  const end = installerSource.indexOf("function Invoke-LtnUninstall", start);
+  assert.ok(start >= 0 && end > start);
+  const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
+  const harness = `
+$ErrorActionPreference = 'Stop'
+function Get-CodexCommandStatus { return [pscustomobject]@{ Healthy = $true; Path = ${quote(commandPath)} } }
+${installerSource.slice(start, end)}
+$result = Test-CodexManagedRuntimeConfig -ConfigPath ${quote(configPath)}
+if (-not $result.ConfigValid -or -not $result.BrowserMcp -or -not $result.Provider) { throw 'fallback failed' }
+[IO.File]::WriteAllText(${quote(commandPath)}, "@echo off\r\necho invalid config 1>&2\r\nexit /b 1\r\n")
+$result = Test-CodexManagedRuntimeConfig -ConfigPath ${quote(configPath)}
+if ($result.ConfigValid) { throw 'failed probe was accepted' }
+if ($ErrorActionPreference -ne 'Stop') { throw 'caller error policy changed' }
+Write-Output 'runtime-stderr-ok'
+`;
+  const result = spawnSync(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", Buffer.from(harness, "utf16le").toString("base64")], { encoding: "utf8", timeout: 30000 });
+  if (result.error?.code === "EPERM") return t.skip("Child process unavailable");
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /runtime-stderr-ok/);
+});

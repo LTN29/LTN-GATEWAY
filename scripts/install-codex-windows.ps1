@@ -928,6 +928,11 @@ function Show-InstallerStatus {
 function Test-CodexManagedRuntimeConfig {
   param([string]$ConfigPath)
 
+  # This is a diagnostic probe: PS 5.1 treats redirected native stderr as an
+  # ErrorRecord. It must not abort installation before the exit-code fallback.
+  $ErrorActionPreference = "Continue"
+  $PSNativeCommandUseErrorActionPreference = $false
+
   $codexStatus = Get-CodexCommandStatus
   if (-not $codexStatus.Healthy) {
     return [pscustomobject]@{ Supported = $false; ConfigValid = $false; Provider = $false; BrowserMcp = $false }

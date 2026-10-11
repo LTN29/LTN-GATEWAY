@@ -58,7 +58,7 @@ function Invoke-WebRequest {
   $script:DownloadedPath = $OutFile
   [IO.File]::WriteAllText(
     $OutFile,
-    '[IO.File]::WriteAllText($env:LTN_BOOTSTRAP_RESULT, "success")',
+    '[IO.File]::WriteAllText($env:LTN_BOOTSTRAP_RESULT, "Tiếng Việt: cài đặt hoàn tất", [Text.Encoding]::UTF8)',
     [Text.UTF8Encoding]::new($false)
   )
 }
@@ -68,6 +68,7 @@ $bootstrap = [Text.Encoding]::UTF8.GetString(
 Invoke-Expression $bootstrap
 if ($script:DownloadCalls -ne 1) { throw "unexpected download count" }
 if (-not (Test-Path -LiteralPath $env:LTN_BOOTSTRAP_RESULT)) { throw "full installer did not run" }
+if ([IO.File]::ReadAllText($env:LTN_BOOTSTRAP_RESULT) -ne "Tiếng Việt: cài đặt hoàn tất") { throw "Vietnamese script text was corrupted" }
 if (Test-Path -LiteralPath $script:DownloadedPath) { throw "temp file remained after success" }
 
 Remove-Item Function:Invoke-WebRequest
