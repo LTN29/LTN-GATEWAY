@@ -179,6 +179,9 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
   const upstreamPort = await listen(upstream);
   process.env.TEAMS_FILE = teamsFile;
+  const usersFile = join(root, "users.json");
+  await writeFile(usersFile, JSON.stringify({ version: 1, users: {} }));
+  process.env.LTN_USERS_CONFIG_FILE = usersFile;
   process.env.MEMORY_DIR = memoryDir;
   process.env.UPSTREAM_BASE_URL = `http://127.0.0.1:${upstreamPort}`;
   process.env.MEMORY_MODEL = "memory-test";
