@@ -383,6 +383,7 @@ function createUserModalHtml(teams) {
           <label>API Key (9Router)<input id="newApiKey" type="password" autocomplete="off" placeholder="Nhập API key từ hệ thống 9Router" /></label>
           <label>Chính sách (Policy)<select id="newPolicyMode"><option value="inherit">Kế thừa phòng ban</option><option value="limited_daily">Giới hạn hằng ngày</option><option value="premium_always">Luôn Premium</option><option value="free_only">Chỉ Free</option><option value="test_only">Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="newPremiumLimit" type="number" min="0" max="10000" placeholder="Để trống = Mặc định theo team" /></label>
+          ${modelSelectionFields("new", {})}
         </div>
         <div class="actions" style="margin-top: 24px; justify-content: flex-end; gap: 12px;">
           ${button("Hủy", "close-create-user", true)}
@@ -413,6 +414,7 @@ function editUserModalHtml(user, teams) {
           <label>Chế độ bộ nhớ<select id="editMemoryMode" ${user.outsideControl ? "disabled" : ""}><option value="full" ${user.memoryMode === "full" ? "selected" : ""}>Đầy đủ</option><option value="read_only" ${user.memoryMode === "read_only" ? "selected" : ""}>Chỉ đọc</option><option value="none" ${user.memoryMode === "none" ? "selected" : ""}>Tắt</option></select></label>
           <label>Chính sách AI<select id="editPolicyMode"><option value="inherit" ${policyMode === "inherit" ? "selected" : ""}>Kế thừa bộ phận</option><option value="limited_daily" ${policyMode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${policyMode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${policyMode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${policyMode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="editPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
+          ${modelSelectionFields("edit", user.aiPolicy || {})}
           <label style="grid-column: 1 / -1;">API key 9Router mới<input id="editApiKey" type="password" autocomplete="new-password" placeholder="Để trống để giữ nguyên key hiện tại" /></label>
         </div>
         <div class="actions" style="margin-top: 24px; justify-content: flex-end;">
@@ -422,6 +424,27 @@ function editUserModalHtml(user, teams) {
       </div>
     </div>
   `;
+}
+
+function modelSelectionFields(prefix, policy, includeCombos = true) {
+  const selection = policy.modelSelection || "";
+  return `<label>Quyền chọn model<select id="${prefix}ModelSelection">
+    <option value="" ${selection === "" ? "selected" : ""}>Kế thừa</option>
+    <option value="combo" ${selection === "combo" ? "selected" : ""}>Combo tự chọn model</option>
+    <option value="combo_members" ${selection === "combo_members" ? "selected" : ""}>User chọn model trong Combo</option>
+  </select></label>${includeCombos ? ["Premium", "Free", "Test"].map((tier) =>
+    `<label>Combo ${tier}<input id="${prefix}${tier}Combo" value="${escapeHtml(policy[`${tier.toLowerCase()}Combo`] || "")}" placeholder="Để trống để kế thừa bộ phận" /></label>`).join("") : ""}`;
+}
+
+function readModelSelectionFields(prefix, policy, includeCombos = true) {
+  const selection = document.querySelector(`#${prefix}ModelSelection`)?.value;
+  if (selection) policy.modelSelection = selection;
+  if (includeCombos) {
+    for (const tier of ["Premium", "Free", "Test"]) {
+      const combo = document.querySelector(`#${prefix}${tier}Combo`)?.value.trim();
+      if (combo) policy[`${tier.toLowerCase()}Combo`] = combo;
+    }
+  }
 }
 
 function comboOptions(items) {
@@ -451,6 +474,7 @@ function teamModalHtml(team = null, combos = []) {
           <label>Chính sách AI<select id="teamPolicyMode"><option value="inherit" ${mode === "inherit" ? "selected" : ""}>Kế thừa mặc định</option><option value="limited_daily" ${mode === "limited_daily" ? "selected" : ""}>Giới hạn hằng ngày</option><option value="premium_always" ${mode === "premium_always" ? "selected" : ""}>Luôn Premium</option><option value="free_only" ${mode === "free_only" ? "selected" : ""}>Chỉ Free</option><option value="test_only" ${mode === "test_only" ? "selected" : ""}>Test</option></select></label>
           <label>Giới hạn Premium/ngày<input id="teamPremiumLimit" type="number" min="0" max="10000" value="${escapeHtml(premiumLimit)}" placeholder="Để trống nếu không áp dụng" /></label>
           <datalist id="codex-combos-list">${comboOptions(combos)}</datalist>
+          ${modelSelectionFields("team", team?.aiPolicy || {}, false)}
           <label>Combo Premium<input id="teamPremiumCombo" list="codex-combos-list" value="${escapeHtml(premiumCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
           <label>Combo Free<input id="teamFreeCombo" list="codex-combos-list" value="${escapeHtml(freeCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
           <label>Combo Test<input id="teamTestCombo" list="codex-combos-list" value="${escapeHtml(testCombo)}" placeholder="Để trống để kế thừa" autocomplete="off" /></label>
@@ -769,6 +793,7 @@ document.addEventListener("click", async (event) => {
       const premiumLimit = document.querySelector("#newPremiumLimit")?.value.trim();
       if (!userId || !displayName || !teamId || !apiKey) throw new Error("Vui lòng nhập đầy đủ Mã định danh, Tên hiển thị, Phòng ban và API Key.");
       const aiPolicy = { mode: policyMode };
+      readModelSelectionFields("new", aiPolicy);
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
       await api("/users", { method: "POST", body: JSON.stringify({ userId, displayName, teamId, apiKey, aiPolicy }) });
       document.getElementById("dynamic-modal-container")?.remove();
@@ -802,6 +827,7 @@ document.addEventListener("click", async (event) => {
       const apiKey = document.querySelector("#editApiKey")?.value.trim();
       if (!userId || !displayName || !teamId) throw new Error("Mã nhân viên, Tên hiển thị và Bộ phận không được để trống.");
       const aiPolicy = { mode: policyMode };
+      readModelSelectionFields("edit", aiPolicy);
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
       const updatedUser = await api(`/users/${encodeURIComponent(user.userId)}`, {
         method: "PATCH",
@@ -879,6 +905,7 @@ document.addEventListener("click", async (event) => {
       const apiKey = document.querySelector("#teamApiKey")?.value.trim() || "";
       if (!teamId || !displayName) throw new Error("Mã bộ phận và Tên bộ phận không được để trống.");
       const aiPolicy = { mode };
+      readModelSelectionFields("team", aiPolicy, false);
       if (premiumLimit !== "") aiPolicy.premiumLimit = Number(premiumLimit);
       if (premiumCombo) aiPolicy.premiumCombo = premiumCombo;
       if (freeCombo) aiPolicy.freeCombo = freeCombo;

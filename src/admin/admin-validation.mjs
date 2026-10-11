@@ -37,6 +37,12 @@ export function safePolicy(value = {}) {
     throw Object.assign(new Error("policy mode không hợp lệ."), { statusCode: 400, code: "INVALID_POLICY" });
   }
   const policy = { mode };
+  if (value.modelSelection !== undefined) {
+    if (!["combo", "combo_members"].includes(value.modelSelection)) {
+      throw Object.assign(new Error("modelSelection không hợp lệ."), { statusCode: 400, code: "INVALID_POLICY" });
+    }
+    policy.modelSelection = value.modelSelection;
+  }
   if (value.premiumLimit !== undefined && value.premiumLimit !== null && value.premiumLimit !== "") {
     const limit = Number(value.premiumLimit);
     if (!Number.isInteger(limit) || limit < 0 || limit > 10000) {

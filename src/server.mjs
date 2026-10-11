@@ -10,6 +10,7 @@ import {
   injectMemory
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
+import { memberSelectionEnabled, comboModelList, assertComboModelAllowed } from "./combo-model-access.mjs";
 import { scheduleMemoryExtraction } from "./extractor.mjs";
 import {
   parseModelRequest,
@@ -324,6 +325,11 @@ async function pipeAndCapture(upstream, res) {
 }
 
 async function proxyModels(req, res, rawKey, principal, id) {
+  if (memberSelectionEnabled(principal)) {
+    res.setHeader("Cache-Control", "no-store");
+    sendJson(res, 200, await comboModelList(principal, rawKey, id));
+    return;
+  }
   const team = principal.team;
   const upstream = await upstreamFetch("/v1/models", {
     rawKey,
@@ -347,12 +353,32 @@ async function proxyModels(req, res, rawKey, principal, id) {
 }
 
 async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
+  if (memberSelectionEnabled(principal)) {
+    if (req.method === "GET" || upstreamPath.split("?")[0] !== "/v1/messages") {
+      sendJson(res, 403, openAiError("Tài khoản chọn model trong Combo chỉ được dùng API hội thoại.", "permission_error"));
+      return;
+    }
+    if (!String(req.headers["content-type"] || "").includes("application/json")) {
+      sendJson(res, 400, openAiError("API hội thoại yêu cầu application/json.", "invalid_request_error"));
+      return;
+    }
+  }
   const startedAt = Date.now();
   const signal = clientAbortSignal(req, res);
   const body = req.method === "GET"
     ? undefined
     : await readBody(req, config.maxCapabilityBodyBytes);
   const connectionId = String(req.headers["x-connection-id"] || "").trim();
+  if (memberSelectionEnabled(principal)) {
+    // Messages does not participate in Codex quota reservations. Keep limited_daily
+    // accounts on /responses rather than providing an alternative quota bypass.
+    const policy = codexConfigForPrincipal(principal);
+    if (policy.routing.mode === "limited_daily") {
+      sendJson(res, 403, openAiError("Tài khoản giới hạn hằng ngày cần dùng /v1/responses.", "permission_error"));
+      return;
+    }
+    await assertComboModelAllowed(principal, parseModelRequest(body).model, id);
+  }
   if (connectionId.length > 256 || /[\r\n]/.test(connectionId)) {
     const error = new Error("X-Connection-ID không hợp lệ.");
     error.statusCode = 400;
@@ -425,6 +451,10 @@ function assertInstallerComboId(value, name) {
 
 async function installerConfigForPrincipal(rawKey, principal, id) {
   const codexConfig = codexConfigForPrincipal(principal);
+  if (memberSelectionEnabled(principal)) {
+    const catalog = await comboModelList(principal, rawKey, id);
+    return ["LTN_CODEX_INSTALLER_V2", "combo_members", catalog.data[0].id, "", "", ""].join("\n");
+  }
   const mode = codexConfig.routing?.mode || "";
   const premium = codexConfig.combos?.premium || "";
   const free = codexConfig.combos?.free || "";
@@ -515,7 +545,16 @@ async function proxyResponses(req, res, rawKey, principal, id) {
     headers: req.headers
   });
   shouldReleaseRoute = true;
-  upstreamPayload.model = route.selectedCombo;
+  if (memberSelectionEnabled(principal)) {
+    try {
+      await assertComboModelAllowed(principal, payload.model, id, [route.selectedCombo]);
+    } catch (error) {
+      await route.release();
+      throw error;
+    }
+  } else {
+    upstreamPayload.model = route.selectedCombo;
+  }
 
   jsonLog("codex_route_selected", {
     requestId: id,
@@ -526,13 +565,14 @@ async function proxyResponses(req, res, rawKey, principal, id) {
     requestNumber: route.requestNumber,
     limit: route.limit,
     selectedCombo: route.selectedCombo,
+    selectedModel: upstreamPayload.model,
     clientIdHashPrefix: route.clientIdHashPrefix
   });
 
   jsonLog("responses_started", {
     requestId: id,
     team: team.code,
-    model: route.selectedCombo
+    model: upstreamPayload.model
   });
 
   const startedAt = Date.now();
@@ -548,6 +588,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
 
     copyHeaders(upstream, res);
     res.setHeader("X-LTN-Route-Tier", route.routeTier);
+    res.setHeader("X-LTN-Selected-Model", upstreamPayload.model);
     if (route.premiumRemaining !== null) {
       res.setHeader("X-LTN-Premium-Remaining", String(route.premiumRemaining));
     }
@@ -607,7 +648,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       team: team.code,
       principalType: principal.principalType,
       userId: principal.userId,
-      model: route.selectedCombo,
+      model: upstreamPayload.model,
       status: upstream.status,
       latencyMs: Date.now() - startedAt
     });
@@ -639,6 +680,14 @@ async function handleChat(req, res, rawKey, principal, id) {
       openAiError("messages phải là một mảng", "invalid_request_error")
     );
     return;
+  }
+
+  if (memberSelectionEnabled(principal)) {
+    if (codexConfigForPrincipal(principal).routing.mode === "limited_daily") {
+      sendJson(res, 403, openAiError("Tài khoản giới hạn hằng ngày cần dùng /v1/responses.", "permission_error"));
+      return;
+    }
+    await assertComboModelAllowed(principal, parseModelRequest(raw).model, id);
   }
 
   // injectMemory creates a new array and does not mutate the original messages.
@@ -973,6 +1022,7 @@ export function createGatewayServer() {
     (req.method === "GET" && pathname === "/v1/models") ||
     (req.method === "GET" && isCapabilityGetPath(pathname)) ||
     (req.method === "GET" && pathname === "/v1/codex/config") ||
+    (req.method === "GET" && pathname === "/v1/codex/model-catalog") ||
     (req.method === "GET" && pathname === "/v1/codex/installer-config") ||
     (req.method === "GET" && pathname === "/v1/browser/page") ||
     (req.method === "POST" && pathname === "/v1/chat/completions") ||
@@ -1038,7 +1088,25 @@ export function createGatewayServer() {
     });
 
     if (req.method === "GET" && pathname === "/v1/codex/config") {
-      sendJson(res, 200, codexConfigForPrincipal(principal));
+      const clientConfig = codexConfigForPrincipal(principal);
+      if (memberSelectionEnabled(principal)) {
+        const catalog = await comboModelList(principal, rawKey, id);
+        clientConfig.defaultModel = catalog.data[0].id;
+        clientConfig.modelCatalog = { models: catalog.models };
+      }
+      res.setHeader("Cache-Control", "no-store");
+      sendJson(res, 200, clientConfig);
+      return;
+    }
+
+    if (req.method === "GET" && pathname === "/v1/codex/model-catalog") {
+      if (!memberSelectionEnabled(principal)) {
+        sendJson(res, 409, openAiError("Tài khoản chưa bật chọn model trong Combo.", "invalid_request_error"));
+        return;
+      }
+      const catalog = await comboModelList(principal, rawKey, id);
+      res.setHeader("Cache-Control", "no-store");
+      sendJson(res, 200, { models: catalog.models });
       return;
     }
 
@@ -1093,7 +1161,7 @@ export function createGatewayServer() {
       sendJson(
         res,
         error?.statusCode || 502,
-        openAiError(error?.message || "Gateway xử lý thất bại")
+        openAiError(error?.message || "Gateway xử lý thất bại", error?.type || "gateway_error")
       );
     } else {
       res.destroy(error);

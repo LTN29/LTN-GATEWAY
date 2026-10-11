@@ -118,6 +118,12 @@ ra log.
 
 ## 7. Model và 9Router Combo
 
+Ngoại lệ được bổ sung theo yêu cầu user: `aiPolicy.modelSelection=combo_members`
+dùng Combo làm nhóm quyền, cho phép user chọn ID model trực tiếp trong nhóm.
+Gateway được đọc thành viên Combo để lọc catalog và kiểm tra quyền, không tự
+fallback hay sửa thành viên. Quy tắc không bung Combo bên dưới tiếp tục áp dụng
+cho chế độ mặc định `combo`. Xem [hướng dẫn](CODEX_MODEL_SELECTION.md).
+
 9Router là nguồn quản lý duy nhất cho:
 
 - Model và provider.

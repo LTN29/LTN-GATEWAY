@@ -63,7 +63,8 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /< \/dev\/tty/);
   assert.match(script, /read_menu_choice\(\)/);
   assert.match(script, /Chon che do:/);
-  assert.match(script, /1\. Install\/Update/);
+  assert.match(script, /1\. Install/);
+  assert.match(script, /5\. Update/);
   assert.match(script, /2\. Repair/);
   assert.match(script, /3\. Status/);
   assert.match(script, /4\. Uninstall/);
@@ -116,14 +117,15 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /MANAGED_SKILL_NAMES=/);
   assert.match(script, /Simi skills: \$\{skill_count\}\/12/);
   assert.match(script, /ensure_runtime_dependencies\(\)/);
-  assert.match(script, /install_homebrew\(\)/);
-  assert.match(script, /https:\/\/raw\.githubusercontent\.com\/Homebrew\/install\/HEAD\/install\.sh/);
-  assert.match(script, /\/opt\/homebrew\/bin\/brew/);
-  assert.match(script, /\/usr\/local\/bin\/brew/);
-  assert.match(script, /\/bin\/bash "\$\{HOMEBREW_INSTALLER_FILE\}" < \/dev\/tty/);
-  assert.match(script, /"\$\{HOMEBREW_CMD\}" install node python/);
-  assert.match(script, /\/usr\/bin\/xcode-select -p/);
-  assert.match(script, /sys\.version_info >= \(3, 8\)/);
+  // macOS uses private runtimes now; these assertions previously required the
+  // removed Homebrew installer and failed even on the unchanged HEAD script.
+  assert.match(script, /install_macos_node_runtime\(\)/);
+  assert.match(script, /install_macos_uv_runtime\(\)/);
+  assert.match(script, /https:\/\/astral\.sh\/uv\/install\.sh/);
+  assert.match(script, /install_macos_python_runtime\(\)/);
+  assert.match(script, /"\$\{uv_bin\}" python install 3\.12/);
+  assert.match(script, /sys\.version_info >= \(3, 12\)/);
+  assert.doesNotMatch(script, /HOMEBREW_INSTALLER_FILE/);
   assert.match(script, /install_local_tools\(\)/);
   assert.match(script, /install\/tools\/\$\{asset\}/);
   assert.match(script, /install\/tools\/browser-page\.mjs/);

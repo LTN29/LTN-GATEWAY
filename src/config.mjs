@@ -38,6 +38,7 @@ export const config = {
     process.env.UPSTREAM_BASE_URL || "http://127.0.0.1:20128"
   ).replace(/\/+$/, ""),
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 180000),
+  routerDashboardCookie: process.env.NINEROUTER_DASHBOARD_COOKIE || "",
   memoryModel: process.env.MEMORY_MODEL || "mmf/mimo-auto",
   memoryExtractionEnabled: bool(process.env.MEMORY_EXTRACTION_ENABLED, true),
   memoryExtractionModel: process.env.MEMORY_EXTRACTION_MODEL || process.env.MEMORY_MODEL || "SIMI-FREE",
@@ -216,6 +217,13 @@ export function normalizeAiPolicy(value, fallbackUsageScope = "client") {
     mode: normalizePolicyMode(value.mode || "inherit"),
     usageScope: normalizeUsageScope(value.usageScope || fallbackUsageScope)
   };
+
+  if (value.modelSelection !== undefined) {
+    if (!["combo", "combo_members"].includes(value.modelSelection)) {
+      throw new Error("aiPolicy.modelSelection không hợp lệ");
+    }
+    policy.modelSelection = value.modelSelection;
+  }
 
   if (value.premiumLimit !== undefined && value.premiumLimit !== null && value.premiumLimit !== "") {
     const premiumLimit = Number(value.premiumLimit);

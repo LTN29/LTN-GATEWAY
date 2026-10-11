@@ -84,6 +84,8 @@ async function runInstallerWithCombo({
   ],
   mode = "auto",
   storedTeamApiKey = "",
+  clientId = "",
+  modelCatalog = null,
   initialConfig = ""
 }) {
   const requests = [];
@@ -94,14 +96,16 @@ async function runInstallerWithCombo({
     });
 
     if (req.url === "/v1/codex/config") {
-      res.writeHead(200, { "content-type": "application/json" });
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({
         routing: {
           mode: "limited_daily",
           premiumLimit: 3,
           usageScope: "client",
-          resetTimezone: "Asia/Ho_Chi_Minh"
+          resetTimezone: "Asia/Ho_Chi_Minh",
+          ...(modelCatalog ? { modelSelection: "combo_members" } : {})
         },
+        ...(modelCatalog ? { defaultModel: modelCatalog.models[0].slug, modelCatalog } : {}),
         combos: {
           premium: premiumCombo,
           free: freeCombo
@@ -191,7 +195,12 @@ async function runInstallerWithCombo({
     .replace(
       '[Environment]::GetEnvironmentVariable("LTN_CLIENT_ID", "User")',
       '$env:LTN_CLIENT_ID'
-    );
+    )
+    .replaceAll('[Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User")', '$null')
+    .replaceAll('[Environment]::GetEnvironmentVariable("NINEROUTER_KEY", "User")', '$null')
+    .replaceAll('[Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User")', '$env:LTN_BROWSER_BRIDGE_TOKEN')
+    .replace('[Environment]::SetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", $token, "User")', '$null = $token')
+    .replace('$clientId = Get-OrCreateClientId', '$clientId = Get-OrCreateClientId\n[IO.File]::WriteAllText((Join-Path $codexHome "test-client-id"), $clientId)');
   await writeFile(scriptPath, testScript, "utf8");
 
   try {
@@ -209,7 +218,7 @@ async function runInstallerWithCombo({
       "-GatewayBaseUrl",
       `http://127.0.0.1:${gatewayPort}/v1`
     ];
-    if (mode !== "repair") {
+    if (!["repair", "update"].includes(mode)) {
       installerArgs.push("-TeamApiKey", teamApiKey);
     }
     installerArgs.push("-Mode", mode, "-SkipCodexInstall");
@@ -219,7 +228,9 @@ async function runInstallerWithCombo({
         ...process.env,
         CODEX_HOME: codexHome,
         LTN_TEAM_API_KEY: storedTeamApiKey,
-        LTN_CLIENT_ID: "",
+        NINEROUTER_KEY: "",
+        LTN_CLIENT_ID: clientId,
+        LTN_BROWSER_BRIDGE_TOKEN: "b".repeat(64),
         LTN_SKIP_RUNTIME_INSTALL: "1"
       }
     });
@@ -238,7 +249,11 @@ async function runInstallerWithCombo({
     } catch {
       config = "";
     }
-    return { result, requests, config };
+    let savedCatalog = null;
+    try { savedCatalog = JSON.parse(await readFile(join(codexHome, "ltn-model-catalog.json"), "utf8")); } catch {}
+    let savedClientId = "";
+    try { savedClientId = await readFile(join(codexHome, "test-client-id"), "utf8"); } catch {}
+    return { result, requests, config, savedCatalog, savedClientId };
   } finally {
     await close(gateway);
   }
@@ -283,6 +298,22 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     `${output.result.stdout}\n${output.result.stderr}`,
     /team-test-key/
   );
+});
+
+test("Windows installer loads key-scoped member catalog instead of requiring combo entries", async (t) => {
+  const { codexModelEntry } = await import("../src/combo-model-access.mjs");
+  const modelCatalog = { models: [codexModelEntry({ id: "cx/gpt-member" }), codexModelEntry({ id: "ag/gemini-member" })] };
+  const output = await runInstallerWithCombo({
+    modelCatalog,
+    models: modelCatalog.models.map((m) => ({ id: m.slug, owned_by: "provider" })),
+    initialConfig: 'model_catalog_json = "old-catalog.json"\nmodel = "old"\n'
+  });
+  if (output.skipped) { t.skip(output.skipped); return; }
+  assert.equal(output.result.status, 0, output.result.stderr || output.result.stdout);
+  assert.match(output.config, /model = "cx\/gpt-member"/);
+  assert.match(output.config, /model_catalog_json = ".*ltn-model-catalog\.json"/);
+  assert.doesNotMatch(output.config, /old-catalog/);
+  assert.deepEqual(output.savedCatalog, modelCatalog);
 });
 
 test("Windows installer repairs legacy broken tables and keeps root settings at TOML root", async (t) => {
@@ -366,6 +397,37 @@ test("Windows Repair reuses the stored team API key without prompting", async (t
     `${output.result.stdout}\n${output.result.stderr}`,
     /Repair: dùng API key đã lưu, không yêu cầu nhập lại/
   );
+});
+
+test("Windows Update reuses key and client ID, preserves personal config and refreshes catalog and skills", async (t) => {
+  const { codexModelEntry } = await import("../src/combo-model-access.mjs");
+  const modelCatalog = { models: [codexModelEntry({ id: "cx/new-member" })] };
+  const output = await runInstallerWithCombo({
+    mode: "update", storedTeamApiKey: "update-saved-key",
+    clientId: "11111111-1111-4111-8111-111111111111",
+    modelCatalog, models: [{ id: "cx/new-member", owned_by: "provider" }],
+    initialConfig: 'model = "old"\nmodel_reasoning_effort = "high"\n[projects."/my/project"]\ntrust_level = "trusted"\n'
+  });
+  if (output.skipped) { t.skip(output.skipped); return; }
+  assert.equal(output.result.status, 0, output.result.stderr || output.result.stdout);
+  assert.equal(output.requests.find((r) => r.url === "/v1/codex/config").authorization, "Bearer update-saved-key");
+  assert.match(output.result.stdout, /Update: dùng API key đã lưu, không yêu cầu nhập lại/);
+  assert.doesNotMatch(output.result.stdout + output.result.stderr, /update-saved-key/);
+  assert.match(output.config, /model_reasoning_effort = "high"/);
+  assert.match(output.config, /\[projects\."\/my\/project"\]/);
+  assert.match(output.config, /model = "cx\/new-member"/);
+  assert.deepEqual(output.savedCatalog, modelCatalog);
+  assert.equal(output.requests.filter((r) => /^\/install\/skills\//.test(r.url)).length, 12);
+  assert.equal(output.savedClientId, "11111111-1111-4111-8111-111111111111");
+});
+
+test("Windows Update without a stored key stops instead of requesting a new key", async (t) => {
+  const output = await runInstallerWithCombo({ mode: "update" });
+  if (output.skipped) { t.skip(output.skipped); return; }
+  assert.notEqual(output.result.status, 0);
+  assert.match(output.result.stderr, /không tìm thấy API key đã lưu/);
+  assert.equal(output.requests.length, 0);
+  assert.equal(output.config, "");
 });
 
 test("Windows installer rejects control characters inside the team API key", async (t) => {

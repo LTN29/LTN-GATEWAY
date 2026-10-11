@@ -113,11 +113,12 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /\[switch\]\$Uninstall/);
   assert.match(script, /function Read-InstallerMode/);
   assert.match(script, /Chọn chế độ:/);
-  assert.match(script, /1\. Install\/Update/);
+  assert.match(script, /1\. Install/);
+  assert.match(script, /5\. Update/);
   assert.match(script, /2\. Repair/);
   assert.match(script, /3\. Status/);
   assert.match(script, /4\. Uninstall/);
-  assert.match(script, /Nhập 1-4/);
+  assert.match(script, /Nhập 1-5/);
   assert.match(script, /function Show-InstallerStatus/);
   assert.match(script, /function Invoke-LtnUninstall/);
   assert.match(script, /\$Mode -eq "status"/);

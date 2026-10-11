@@ -136,6 +136,10 @@ API key là key riêng của team đã đăng ký trong Gateway và đang hoạt
 
 ## Cài Codex CLI cho nhân viên
 
+Để user chọn các model nằm trong Combo đã cấp cho key/chức vụ, xem
+[Chọn model theo Combo](docs/CODEX_MODEL_SELECTION.md). Đây là chế độ opt-in;
+phần bên dưới mô tả Combo tự routing mặc định.
+
 9Router là nơi duy nhất quản lý model con và fallback thông qua **Combos**.
 Gateway chọn Combo Premium/Free theo policy của team, rồi chuyển nguyên Combo ID
 sang 9Router.
@@ -209,7 +213,7 @@ Gatekeeper và không hướng dẫn bỏ qua cảnh báo malware. Nếu bản C
 macOS chặn, installer dừng và yêu cầu liên hệ IT.
 
 Trên macOS/Linux, installer chỉ hỏi API key team sau khi Codex CLI khỏe. Trên Windows,
-installer hỏi key trong chế độ `Install/Update` hoặc `Repair` và lưu vào biến môi trường
+installer hỏi key trong chế độ `Install`; `Update` và `Repair` dùng key đã lưu trong biến môi trường
 User `LTN_TEAM_API_KEY`.
 Trên macOS, key được lưu trong Keychain và Codex đọc qua helper
 `~/.codex/bin/ltn-codex-token`. Trên Ubuntu/Linux, installer ưu tiên Secret Service
@@ -219,7 +223,7 @@ qua `secret-tool`; nếu máy không có Secret Service khả dụng thì lưu k
 Installer tạo client ID một lần tại `~/.codex/ltn-client-id`, giữ lại khi repair, xóa khi
 uninstall, và ghi `http_headers` để Codex gửi `X-LTN-Client-ID` cho Gateway.
 
-Mỗi lần `Install/Update` hoặc `Repair`, installer cũng tự cài/cập nhật bộ 9Router
+Mỗi lần `Install`, `Update` hoặc `Repair`, installer cũng tự cài/cập nhật bộ 9Router
 skills vào `~/.codex/skills/`: Entry, Chat, Image, Video, TTS, STT, Embeddings,
 Web Search, Web Fetch, Browser và PDF. Skill được tải từ chính `ai.simi.vn`, được kiểm tra tên
 trước khi thay atomically và không yêu cầu nhân viên tải trực tiếp từ GitHub.
@@ -287,8 +291,8 @@ Sau khi cài, admin chỉ thay đổi thành phần hoặc thứ tự fallback t
 Repair hoặc rotate API key: chạy lại installer; block cấu hình được cập nhật
 thay vì tạo trùng. Khi chọn `Repair`, installer tự dùng key đã lưu trên máy
 (Windows User Environment, macOS Keychain hoặc Linux Secret Service/file), nên
-không cần nhập lại key. Chỉ khi key chưa từng được lưu hoặc đã bị xóa thì
-installer mới yêu cầu nhập lại. Gỡ cấu hình LTN (không gỡ Codex CLI):
+không cần nhập lại key. Nếu key chưa từng được lưu hoặc đã bị xóa,
+Update/Repair dừng và hướng dẫn chọn Install để khôi phục key. Gỡ cấu hình LTN (không gỡ Codex CLI):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-codex-windows.ps1 -Uninstall
@@ -298,25 +302,33 @@ Lệnh public trên Windows/macOS/Ubuntu/Linux đều hiện menu thao tác chuy
 
 ```text
 Chọn chế độ:
-  1. Install/Update
+  1. Install (cài mới hoặc đổi key)
   2. Repair
   3. Status
   4. Uninstall
-Nhập 1-4:
+  5. Update (cập nhật tính năng, giữ key đã lưu)
+Nhập 1-5:
 ```
 
 `CODEX_COMBO_TEST` đăng ký tier Test độc lập trong Admin Console. Team chỉ chuyển
 sang Combo này sau khi admin chọn policy `Test`; biến này không thay đổi hai tier
 Premium/Free hoặc policy mặc định.
 
-`Install/Update` hỏi API key team khi cần; `Repair` ưu tiên key đã lưu và chỉ hỏi
-khi không tìm thấy key. `Status` chỉ kiểm tra trạng thái.
+User đã cài chỉ cần chạy lại chính lệnh public và chọn **5. Update**. Update
+lấy key đã lưu, tải lại skill/công cụ và catalog model hiện tại, sao lưu và ghép
+cấu hình; giữ client ID và cấu hình cá nhân ngoài phần Gateway quản lý. Không
+cần uninstall hoặc nhập lại key. Codex CLI đang hoạt động không bị cài lại;
+Update này cập nhật tính năng SIMI do Gateway phân phối.
+
+`Install` dùng khi cài mới/đổi key; `Repair` phục hồi bằng key đã lưu.
+`Status` chỉ kiểm tra trạng thái.
 `Uninstall` xóa block LTN trong `~/.codex/config.toml`, helper token và client ID; không gỡ Codex CLI.
 
 Nếu muốn gọi trực tiếp không qua menu trên macOS/Ubuntu/Linux, dùng flag qua `bash -s --`:
 
 ```bash
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --status
+curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --update
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --repair
 curl -fsSL https://ai.simi.vn/install/codex.sh | bash -s -- --uninstall
 ```

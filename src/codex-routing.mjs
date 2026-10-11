@@ -80,6 +80,7 @@ export function resolveTeamCodexPolicy(team) {
 
   const policy = {
     mode,
+    modelSelection: raw.modelSelection || "combo",
     usageScope,
     premiumLimit,
     resetTimezone: config.codexUsageTimezone,
@@ -110,12 +111,14 @@ export function resolvePrincipalCodexPolicy(principal) {
   }
 
   const userPolicy = principal.aiPolicy || {};
-  if (userPolicy.mode && userPolicy.mode !== "inherit") {
+  if ((userPolicy.mode && userPolicy.mode !== "inherit") || userPolicy.modelSelection !== undefined ||
+      userPolicy.premiumCombo || userPolicy.freeCombo || userPolicy.testCombo) {
     const syntheticTeam = {
       ...principal.team,
       aiPolicy: {
         ...(principal.team.aiPolicy || {}),
         ...userPolicy,
+        mode: userPolicy.mode === "inherit" ? principal.team.aiPolicy?.mode : userPolicy.mode || principal.team.aiPolicy?.mode,
         usageScope: userPolicy.usageScope || "user"
       }
     };
@@ -135,7 +138,8 @@ export function resolvePrincipalCodexPolicy(principal) {
 export function codexConfigForTeam(team) {
   const policy = resolveTeamCodexPolicy(team);
   const routing = {
-    mode: policy.mode
+    mode: policy.mode,
+    ...(policy.modelSelection === "combo_members" ? { modelSelection: policy.modelSelection } : {})
   };
 
   if (policy.mode === "limited_daily") {
@@ -160,6 +164,7 @@ export function codexConfigForPrincipal(principal) {
   const teamConfig = codexConfigForTeam(principal.team || principal);
   if (!principal || principal.principalType === "team") return teamConfig;
   const policy = resolvePrincipalCodexPolicy(principal);
+  delete teamConfig.routing.modelSelection;
   const combos = {};
   if (policy.combos.premium) combos.premium = policy.combos.premium;
   if (policy.combos.free) combos.free = policy.combos.free;
@@ -176,6 +181,7 @@ export function codexConfigForPrincipal(principal) {
     routing: {
       ...teamConfig.routing,
       mode: policy.mode,
+      ...(policy.modelSelection === "combo_members" ? { modelSelection: policy.modelSelection } : {}),
       ...(policy.mode === "limited_daily" ? {
         premiumLimit: policy.premiumLimit,
         usageScope: policy.usageScope,

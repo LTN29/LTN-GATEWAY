@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
   [string]$GatewayBaseUrl = $(if ($env:LTN_GATEWAY_BASE_URL) { $env:LTN_GATEWAY_BASE_URL } else { "https://ai.simi.vn/v1" }),
-  [ValidateSet("install", "repair", "status", "uninstall", "auto", "profiles")]
+  [ValidateSet("install", "update", "repair", "status", "uninstall", "auto", "profiles")]
   [string]$Mode,
   [string]$TeamApiKey,
   [switch]$SkipCodexInstall,
@@ -136,6 +136,12 @@ function Get-StoredTeamApiKey {
   if ([string]::IsNullOrWhiteSpace($value)) {
     $value = [Environment]::GetEnvironmentVariable("LTN_TEAM_API_KEY", "User")
   }
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = [Environment]::GetEnvironmentVariable("NINEROUTER_KEY", "Process")
+  }
+  if ([string]::IsNullOrWhiteSpace($value)) {
+    $value = [Environment]::GetEnvironmentVariable("NINEROUTER_KEY", "User")
+  }
   if ([string]::IsNullOrWhiteSpace($value)) { return $null }
   return [string]$value
 }
@@ -205,6 +211,7 @@ function Update-CodexConfig {
     if ($line -match '^\s*\[') { $section = "tables" }
     if ($section -eq "root" -and $line -match '^\s*model\s*=') { continue }
     if ($section -eq "root" -and $line -match '^\s*model_provider\s*=') { continue }
+    if ($section -eq "root" -and $ManagedRootContent -match 'model_catalog_json\s*=' -and $line -match '^\s*model_catalog_json\s*=') { continue }
     if ($line -match '^\s*# Managed by LTN Codex installer\.\s*$') { continue }
     if ($line -match '^\s*# Change Combo members and fallback order in 9Router, not on this machine\.\s*$') { continue }
 
@@ -260,17 +267,19 @@ function Test-ComboIds {
 function Read-InstallerMode {
   while ($true) {
     Write-Host "Chọn chế độ:"
-    Write-Host "  1. Install/Update"
+    Write-Host "  1. Install (cài mới hoặc đổi key)"
     Write-Host "  2. Repair"
     Write-Host "  3. Status"
     Write-Host "  4. Uninstall"
-    $choice = (Read-Host "Nhập 1-4").Trim()
+    Write-Host "  5. Update (cập nhật tính năng, giữ key đã lưu)"
+    $choice = (Read-Host "Nhập 1-5").Trim()
     switch ($choice) {
       "1" { return "install" }
       "2" { return "repair" }
       "3" { return "status" }
       "4" { return "uninstall" }
-      default { Write-Host "Lựa chọn không hợp lệ. Vui lòng nhập 1, 2, 3 hoặc 4." }
+      "5" { return "update" }
+      default { Write-Host "Lựa chọn không hợp lệ. Vui lòng nhập 1-5." }
     }
   }
 }
@@ -1042,12 +1051,16 @@ if ($gatewayUri.Scheme -ne "https" -and $gatewayUri.Host -notin @("localhost", "
 }
 
 if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
-  if ($Mode -eq "repair") {
+  if ($Mode -in @("repair", "update")) {
     $TeamApiKey = Get-StoredTeamApiKey
     if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
-      throw "Repair không tìm thấy API key đã lưu. Hãy chạy Install/Update một lần hoặc truyền -TeamApiKey."
+      throw "$Mode không tìm thấy API key đã lưu. Hãy chọn Install để cài mới hoặc khôi phục key; không cần gỡ cài đặt."
     }
-    Write-Host "Repair: dùng API key đã lưu, không yêu cầu nhập lại."
+    if ($Mode -eq "update") {
+      Write-Host "Update: dùng API key đã lưu, không yêu cầu nhập lại."
+    } else {
+      Write-Host "Repair: dùng API key đã lưu, không yêu cầu nhập lại."
+    }
   } else {
     $TeamApiKey = Read-TeamApiKey
   }
@@ -1067,7 +1080,14 @@ try {
   throw "Gateway chưa cung cấp cấu hình Codex hợp lệ. Admin cần kiểm tra CODEX_COMBO_PREMIUM/CODEX_COMBO_FREE/CODEX_COMBO_TEST hoặc aiPolicy của team. Chi tiết: $($_.Exception.Message)"
 }
 
-$requiredCombos = if ($routingMode -eq "free_only") {
+$memberSelection = (Get-ObjectPropertyValue -Object $remoteConfig.routing -Name "modelSelection") -eq "combo_members"
+$requiredCombos = if ($memberSelection) {
+  $defaultModel = Confirm-ComboIdSyntax -ComboId ([string]$remoteConfig.defaultModel) -Name "defaultModel"
+  if (-not $remoteConfig.modelCatalog.models -or @($remoteConfig.modelCatalog.models).Count -eq 0) {
+    throw "Gateway không trả model catalog cho tài khoản."
+  }
+  @()
+} elseif ($routingMode -eq "free_only") {
   $comboFree = Confirm-ComboIdSyntax -ComboId $comboFree -Name "combos.free"
   $defaultModel = $comboFree
   @($comboFree)
@@ -1123,6 +1143,17 @@ if (Test-Path $configPath) {
 
 $escapedBaseUrl = Escape-TomlString $GatewayBaseUrl
 $escapedModel = Escape-TomlString $defaultModel
+$catalogConfigLine = ""
+if ($memberSelection) {
+  $catalogPath = Join-Path $codexHome "ltn-model-catalog.json"
+  if (Test-Path -LiteralPath $catalogPath) {
+    Copy-Item -LiteralPath $catalogPath -Destination "$catalogPath.backup-$([guid]::NewGuid().ToString('N'))"
+  }
+  $catalogTempPath = "$catalogPath.$([guid]::NewGuid().ToString('N')).tmp"
+  [IO.File]::WriteAllText($catalogTempPath, ($remoteConfig.modelCatalog | ConvertTo-Json -Depth 100), [Text.UTF8Encoding]::new($false))
+  Move-Item -LiteralPath $catalogTempPath -Destination $catalogPath -Force
+  $catalogConfigLine = 'model_catalog_json = "' + (Escape-TomlString $catalogPath) + '"'
+}
 $nodeCommand = "node"
 $installedNode = Get-Command node -ErrorAction SilentlyContinue
 if ($installedNode) { $nodeCommand = $installedNode.Source }
@@ -1133,6 +1164,7 @@ $managedRootContent = @"
 # Managed by LTN Codex installer.
 model = "$escapedModel"
 model_provider = "ltn_gateway"
+$catalogConfigLine
 # END LTN CODEX MANAGED ROOT
 "@
 

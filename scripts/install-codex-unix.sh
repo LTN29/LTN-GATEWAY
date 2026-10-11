@@ -22,6 +22,8 @@ OS_NAME=""
 AUTH_BACKEND=""
 TEAM_API_KEY=""
 REMOTE_CONFIG_FILE=""
+MEMBER_SELECTION=0
+CATALOG_CONFIG_LINE=""
 MODE="${1:-}"
 CODEX_CMD_PATH=""
 CODEX_INSTALL_KIND="missing"
@@ -134,17 +136,24 @@ read_stored_team_key() {
     return 0
   fi
   if [ -x "${HELPER_PATH}" ]; then
-    TEAM_API_KEY="$(${HELPER_PATH} 2>/dev/null || true)"
+    TEAM_API_KEY="$("${HELPER_PATH}" 2>/dev/null || true)"
+  fi
+  if [ -z "${TEAM_API_KEY}" ] && [ -r "${LINUX_KEY_PATH}" ]; then
+    TEAM_API_KEY="$(cat "${LINUX_KEY_PATH}")"
   fi
 }
 
 read_team_key() {
-  if [ -z "${TEAM_API_KEY}" ] && [ "${MODE}" = "--repair" ]; then
+  if [ -z "${TEAM_API_KEY}" ] && { [ "${MODE}" = "--repair" ] || [ "${MODE}" = "--update" ]; }; then
     read_stored_team_key
     if [ -z "${TEAM_API_KEY}" ]; then
-      die "Repair khong tim thay API key da luu. Hay chay Install/Update mot lan hoac truyen LTN_TEAM_API_KEY."
+      die "${MODE#--} khong tim thay API key da luu. Hay chon Install de cai moi hoac khoi phuc key; khong can go cai dat."
     fi
-    echo "Repair: dung API key da luu, khong yeu cau nhap lai."
+    if [ "${MODE}" = "--update" ]; then
+      echo "Update: dung API key da luu, khong yeu cau nhap lai."
+    else
+      echo "Repair: dung API key da luu, khong yeu cau nhap lai."
+    fi
   fi
   if [ -z "${TEAM_API_KEY}" ]; then
     if [ ! -r /dev/tty ]; then
@@ -159,16 +168,17 @@ read_team_key() {
 read_menu_choice() {
   local choice
   if [ ! -r /dev/tty ]; then
-    die "Khong tim thay terminal de chon che do. Hay dung --install, --repair, --status hoac --uninstall."
+    die "Khong tim thay terminal de chon che do. Hay dung --install, --update, --repair, --status hoac --uninstall."
   fi
 
   {
     echo "Chon che do:"
-    echo "  1. Install/Update"
+    echo "  1. Install (cai moi hoac doi key)"
     echo "  2. Repair"
     echo "  3. Status"
     echo "  4. Uninstall"
-    printf "Nhap 1-4: "
+    echo "  5. Update (cap nhat tinh nang, giu key da luu)"
+    printf "Nhap 1-5: "
   } > /dev/tty
 
   IFS= read -r choice < /dev/tty
@@ -177,6 +187,7 @@ read_menu_choice() {
     2) MODE="--repair" ;;
     3) MODE="--status" ;;
     4) MODE="--uninstall" ;;
+    5) MODE="--update" ;;
     *) die "Lua chon khong hop le." ;;
   esac
 }
@@ -413,6 +424,12 @@ fetch_and_validate_gateway() {
     die_code 30 "Phản hồi cấu hình installer từ Gateway không hợp lệ."
 
   case "${routing_mode}" in
+    combo_members)
+      validate_combo_syntax "${premium_combo}" "defaultModel"
+      DEFAULT_MODEL="${premium_combo}"
+      REQUIRED_COMBOS=""
+      MEMBER_SELECTION=1
+      ;;
     premium_always)
       validate_combo_syntax "${premium_combo}" "combos.premium"
       DEFAULT_MODEL="${premium_combo}"
@@ -566,6 +583,22 @@ merge_config() {
   escaped_browser_mcp="$(escape_toml "${CODEX_HOME}/browser-mcp.mjs")"
   mkdir -p "${CODEX_HOME}"
 
+  if [ "${MEMBER_SELECTION}" = "1" ]; then
+    local catalog_path catalog_tmp
+    catalog_path="${CODEX_HOME}/ltn-model-catalog.json"
+    catalog_tmp="$(mktemp "${CODEX_HOME}/ltn-model-catalog.XXXXXX")"
+    curl_with_auth "${GATEWAY_BASE_URL%/}/codex/model-catalog" "${catalog_tmp}" ||
+      die_code 30 "Không tải được model catalog từ Gateway."
+    "${RUNTIME_NODE_CMD:-node}" -e 'const fs=require("fs"); const x=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(!Array.isArray(x.models)||!x.models.length||x.models.some(m=>typeof m.slug!=="string")) process.exit(1)' "${catalog_tmp}" ||
+      die_code 30 "Model catalog không hợp lệ."
+    chmod 600 "${catalog_tmp}"
+    if [ -f "${catalog_path}" ]; then
+      cp "${catalog_path}" "${catalog_path}.backup-$(date +%Y%m%d-%H%M%S)"
+    fi
+    mv "${catalog_tmp}" "${catalog_path}"
+    CATALOG_CONFIG_LINE="model_catalog_json = \"$(escape_toml "${catalog_path}")\""
+  fi
+
   preserved_root="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-root.XXXXXX")"
   preserved_tables="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-tables.XXXXXX")"
 
@@ -573,7 +606,7 @@ merge_config() {
     backup="${CONFIG_PATH}.backup-$(date +%Y%m%d-%H%M%S)"
     cp "${CONFIG_PATH}" "${backup}"
 
-    awk -v root_file="${preserved_root}" -v table_file="${preserved_tables}" '
+    awk -v root_file="${preserved_root}" -v table_file="${preserved_tables}" -v member_selection="${MEMBER_SELECTION}" '
       BEGIN { managed=0; legacy=0; section="root" }
       /^# BEGIN LTN CODEX MANAGED$/ { managed=1; next }
       /^# END LTN CODEX MANAGED$/ { managed=0; next }
@@ -594,6 +627,7 @@ merge_config() {
       /^[[:space:]]*\[/ { section="tables" }
       section == "root" && /^[[:space:]]*model[[:space:]]*=/ { next }
       section == "root" && /^[[:space:]]*model_provider[[:space:]]*=/ { next }
+      section == "root" && /^[[:space:]]*model_catalog_json[[:space:]]*=/ && member_selection == "1" { next }
       section == "root" { print > root_file; next }
       { print > table_file }
     ' "${CONFIG_PATH}"
@@ -606,6 +640,7 @@ merge_config() {
 # Managed by LTN Codex installer.
 model = "${escaped_model}"
 model_provider = "ltn_gateway"
+${CATALOG_CONFIG_LINE}
 # END LTN CODEX MANAGED ROOT
 EOF
     cat "${preserved_root}"
@@ -1466,12 +1501,12 @@ main() {
   fi
 
   case "${MODE}" in
-    --install|--repair|--status|--uninstall) ;;
-    *) die "Flag không hợp lệ. Dùng --install, --repair, --status hoặc --uninstall." ;;
+    --install|--repair|--status|--uninstall|--update) ;;
+    *) die "Flag không hợp lệ. Dùng --install, --update, --repair, --status hoặc --uninstall." ;;
   esac
 
   case "${MODE}" in
-    --install|--repair) install_or_repair ;;
+    --install|--repair|--update) install_or_repair ;;
     --status) status ;;
     --uninstall) uninstall_ltn ;;
   esac
