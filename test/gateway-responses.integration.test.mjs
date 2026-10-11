@@ -487,6 +487,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       },
       body: JSON.stringify({
         model: "client-gpt-model",
+        reasoning: { effort: "high", summary: "auto" },
         instructions: "Keep client instruction",
         input: [{
           role: "user",
@@ -510,6 +511,8 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
 
     const routed = upstreamRequests.find((item) => item.url === "/v1/responses");
     assert.equal(routed.body.model, "SIMI-GPT");
+    assert.equal(routed.body.reasoning.effort, "medium");
+    assert.equal(routed.body.reasoning.summary, "auto");
     assert.match(routed.body.instructions, /Company fact/);
     assert.match(routed.body.instructions, /Team fact/);
     assert.match(routed.body.instructions, /Keep client instruction/);
@@ -578,6 +581,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       },
       body: JSON.stringify({
         model: "regular-model",
+        reasoning_effort: "xhigh",
         messages: [{ role: "user", content: "chat regression" }],
         stream: false
       })
@@ -589,6 +593,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
       item.body.model === "regular-model"
     );
     assert.equal(chatRouted.body.model, "regular-model");
+    assert.equal(chatRouted.body.reasoning_effort, "medium");
     assert.match(chatRouted.body.messages[0].content, /Company fact/);
     await waitFor(() => extractionCalls === 3);
 

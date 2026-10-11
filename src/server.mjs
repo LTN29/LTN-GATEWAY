@@ -29,6 +29,7 @@ import {
 } from "./codex-routing.mjs";
 import { recordUserAnalytics } from "./user-analytics-store.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
+import { applyReasoningPolicy } from "./reasoning-policy.mjs";
 import {
   browserPageScope,
   getBrowserPage,
@@ -536,9 +537,9 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   const { systemContent } = memoryDisabled
     ? { systemContent: "" }
     : await loadMemoryContext(team, principal);
-  const upstreamPayload = memoryDisabled
+  const upstreamPayload = applyReasoningPolicy(memoryDisabled
     ? payload
-    : injectResponsesMemory(payload, systemContent);
+    : injectResponsesMemory(payload, systemContent), principal);
   route = await selectCodexRoute({
     team,
     principal,
@@ -681,6 +682,8 @@ async function handleChat(req, res, rawKey, principal, id) {
     );
     return;
   }
+
+  payload = applyReasoningPolicy(payload, principal, "chat");
 
   if (memberSelectionEnabled(principal)) {
     if (codexConfigForPrincipal(principal).routing.mode === "limited_daily") {
