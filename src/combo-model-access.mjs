@@ -7,6 +7,7 @@ function unavailable(message) {
 }
 
 export function memberSelectionEnabled(principal) {
+  if (config.codexModelSelection === "combo_members") return true;
   // Avoid resolving legacy routing defaults for capability-only accounts.
   const user = principal.principalType === "user" ? principal.aiPolicy : null;
   return (user?.modelSelection ?? principal.team?.aiPolicy?.modelSelection ??

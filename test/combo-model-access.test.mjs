@@ -36,7 +36,7 @@ test("admin policy accepts member selection and rejects invalid choices", () => 
   assert.throws(() => normalizeAiPolicy({ modelSelection: "all" }), /modelSelection/);
 });
 
-test("server default enables inherited member selection without editing every account", () => {
+test("server member selection applies to every account including explicit legacy policies", () => {
   const previous = config.codexModelSelection;
   try {
     config.codexModelSelection = "combo_members";
@@ -49,6 +49,11 @@ test("server default enables inherited member selection without editing every ac
     assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo_members");
     assert.equal(resolvePrincipalCodexPolicy(principal).combos.premium, "SIMI-GEMINI");
     principal.team.aiPolicy.modelSelection = "combo";
+    principal.aiPolicy.modelSelection = "combo";
+    assert.equal(memberSelectionEnabled(principal), true);
+    assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo_members");
+    assert.equal(memberSelectionEnabled({ principalType: "team", team: principal.team }), true);
+    config.codexModelSelection = "combo";
     assert.equal(memberSelectionEnabled(principal), false);
     assert.equal(resolvePrincipalCodexPolicy(principal).modelSelection, "combo");
     principal.aiPolicy.modelSelection = "combo_members";

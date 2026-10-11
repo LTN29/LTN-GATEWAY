@@ -6,12 +6,13 @@ Không gọi tên Combo trong request nên không chạy fallback của Combo.
 
 ## Gán nhóm cho tài khoản
 
-Để tự áp dụng cho mọi tài khoản đang kế thừa, đặt
+Để tự áp dụng cho mọi tài khoản, đặt
 `CODEX_MODEL_SELECTION=combo_members` trong `.env` server rồi restart Gateway.
 Gateway sử dụng Combo đã gán cho user/bộ phận hoặc Combo mặc định; không cần sửa
 từng tài khoản hay nạp lại key. Máy user chạy Update để nhận catalog và mở lại
-Codex. Lựa chọn `modelSelection` riêng của user/bộ phận ưu tiên hơn mặc định
-server, kể cả `combo` (Combo tự routing). Mặc định khi chưa đặt biến vẫn là `combo`.
+Codex. Chế độ server này ưu tiên hơn `modelSelection` riêng của user/bộ phận,
+kể cả giá trị `combo` đã lưu trước đây. Combo đã gán và chính sách quota vẫn
+giữ nguyên. Mặc định khi chưa đặt biến vẫn là `combo`, cho phép lựa chọn riêng.
 
 Trong Admin Console → chỉnh sửa nhân viên hoặc bộ phận:
 
