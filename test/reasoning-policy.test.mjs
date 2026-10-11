@@ -64,3 +64,32 @@ test("Claude 5.5 cannot disable thinking and native effort cannot override the c
   assert.equal(messages.output_config.effort, "medium");
   assert.equal(messages.thinking.type, "adaptive");
 });
+
+test("OpenAI routes normalize mixed provider presets without touching unrelated options", () => {
+  const payload = {
+    model: "ag/gemini", reasoning: { effort: "high", summary: "auto" },
+    thinking: { type: "disabled" }, enable_thinking: false, thinking_budget: 100000,
+    thinkingConfig: { thinkingLevel: "HIGH" },
+    generationConfig: { temperature: 0.2, thinkingConfig: { thinkingBudget: 100000 } },
+    request: { generationConfig: { maxOutputTokens: 2000, thinkingConfig: { thinkingLevel: "HIGH" } } },
+    params: { custom: "keep", reasoning_effort: "max", thinking: { budget_tokens: 100000 } },
+    output_config: { effort: "max", format: { type: "json_schema" } }
+  };
+  for (const format of ["responses", "chat"]) {
+    const result = applyReasoningPolicy(payload, sales, format);
+    assert.equal(result.reasoning_effort, "medium");
+    assert.equal(result.reasoning.effort, "medium");
+    assert.equal(result.output_config.effort, "medium");
+    for (const key of ["thinking", "thinkingConfig", "enable_thinking", "thinking_budget"]) {
+      assert.equal(result[key], undefined);
+    }
+    assert.deepEqual(result.generationConfig, { temperature: 0.2 });
+    assert.deepEqual(result.request.generationConfig, { maxOutputTokens: 2000 });
+    assert.deepEqual(result.params, { custom: "keep" });
+    assert.deepEqual(result.output_config.format, { type: "json_schema" });
+  }
+  assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget, 100000);
+  const defaultRequest = applyReasoningPolicy({ model: "cx/gpt" }, sales);
+  assert.equal(defaultRequest.reasoning.effort, "medium");
+  assert.equal(defaultRequest.reasoning_effort, "medium");
+});

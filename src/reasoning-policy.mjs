@@ -14,6 +14,28 @@ export function cappedReasoningEffort(value, principal) {
   return index > EFFORTS.indexOf(maximum) ? maximum : effort;
 }
 
+function withoutKeys(value, keys) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const result = { ...value };
+  for (const key of keys) delete result[key];
+  return result;
+}
+
+function clearNativeThinkingOverrides(payload) {
+  const result = withoutKeys(payload, ["thinking", "thinkingConfig", "enable_thinking", "thinking_budget"]);
+  if (result.generationConfig) {
+    result.generationConfig = withoutKeys(result.generationConfig, ["thinkingConfig"]);
+  }
+  if (result.request?.generationConfig) {
+    result.request = { ...result.request,
+      generationConfig: withoutKeys(result.request.generationConfig, ["thinkingConfig"]) };
+  }
+  if (result.params) {
+    result.params = withoutKeys(result.params, ["thinking", "reasoning_effort"]);
+  }
+  return result;
+}
+
 export function applyReasoningPolicy(payload, principal, format = "responses") {
   const reasoning = payload.reasoning && typeof payload.reasoning === "object" &&
     !Array.isArray(payload.reasoning) ? payload.reasoning : {};
@@ -23,11 +45,13 @@ export function applyReasoningPolicy(payload, principal, format = "responses") {
   let effort = cappedReasoningEffort(requested, principal);
   const adaptiveClaude = isAdaptiveClaudeModel(payload.model);
   if (adaptiveClaude && ["none", "minimal"].includes(effort)) effort = "low";
-  const result = { ...payload };
+  // On OpenAI routes, express intent once; 9Router converts it to provider fields.
+  // Native toggles and token budgets otherwise conflict with that intent.
+  const result = format === "messages" ? { ...payload } : clearNativeThinkingOverrides(payload);
   if (format === "responses" || payload.reasoning !== undefined) {
     result.reasoning = { ...reasoning, effort };
   }
-  if (format === "chat" || payload.reasoning_effort !== undefined || adaptiveClaude) {
+  if (format !== "messages") {
     result.reasoning_effort = effort;
   }
   // 9Router reads native output_config before OpenAI effort; keep them consistent.
