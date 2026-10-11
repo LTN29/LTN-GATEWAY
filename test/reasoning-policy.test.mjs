@@ -40,3 +40,27 @@ test("Chat applies the same cap to both effort encodings", () => {
   assert.equal(applyReasoningPolicy(input, it, "chat").reasoning_effort, "high");
   assert.equal(applyReasoningPolicy({}, sales, "chat").reasoning_effort, "medium");
 });
+
+test("Claude 5.5 cannot disable thinking and native effort cannot override the cap", () => {
+  const payload = { model: "cc/claude-opus-5-5", reasoning: { effort: "high", summary: "auto" },
+    output_config: { effort: "max", format: { type: "json_schema" } },
+    thinking: { type: "disabled", budget_tokens: 50000, display: "omitted" } };
+  const result = applyReasoningPolicy(payload, sales);
+  assert.equal(result.reasoning.effort, "medium");
+  assert.equal(result.reasoning_effort, "medium");
+  assert.equal(result.output_config.effort, "medium");
+  assert.deepEqual(result.output_config.format, payload.output_config.format);
+  assert.deepEqual(result.thinking, { type: "adaptive", display: "omitted" });
+  assert.equal(payload.thinking.type, "disabled");
+  for (const effort of ["none", "minimal"]) {
+    const low = applyReasoningPolicy({ model: payload.model, reasoning: { effort } }, sales);
+    assert.equal(low.output_config.effort, "low");
+    assert.equal(low.thinking.type, "adaptive");
+  }
+  const high = applyReasoningPolicy(payload, it);
+  assert.equal(high.output_config.effort, "high");
+  assert.equal(high.reasoning.effort, "high");
+  const messages = applyReasoningPolicy({ model: payload.model, output_config: { effort: "max" } }, sales, "messages");
+  assert.equal(messages.output_config.effort, "medium");
+  assert.equal(messages.thinking.type, "adaptive");
+});

@@ -1,9 +1,15 @@
 ---
 name: simi-tro-chuyen
-description: Trò chuyện và sinh mã qua Simi Gateway với streaming và tự động chuyển model dự phòng. Dùng khi user muốn hỏi AI, viết hoặc phân tích code, tóm tắt nội dung hay chạy prompt qua Simi.
+description: Gọi thêm model AI qua Simi Gateway khi user yêu cầu rõ chạy prompt qua API hoặc lấy ý kiến từ model khác. Không dùng cho hội thoại thường, đọc/sửa file cục bộ hay viết code trực tiếp trong project.
 ---
 
 # Simi - Trò chuyện và sinh mã
+
+Codex already uses the configured Gateway model. For ordinary questions or
+local file tasks, answer or use the available file tools directly; do not call
+a second model. This skill is for an explicitly requested additional API call.
+For business documents, use `simi-tai-lieu` and return the completed file or
+answer, not a script the user must run.
 
 Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
 

@@ -15,7 +15,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const combos = [
     { name: "SIMI-GPT", models: ["cx/gpt", "ag/gemini"] },
     { name: "SIMI-FREE", models: ["oc/free"] },
-    { name: "SIMI-CLAUDE", models: ["cc/claude"] }
+    { name: "SIMI-CLAUDE", models: ["cc/claude-opus-5-5"] }
   ];
   let dashboardUnavailable = false;
   const forwarded = [];
@@ -30,12 +30,17 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
     }
     assert.notEqual(req.headers.cookie, "session=mock-dashboard-secret");
     if (req.url === "/v1/models") {
-      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude"].map((id) => ({ id, owned_by: "provider" })) }));
+      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5"].map((id) => ({ id, owned_by: "provider" })) }));
       return;
     }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const payload = JSON.parse(Buffer.concat(chunks).toString());
+    if (payload.model === "cc/claude-opus-5-5" && payload.thinking?.type !== "adaptive") {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: { message: "thinking.type.disabled is not supported for this model" } }));
+      return;
+    }
     forwarded.push({ path: req.url, payload });
     res.end(JSON.stringify({ status: "completed", model: payload.model, output: [] }));
   });
@@ -70,7 +75,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const catalog = await list.json();
   assert.deepEqual(catalog.data.map((m) => m.id), ["cx/gpt", "ag/gemini"]);
   assert.deepEqual(catalog.models.map((m) => m.slug), ["cx/gpt", "ag/gemini"]);
-  assert.deepEqual((await (await call("/v1/models", "key-beta")).json()).data.map((m) => m.id), ["cc/claude"]);
+  assert.deepEqual((await (await call("/v1/models", "key-beta")).json()).data.map((m) => m.id), ["cc/claude-opus-5-5"]);
   const clientConfig = await (await call("/v1/codex/config")).json();
   assert.equal(clientConfig.defaultModel, "cx/gpt");
   assert.equal(JSON.stringify(clientConfig).includes("mock-dashboard-secret"), false);
@@ -81,6 +86,19 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal(response.headers.get("x-ltn-selected-model"), "ag/gemini");
   assert.equal(forwarded.at(-1).payload.model, "ag/gemini");
   assert.equal(forwarded.at(-1).payload.reasoning.effort, "high");
+  const claude = await call("/v1/responses", "key-beta", {
+    model: "cc/claude-opus-5-5", input: "hi", reasoning: { effort: "high" }, thinking: { type: "disabled" }
+  });
+  assert.equal(claude.status, 200);
+  assert.equal(forwarded.at(-1).payload.thinking.type, "adaptive");
+  assert.equal(forwarded.at(-1).payload.output_config.effort, "high");
+  assert.equal(forwarded.at(-1).payload.reasoning_effort, "high");
+  const messages = await call("/v1/messages", "key-beta", {
+    model: "cc/claude-opus-5-5", messages: [], output_config: { effort: "high" }, thinking: { type: "disabled" }
+  });
+  assert.equal(messages.status, 200);
+  assert.equal(forwarded.at(-1).payload.thinking.type, "adaptive");
+  assert.equal(forwarded.at(-1).payload.reasoning_effort, undefined);
   for (const path of ["/v1/responses", "/v1/chat/completions", "/v1/messages", "/v1/images/generations"]) {
     const count = forwarded.length;
     assert.equal((await call(path, "key-alpha", { model: "cc/claude", input: "hi", messages: [] })).status, 403);

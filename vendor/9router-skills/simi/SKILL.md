@@ -10,7 +10,12 @@ Local/remote AI gateway exposing OpenAI-compatible REST. One key, many providers
 ## User-facing tool use
 
 For ordinary users, show a short natural-language progress update and then the
-result. Call only tools that are actually exposed in the active session. Never
+result or a link to the completed file. For local Word/Excel/PDF work, use
+`simi-tai-lieu` and the exposed document tools; for project files use native
+search/read/patch tools. Do not send an ordinary local task to another AI.
+Do not give code or terminal commands instead of performing an authorized file
+task unless the user explicitly wants code. Call only tools that are actually
+exposed in the active session. Never
 invent a tool such as `ReadSpreadsheet`, and never print tool/function-call
 syntax, XML such as `<tool_call>`, JSON argument payloads, API snippets, or
 terminal commands as though they are an action being performed. If no callable
@@ -92,7 +97,8 @@ Chọn skill đã được installer cài cục bộ theo nhu cầu:
 
 | Nhu cầu của user | Skill |
 |---|---|
-| Hỏi AI, viết hoặc phân tích code | `simi-tro-chuyen` |
+| Gọi thêm model qua API theo yêu cầu rõ của user | `simi-tro-chuyen` |
+| Đọc/sửa Word, Excel hoặc PDF cục bộ | `simi-tai-lieu` |
 | Tạo ảnh | `simi-tao-anh` |
 | Tạo video | `simi-tao-video` |
 | Đọc văn bản thành giọng nói | `simi-doc-van-ban` |

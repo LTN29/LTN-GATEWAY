@@ -6,7 +6,10 @@ description: Đọc, trích xuất và phân tích file PDF cục bộ bằng Py
 # Simi - Đọc và phân tích PDF
 
 Use this skill when the user asks to read, summarize, compare, extract tables
-from, or analyze a local PDF. Use the installed `ltn-pdf` wrapper; it selects
+from, or analyze a local PDF. Prefer the exposed `document_read` tool with the
+relevant pages; use `simi-tai-lieu` for file edits. Return the requested analysis
+or completed file, not code for the user to run. If document tools are unavailable,
+use the installed `ltn-pdf` wrapper internally; it selects
 the managed Python runtime and never sends the PDF to a third party by itself.
 
 ## Extract a PDF

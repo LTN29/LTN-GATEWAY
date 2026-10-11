@@ -71,3 +71,12 @@ test("catalog does not invent reasoning levels or context capacity", () => {
   assert.deepEqual(model.supported_reasoning_levels, []);
   assert.equal(model.context_window, null);
 });
+
+test("Claude 5.5 catalog exposes High for IT and only levels up to Medium for others", () => {
+  const model = { id: "cc/claude-opus-5-5" };
+  const it = codexModelEntry(model, 0, { principalType: "user", teamId: "IT" });
+  assert.deepEqual(it.supported_reasoning_levels.map((level) => level.effort), ["low", "medium", "high"]);
+  const sales = codexModelEntry(model, 0, { principalType: "user", teamId: "SALES" });
+  assert.deepEqual(sales.supported_reasoning_levels.map((level) => level.effort), ["low", "medium"]);
+  assert.equal(sales.default_reasoning_level, "medium");
+});

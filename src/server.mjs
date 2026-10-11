@@ -70,6 +70,10 @@ const browserExtensionRoot = fileURLToPath(
 );
 const localToolPaths = new Map([
   [
+    "/install/tools/document-tool.py",
+    fileURLToPath(new URL("../scripts/document-tool.py", import.meta.url))
+  ],
+  [
     "/install/tools/browser-page.mjs",
     fileURLToPath(new URL("../scripts/browser-page.mjs", import.meta.url))
   ],
@@ -134,6 +138,7 @@ const managedSkillNames = [
   "simi-doc-trang-web",
   "simi-trinh-duyet",
   "simi-doc-pdf",
+  "simi-tai-lieu",
   "simi-cai-dat"
 ];
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
@@ -366,7 +371,7 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
   }
   const startedAt = Date.now();
   const signal = clientAbortSignal(req, res);
-  const body = req.method === "GET"
+  let body = req.method === "GET"
     ? undefined
     : await readBody(req, config.maxCapabilityBodyBytes);
   const connectionId = String(req.headers["x-connection-id"] || "").trim();
@@ -379,6 +384,10 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
       return;
     }
     await assertComboModelAllowed(principal, parseModelRequest(body).model, id);
+  }
+  if (req.method === "POST" && upstreamPath.split("?")[0] === "/v1/messages" &&
+      String(req.headers["content-type"] || "").includes("application/json")) {
+    body = JSON.stringify(applyReasoningPolicy(parseModelRequest(body), principal, "messages"));
   }
   if (connectionId.length > 256 || /[\r\n]/.test(connectionId)) {
     const error = new Error("X-Connection-ID không hợp lệ.");

@@ -32,7 +32,7 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-cai-dat"
+MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -771,7 +771,7 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 12 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
+  echo "Da cai/cap nhat 13 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
 }
 
 get_or_create_browser_bridge_token() {
@@ -1230,25 +1230,25 @@ ensure_runtime_dependencies() {
       return 0
     fi
   fi
-  marker="${runtime_dir}/.ltn-document-deps-v4"
+  marker="${runtime_dir}/.ltn-document-deps-v5"
   if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
-    echo "Dang cai thu vien Skills tai lieu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
+    echo "Dang cai thu vien Word/Excel/PDF..."
     if [ "${OS_NAME}" = "macos" ]; then
       local uv_bin
       uv_bin="$(resolve_ltn_uv_command 2>/dev/null || true)"
       [ -n "${uv_bin}" ] || die_code 12 "Khong co uv runtime de cai dependency LTN Skills."
-      if ! "${uv_bin}" pip install --python "${venv_python}" --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
+      if ! "${uv_bin}" pip install --python "${venv_python}" --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli; then
         die_code 12 "Khong tai duoc dependency PDF/Excel cho LTN Skills. Kiem tra mang roi chay Repair."
       fi
-    elif ! "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli; then
+    elif ! "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli; then
       echo "Canh bao: khong tai duoc thu vien PDF/Excel. Kiem tra mang roi chay Repair." >&2
       return 0
     fi
-    printf 'pypdf\npdfplumber\npymupdf\nopenpyxl\ntomli\n' > "${marker}"
+    printf 'pypdf\npdfplumber\npymupdf\nopenpyxl\npython-docx\ntomli\n' > "${marker}"
     chmod 600 "${marker}"
   fi
 
-  if ! "${venv_python}" -c 'import pypdf, pdfplumber, pymupdf, openpyxl, tomli' >/dev/null 2>&1; then
+  if ! "${venv_python}" -c 'import pypdf, pdfplumber, pymupdf, openpyxl, docx, tomli' >/dev/null 2>&1; then
     if [ "${OS_NAME}" = "macos" ]; then
       die_code 12 "LTN Skill runtime chua day du dependency PDF/Excel sau khi cai."
     fi
@@ -1264,7 +1264,7 @@ install_local_tools() {
   tools_dir="${CODEX_HOME}/tools"
   mkdir -p "${tools_dir}"
   chmod 700 "${tools_dir}"
-  for asset in 9router-client.mjs pdf-extract.py; do
+  for asset in 9router-client.mjs pdf-extract.py document-tool.py; do
     asset_path="${tools_dir}/${asset}"
     asset_tmp="${asset_path}.$$.$(date +%s).tmp"
     if ! curl --fail --silent --show-error --max-redirs 0 \
@@ -1425,7 +1425,7 @@ status() {
       skill_count=$((skill_count + 1))
     fi
   done
-  echo "Simi skills: ${skill_count}/12"
+  echo "Simi skills: ${skill_count}/13"
   if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
     echo "Browser bridge token: da tao"
   else

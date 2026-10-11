@@ -387,6 +387,7 @@ function Install-Managed9RouterSkills {
     "simi-doc-trang-web",
     "simi-trinh-duyet",
     "simi-doc-pdf",
+    "simi-tai-lieu",
     "simi-cai-dat"
   )
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
@@ -679,15 +680,15 @@ function Ensure-PdfRuntime {
     }
   }
 
-  $marker = Join-Path $runtimeDir ".ltn-pdf-deps-v3"
+  $marker = Join-Path $runtimeDir ".ltn-document-deps-v5"
   if (-not (Test-Path -LiteralPath $marker)) {
-    Write-Host "Đang cài thư viện tài liệu: pypdf, pdfplumber, pymupdf, openpyxl, tomli..."
-    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl tomli | Out-Host
+    Write-Host "Đang cài thư viện Word/Excel/PDF..."
+    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli | Out-Host
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
       return $false
     }
-    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`nopenpyxl`ntomli`n", [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($marker, "pypdf`npdfplumber`npymupdf`nopenpyxl`npython-docx`ntomli`n", [Text.UTF8Encoding]::new($false))
   }
   Write-Host "Python PDF runtime: $venvPython"
   return $true
@@ -795,7 +796,7 @@ function Install-LocalTools {
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $toolsDir = Join-Path $CodexHome "tools"
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-  foreach ($asset in @("9router-client.mjs", "pdf-extract.py")) {
+  foreach ($asset in @("9router-client.mjs", "pdf-extract.py", "document-tool.py")) {
     $assetPath = Join-Path $toolsDir $asset
     $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
     try {
@@ -904,9 +905,9 @@ function Show-InstallerStatus {
   $skillCount = @(
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
-    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-cai-dat"
+    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat"
   ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
-  Write-Host "  Simi skills: $skillCount/12"
+  Write-Host "  Simi skills: $skillCount/13"
   $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
   Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
   $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
@@ -972,7 +973,7 @@ function Invoke-LtnUninstall {
   foreach ($skillName in @(
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
-    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-cai-dat",
+    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat",
     "9router", "9router-chat", "9router-image", "9router-video", "9router-tts",
     "9router-stt", "9router-embeddings", "9router-web-search", "9router-web-fetch",
     "9router-browser", "9router-pdf"
