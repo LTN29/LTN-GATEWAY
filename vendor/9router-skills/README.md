@@ -6,10 +6,16 @@ These skill definitions were fetched from the upstream `master` branch on
 2026-07-31 and are distributed by the SIMI Codex installer. SIMI-specific setup
 notes route capability calls through `https://ai.simi.vn` so employee devices do
 not access the admin-only `router.simi.vn` endpoint directly. The signed-in
-browser skill uses a local Chrome extension and forwards only visible page text
-through the authenticated LTN Gateway. The managed `ltn-9router` wrapper keeps
+browser skill uses read-only local Chrome DevTools Protocol via MCP in a
+dedicated signed-in profile; it requires no extension. Local Word/Excel/PDF
+work uses the managed Python document tools without uploading files. The managed `ltn-9router` wrapper keeps
 web search/fetch network access on the same authenticated route, while the PDF
 skill uses a local Python runtime for file extraction.
 
 Refresh these files deliberately with the Codex skill installer, review the
 diff, run the installer and capability-proxy tests, then deploy the Gateway.
+
+Skill instructions describe conditional capabilities, not new permissions.
+Combo-member accounts currently permit conversation APIs only; web/media/vector
+Gateway calls can return 403. Use available authorized native tools or report
+the missing capability instead of bypassing Gateway access checks.

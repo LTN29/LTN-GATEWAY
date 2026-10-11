@@ -10,7 +10,7 @@ Thực hiện trọn quy trình khi user ra lệnh cài đặt. Không dừng �
 ## Quy trình
 
 1. Xác định hệ điều hành, kiến trúc, shell, project và dependency đang thiếu từ lỗi thực tế.
-2. Kiểm tra xem command/package đã tồn tại chưa; tránh cài trùng.
+2. Kiểm tra command/package và runtime do installer hoặc workspace cung cấp; ưu tiên dùng chúng, tránh cài trùng.
 3. Tìm artifact user đã tải trong thư mục project và thư mục Downloads. Chỉ tìm theo tên hoặc đuôi liên quan, không quét hay đọc file cá nhân không cần thiết.
 4. Ưu tiên cài offline từ artifact hoặc cache đã có.
 5. Nếu chưa có, dùng package manager phù hợp: `winget`, `choco`, `scoop`, `npm`, `pnpm`, `pip`, `pipx`, `uv`, `cargo`, `go`, `brew`, `apt`, `dnf`, `yum`, `pacman` hoặc `zypper`.
@@ -37,3 +37,8 @@ Thực hiện trọn quy trình khi user ra lệnh cài đặt. Không dừng �
 ## Kết quả cần báo
 
 Nêu package/phần mềm và phiên bản đã cài, nguồn hoặc file đã dùng, phạm vi cài (project/user/system), lệnh xác minh, và phần còn bị chặn nếu có.
+
+PowerShell: dùng `npm.cmd`/`npx.cmd` nếu npm.ps1 bị ExecutionPolicy chặn.
+Không đổi ExecutionPolicy hoặc yêu cầu Administrator chỉ để chạy npm.
+Gateway web API 403 là thiếu quyền tính năng; dùng nguồn/tool chính thức đã
+được cấp quyền nếu có, không retry qua endpoint quản trị để né giới hạn.

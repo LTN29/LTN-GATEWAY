@@ -41,6 +41,10 @@ Call them directly instead of writing a new Python script for each ordinary edit
 
 ## Sửa đúng vị trí và giữ file gốc
 
+Each edit call supports at most 200 changes. For more changes, work in batches
+on successive new output files and use the fingerprint of each latest file;
+never reuse the original fingerprint against a changed intermediate file.
+
 Use `document_edit` with the fingerprint from the latest read and a new absolute
 `output_path` in an authorized existing directory. It validates the generated
 file and preserves the original. If source changed, reread before retrying.
