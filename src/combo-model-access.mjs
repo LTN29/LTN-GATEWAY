@@ -48,16 +48,34 @@ export function membersOfCombos(payload, names) {
 export async function allowedComboModels(principal, requestId, comboIds) {
   const names = comboIds || comboIdsForPolicy(resolvePrincipalCodexPolicy(principal));
   let response;
+  let url = `${config.upstreamBaseUrl}/api/combos`;
+  let headers = config.routerDashboardCookie ? { cookie: config.routerDashboardCookie } : {};
+  const internal = Boolean(config.routerComboApiUrl);
+  if (internal) {
+    let target;
+    try { target = new URL(config.routerComboApiUrl); } catch { /* Fail closed below. */ }
+    if (!target || target.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) ||
+        target.pathname !== "/api/internal/ltn-combos" || target.username || target.password || target.search || target.hash ||
+        !/^[A-Za-z0-9_-]{32,256}$/.test(config.routerComboApiToken)) {
+      throw unavailable("Cấu hình API Combo nội bộ không hợp lệ; cần URL loopback và khóa server riêng.");
+    }
+    url = target.href;
+    headers = { authorization: `Bearer ${config.routerComboApiToken}` };
+  }
   try {
-    response = await fetch(`${config.upstreamBaseUrl}/api/combos`, {
-      headers: config.routerDashboardCookie ? { cookie: config.routerDashboardCookie } : {},
+    response = await fetch(url, {
+      headers,
       signal: AbortSignal.timeout(5000),
       redirect: "manual"
     });
-    if (!response.ok) throw new Error();
+    if (!response.ok) {
+      if (internal) throw unavailable(`API Combo nội bộ trả HTTP ${response.status}; kiểm tra khóa server và quyền IP của Gateway.`);
+      throw new Error();
+    }
     return membersOfCombos(await response.json(), names);
   } catch (error) {
     if (error.statusCode) throw error;
+    if (internal) throw unavailable("Không kết nối được hoặc dữ liệu API Combo nội bộ không hợp lệ. Kiểm tra endpoint 9Router.");
     throw unavailable("Không đọc được Combo từ 9Router. Admin cần kiểm tra kết nối và phiên dashboard của Gateway.");
   }
 }

@@ -40,9 +40,12 @@ Không có `modelSelection` sẽ kế thừa mặc định server. Đặt `combo
 
 ## Nguồn danh sách và quyền
 
-Gateway đọc `GET /api/combos` từ `UPSTREAM_BASE_URL` trên mỗi lần lấy danh sách
-và mỗi request inference, không dùng bản quyền đã cache. Admin vẫn chỉnh thành
-viên trên 9Router. Không cần sửa project 9Router để triển khai tính năng này.
+Gateway đọc combo trên mỗi lần lấy danh sách và mỗi request inference, không
+cache quyền. Admin vẫn chỉnh thành viên trên 9Router. Ưu tiên endpoint nội bộ
+`NINEROUTER_COMBO_API_URL` với `NINEROUTER_COMBO_API_TOKEN` riêng cho server;
+xem [triển khai endpoint 9Router](NINEROUTER_INTERNAL_COMBOS.md).
+Đường mới cần build image 9Router có extension, chỉ pull Gateway không đủ.
+Nếu không cấu hình URL nội bộ, dùng `GET /api/combos` từ `UPSTREAM_BASE_URL` như cũ.
 
 Nếu management API local của 9Router yêu cầu đăng nhập dashboard, admin đặt
 `NINEROUTER_DASHBOARD_COOKIE` trong `.env` server bằng session cookie hợp lệ.

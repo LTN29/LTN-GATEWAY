@@ -39,6 +39,8 @@ export const config = {
   ).replace(/\/+$/, ""),
   upstreamTimeoutMs: Number(process.env.UPSTREAM_TIMEOUT_MS || 180000),
   routerDashboardCookie: process.env.NINEROUTER_DASHBOARD_COOKIE || "",
+  routerComboApiUrl: process.env.NINEROUTER_COMBO_API_URL || "",
+  routerComboApiToken: process.env.NINEROUTER_COMBO_API_TOKEN || "",
   memoryModel: process.env.MEMORY_MODEL || "mmf/mimo-auto",
   memoryExtractionEnabled: bool(process.env.MEMORY_EXTRACTION_ENABLED, true),
   memoryExtractionModel: process.env.MEMORY_EXTRACTION_MODEL || process.env.MEMORY_MODEL || "SIMI-FREE",

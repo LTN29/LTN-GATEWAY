@@ -10,6 +10,8 @@ description: Tạo hoặc chỉnh ảnh bằng công cụ ảnh có sẵn, hoặ
 Ưu tiên công cụ chuyên dụng thực sự có trong phiên hiện tại. Skill không tự
 cấp quyền, cài thêm công cụ hay mở API. Nếu cần Gateway, dùng `ltn-9router`:
 wrapper tự lấy key và client ID đã cài; không đọc/in key, không yêu cầu key mới.
+SIMI-managed requests use `https://ai.simi.vn` through that wrapper, including
+the client ID; never use the admin-only `router.simi.vn`.
 Không gọi trực tiếp 9Router hoặc endpoint quản trị để né quyền Gateway.
 Tài khoản `combo_members` hiện chỉ có API hội thoại; API web/media/embedding
 có thể trả 403. Khi đó dùng công cụ chuyên dụng đã được cấp quyền nếu có;
