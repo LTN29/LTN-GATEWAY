@@ -16,7 +16,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
     { name: "SIMI-GPT", models: ["cx/gpt", "ag/gemini"] },
     { name: "SIMI-FREE", models: ["oc/free"] },
     { name: "SIMI-CLAUDE", models: ["cc/claude-opus-5-5"] },
-    { name: "SIMI-GPT-VISION", models: ["cx/gpt-6.1-sol"] }
+    { name: "SIMI-GPT-VISION", models: ["cx/gpt-6.1-sol", "ag/gemini-3.1-pro-low", "ag/gemini-3.8-flash-medium"] }
   ];
   let dashboardUnavailable = false;
   const forwarded = [];
@@ -31,7 +31,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
     }
     assert.notEqual(req.headers.cookie, "session=mock-dashboard-secret");
     if (req.url === "/v1/models") {
-      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5", "cx/gpt-6.1-sol"].map((id) => ({ id, owned_by: "provider" })) }));
+      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5", "cx/gpt-6.1-sol", "ag/gemini-3.1-pro-low", "ag/gemini-3.8-flash-medium"].map((id) => ({ id, owned_by: "provider" })) }));
       return;
     }
     const chunks = [];
@@ -119,6 +119,12 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal(gptImageResponse.status, 200);
   assert.equal(forwarded.at(-1).payload.model, "cx/gpt-6.1-sol");
   assert.deepEqual(forwarded.at(-1).payload.input.find((item) => item.role === "user").content, imageInput[0].content);
+  for (const model of ["ag/gemini-3.1-pro-low", "ag/gemini-3.8-flash-medium"]) {
+    assert.deepEqual(gptCatalog.modelCatalog.models.find((entry) => entry.slug === model).input_modalities, ["text", "image"]);
+    assert.equal((await call("/v1/responses", "key-gamma", { model, input: imageInput })).status, 200);
+    assert.equal(forwarded.at(-1).payload.model, model);
+    assert.deepEqual(forwarded.at(-1).payload.input.find((item) => item.role === "user").content, imageInput[0].content);
+  }
   const messages = await call("/v1/messages", "key-beta", {
     model: "cc/claude-opus-5-5", messages: [], output_config: { effort: "high" }, thinking: { type: "disabled" }
   });

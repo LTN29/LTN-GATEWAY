@@ -86,9 +86,11 @@ function modelDisplayName(model) {
 
 function supportsKnownVision(modelId) {
   if (isAdaptiveClaudeModel(modelId)) return true;
-  // Explicitly documented chat models, not arbitrary GPT aliases or image generators.
+  // Known multimodal chat models, not arbitrary aliases or media-only models.
   const name = String(modelId).split("/").at(-1).replace(/\[1m\]$/i, "");
-  return /^(?:gpt-5[.-]6-(?:sol|terra|luna)|gpt-6-(?:sol|astra|luna)|gpt-6[.-]1-sol)$/.test(name);
+  if (/^(?:gpt-5[.-]6-(?:sol|terra|luna)|gpt-6-(?:sol|astra|luna)|gpt-6[.-]1-sol)$/.test(name)) return true;
+  // 9Router adds reasoning presets/agent aliases to the underlying Gemini model.
+  return /^gemini-(?:2[.-]5|3(?:[.-](?:1|5|7|8))?)-(?:pro|flash(?:-lite)?)(?:-(?:preview|low|medium|high|agent))?$/.test(name);
 }
 
 export function codexModelEntry(model, priority = 0, principal = null) {

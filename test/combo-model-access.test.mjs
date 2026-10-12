@@ -102,3 +102,18 @@ test("GPT vision catalogs cover deployed model IDs without enabling unknown alia
   }
   assert.deepEqual(codexModelEntry({ id: "cx/gpt-6.1-sol", input_modalities: ["text"] }).input_modalities, ["text"]);
 });
+
+test("Gemini chat models and router presets allow images without enabling specialized or unknown models", () => {
+  for (const id of ["ag/gemini-3.1-pro-low", "ag/gemini-3.1-pro-high", "ag/gemini-3.1-pro-agent",
+    "ag/gemini-3.8-flash-medium", "gc/gemini-3-flash", "gemini/gemini-3.1-pro-preview",
+    "gemini/gemini-3.1-flash-lite", "gc/gemini-2.5-pro", "gc/gemini-2.5-flash"]) {
+    const entry = codexModelEntry({ id });
+    assert.equal(entry.slug, id);
+    assert.deepEqual(entry.input_modalities, ["text", "image"], id);
+  }
+  for (const id of ["ag/gemini", "ag/gemini-pro-agent", "ag/gemini-future", "gemini/gemini-3.8-flash-tts",
+    "gemini/gemini-embedding-001", "gemini/gemini-3.1-flash-image"]) {
+    assert.deepEqual(codexModelEntry({ id }).input_modalities, ["text"], id);
+  }
+  assert.deepEqual(codexModelEntry({ id: "ag/gemini-3.1-pro-low", input_modalities: ["text"] }).input_modalities, ["text"]);
+});
