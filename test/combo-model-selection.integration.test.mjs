@@ -75,7 +75,11 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const catalog = await list.json();
   assert.deepEqual(catalog.data.map((m) => m.id), ["cx/gpt", "ag/gemini"]);
   assert.deepEqual(catalog.models.map((m) => m.slug), ["cx/gpt", "ag/gemini"]);
-  assert.deepEqual((await (await call("/v1/models", "key-beta")).json()).data.map((m) => m.id), ["cc/claude-opus-5-5"]);
+  const claudeCatalog = await (await call("/v1/models", "key-beta")).json();
+  assert.deepEqual(claudeCatalog.data.map((m) => m.id), ["cc/claude-opus-5-5"]);
+  assert.deepEqual(claudeCatalog.models[0].input_modalities, ["text", "image"]);
+  const installedCatalog = await (await call("/v1/codex/config", "key-beta")).json();
+  assert.deepEqual(installedCatalog.modelCatalog.models[0].input_modalities, ["text", "image"]);
   const clientConfig = await (await call("/v1/codex/config")).json();
   assert.equal(clientConfig.defaultModel, "cx/gpt");
   assert.equal(JSON.stringify(clientConfig).includes("mock-dashboard-secret"), false);
@@ -93,6 +97,17 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal(forwarded.at(-1).payload.thinking.type, "adaptive");
   assert.equal(forwarded.at(-1).payload.output_config.effort, "high");
   assert.equal(forwarded.at(-1).payload.reasoning_effort, "high");
+  const imageInput = [{ role: "user", content: [
+    { type: "input_text", text: "Describe this image" },
+    { type: "input_image", image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC" }
+  ] }];
+  const imageResponse = await call("/v1/responses", "key-beta", {
+    model: "cc/claude-opus-5-5", input: imageInput
+  });
+  assert.equal(imageResponse.status, 200);
+  const imageMessage = forwarded.at(-1).payload.input.find((item) => item.role === "user");
+  assert.deepEqual(imageMessage.content, imageInput[0].content);
+  assert.equal(forwarded.at(-1).payload.model, "cc/claude-opus-5-5");
   const messages = await call("/v1/messages", "key-beta", {
     model: "cc/claude-opus-5-5", messages: [], output_config: { effort: "high" }, thinking: { type: "disabled" }
   });

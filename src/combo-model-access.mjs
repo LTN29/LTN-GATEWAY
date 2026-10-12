@@ -114,7 +114,11 @@ export function codexModelEntry(model, priority = 0, principal = null) {
     truncation_policy: { mode: "bytes", limit: 10000 },
     context_window: Number.isInteger(model.context_window) && model.context_window > 0 ? model.context_window : null,
     experimental_supported_tools: [],
-    input_modalities: ["text"]
+    // Preserve declared capabilities; older 9Router lists omit this field.
+    // Claude Opus/Sonnet 5.5 support vision even without upstream metadata.
+    input_modalities: Array.isArray(model.input_modalities) && model.input_modalities.some((mode) => mode === "text" || mode === "image")
+      ? [...new Set(model.input_modalities.filter((mode) => mode === "text" || mode === "image"))]
+      : isAdaptiveClaudeModel(model.id) ? ["text", "image"] : ["text"]
   };
 }
 

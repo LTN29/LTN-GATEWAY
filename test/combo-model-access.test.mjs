@@ -70,6 +70,15 @@ test("catalog does not invent reasoning levels or context capacity", () => {
   assert.equal(model.visibility, "list");
   assert.deepEqual(model.supported_reasoning_levels, []);
   assert.equal(model.context_window, null);
+  assert.deepEqual(model.input_modalities, ["text"]);
+});
+
+test("catalog preserves declared vision and supplies known Claude vision when metadata is absent", () => {
+  assert.deepEqual(codexModelEntry({ id: "cc/claude-opus-5-5" }).input_modalities, ["text", "image"]);
+  assert.deepEqual(codexModelEntry({ id: "cc/claude-sonnet-5-5" }).input_modalities, ["text", "image"]);
+  assert.deepEqual(codexModelEntry({ id: "custom/vision", input_modalities: ["text", "image", "image"] }).input_modalities, ["text", "image"]);
+  assert.deepEqual(codexModelEntry({ id: "cc/claude-opus-5-5", input_modalities: ["text"] }).input_modalities, ["text"]);
+  assert.deepEqual(codexModelEntry({ id: "custom/unknown", input_modalities: [] }).input_modalities, ["text"]);
 });
 
 test("Claude 5.5 catalog exposes High for IT and only levels up to Medium for others", () => {
