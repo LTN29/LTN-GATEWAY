@@ -84,6 +84,13 @@ function modelDisplayName(model) {
   return `${family} ${suffix}`;
 }
 
+function supportsKnownVision(modelId) {
+  if (isAdaptiveClaudeModel(modelId)) return true;
+  // Explicitly documented chat models, not arbitrary GPT aliases or image generators.
+  const name = String(modelId).split("/").at(-1).replace(/\[1m\]$/i, "");
+  return /^(?:gpt-5[.-]6-(?:sol|terra|luna)|gpt-6-(?:sol|astra|luna)|gpt-6[.-]1-sol)$/.test(name);
+}
+
 export function codexModelEntry(model, priority = 0, principal = null) {
   // Known Claude 5.5 capabilities supplement upstream catalogs without metadata.
   const advertised = Array.isArray(model.supported_reasoning_levels) && model.supported_reasoning_levels.length
@@ -115,10 +122,10 @@ export function codexModelEntry(model, priority = 0, principal = null) {
     context_window: Number.isInteger(model.context_window) && model.context_window > 0 ? model.context_window : null,
     experimental_supported_tools: [],
     // Preserve declared capabilities; older 9Router lists omit this field.
-    // Claude Opus/Sonnet 5.5 support vision even without upstream metadata.
+    // Known vision models need a fallback when upstream omits metadata.
     input_modalities: Array.isArray(model.input_modalities) && model.input_modalities.some((mode) => mode === "text" || mode === "image")
       ? [...new Set(model.input_modalities.filter((mode) => mode === "text" || mode === "image"))]
-      : isAdaptiveClaudeModel(model.id) ? ["text", "image"] : ["text"]
+      : supportsKnownVision(model.id) ? ["text", "image"] : ["text"]
   };
 }
 

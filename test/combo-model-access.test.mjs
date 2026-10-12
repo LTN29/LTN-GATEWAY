@@ -89,3 +89,16 @@ test("Claude 5.5 catalog exposes High for IT and only levels up to Medium for ot
   assert.deepEqual(sales.supported_reasoning_levels.map((level) => level.effort), ["low", "medium"]);
   assert.equal(sales.default_reasoning_level, "medium");
 });
+
+test("GPT vision catalogs cover deployed model IDs without enabling unknown aliases", () => {
+  for (const id of ["cx/gpt-5.6-sol", "cx/gpt-5-6-sol", "cx/gpt-5.6-terra", "cx/gpt-5.6-luna",
+    "cx/gpt-6-sol", "cx/gpt-6-astra", "cx/gpt-6-luna[1m]", "cx/gpt-6.1-sol"]) {
+    const entry = codexModelEntry({ id });
+    assert.equal(entry.slug, id);
+    assert.deepEqual(entry.input_modalities, ["text", "image"], id);
+  }
+  for (const id of ["cx/gpt", "cx/gpt-6-unknown", "custom/text-model", "cx/gpt-image-2"]) {
+    assert.deepEqual(codexModelEntry({ id }).input_modalities, ["text"], id);
+  }
+  assert.deepEqual(codexModelEntry({ id: "cx/gpt-6.1-sol", input_modalities: ["text"] }).input_modalities, ["text"]);
+});

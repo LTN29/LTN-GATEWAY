@@ -15,7 +15,8 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const combos = [
     { name: "SIMI-GPT", models: ["cx/gpt", "ag/gemini"] },
     { name: "SIMI-FREE", models: ["oc/free"] },
-    { name: "SIMI-CLAUDE", models: ["cc/claude-opus-5-5"] }
+    { name: "SIMI-CLAUDE", models: ["cc/claude-opus-5-5"] },
+    { name: "SIMI-GPT-VISION", models: ["cx/gpt-6.1-sol"] }
   ];
   let dashboardUnavailable = false;
   const forwarded = [];
@@ -30,7 +31,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
     }
     assert.notEqual(req.headers.cookie, "session=mock-dashboard-secret");
     if (req.url === "/v1/models") {
-      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5"].map((id) => ({ id, owned_by: "provider" })) }));
+      res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5", "cx/gpt-6.1-sol"].map((id) => ({ id, owned_by: "provider" })) }));
       return;
     }
     const chunks = [];
@@ -52,6 +53,7 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const users = {
     alpha: { displayName: "Alpha", teamId: "IT", keyHash: hash("key-alpha"), aiPolicy: { mode: "inherit" } },
     beta: { displayName: "Beta", teamId: "IT", keyHash: hash("key-beta"), aiPolicy: { mode: "inherit", premiumCombo: "SIMI-CLAUDE" } },
+    gamma: { displayName: "Gamma", teamId: "IT", keyHash: hash("key-gamma"), aiPolicy: { mode: "inherit", premiumCombo: "SIMI-GPT-VISION" } },
     daily: { displayName: "Daily", teamId: "IT", keyHash: hash("key-daily"), aiPolicy: { mode: "limited_daily", premiumLimit: 1, usageScope: "user", freeCombo: "SIMI-FREE" } }
   };
   await writeFile(usersFile, JSON.stringify({ version: 1, users }));
@@ -108,6 +110,15 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   const imageMessage = forwarded.at(-1).payload.input.find((item) => item.role === "user");
   assert.deepEqual(imageMessage.content, imageInput[0].content);
   assert.equal(forwarded.at(-1).payload.model, "cc/claude-opus-5-5");
+  const gptCatalog = await (await call("/v1/codex/config", "key-gamma")).json();
+  assert.equal(gptCatalog.modelCatalog.models[0].slug, "cx/gpt-6.1-sol");
+  assert.deepEqual(gptCatalog.modelCatalog.models[0].input_modalities, ["text", "image"]);
+  const gptImageResponse = await call("/v1/responses", "key-gamma", {
+    model: "cx/gpt-6.1-sol", input: imageInput
+  });
+  assert.equal(gptImageResponse.status, 200);
+  assert.equal(forwarded.at(-1).payload.model, "cx/gpt-6.1-sol");
+  assert.deepEqual(forwarded.at(-1).payload.input.find((item) => item.role === "user").content, imageInput[0].content);
   const messages = await call("/v1/messages", "key-beta", {
     model: "cc/claude-opus-5-5", messages: [], output_config: { effort: "high" }, thinking: { type: "disabled" }
   });
