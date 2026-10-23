@@ -149,6 +149,8 @@ export const config = {
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),
   maxCapabilityBodyBytes: Number(process.env.MAX_CAPABILITY_BODY_BYTES || 32_000_000),
   maxContextChars: Number(process.env.MAX_CONTEXT_CHARS || 24_000),
+  responsesMaxImages: Math.max(0, number(process.env.RESPONSES_MAX_IMAGES || 4, 4)),
+  responsesMaxTextChars: Math.max(20_000, number(process.env.RESPONSES_MAX_TEXT_CHARS || 200_000, 200_000)),
   maxCaptureBytes: Number(process.env.MAX_CAPTURE_BYTES || 8_000_000),
   browserPageMaxChars: Math.max(
     10_000,

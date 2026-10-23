@@ -30,6 +30,7 @@ import {
 import { recordUserAnalytics } from "./user-analytics-store.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
 import { applyReasoningPolicy } from "./reasoning-policy.mjs";
+import { budgetChanged, budgetResponsesPayload } from "./request-budget.mjs";
 import {
   browserPageScope,
   getBrowserPage,
@@ -546,9 +547,13 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   const { systemContent } = memoryDisabled
     ? { systemContent: "" }
     : await loadMemoryContext(team, principal);
-  const upstreamPayload = applyReasoningPolicy(memoryDisabled
+  const budgeted = budgetResponsesPayload(memoryDisabled
     ? payload
-    : injectResponsesMemory(payload, systemContent), principal);
+    : injectResponsesMemory(payload, systemContent));
+  if (budgetChanged(budgeted.stats)) {
+    jsonLog("responses_context_budgeted", { requestId: id, ...budgeted.stats });
+  }
+  const upstreamPayload = applyReasoningPolicy(budgeted.payload, principal);
   route = await selectCodexRoute({
     team,
     principal,

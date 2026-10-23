@@ -235,3 +235,17 @@ test("browser bridge reuses the installer-managed client ID without logging page
   assert.match(script, /ltn-client-id/);
   assert.doesNotMatch(script, /console\.log\(.*page/);
 });
+
+test("installers disable OpenAI Work browser plugins for Gateway API-key logins", async () => {
+  const windows = await readFile(installerUrl, "utf8");
+  const unix = await readFile(new URL("../scripts/install-codex-unix.sh", import.meta.url), "utf8");
+
+  for (const script of [windows, unix]) {
+    assert.match(script, /OpenAI Work browser requires a ChatGPT login/);
+    assert.match(script, /plugins\."browser@openai-bundled"/);
+    assert.match(script, /plugins\."chrome@openai-bundled"/);
+    assert.match(script, /enabled = false/);
+  }
+  assert.match(windows, /function Test-ChatGptCodexAuth/);
+  assert.match(unix, /has_chatgpt_codex_auth\(\)/);
+});

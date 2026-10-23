@@ -169,6 +169,21 @@ function Get-OrCreateClientId {
   return $clientId
 }
 
+function Test-ChatGptCodexAuth {
+  param([string]$CodexHome)
+
+  $authPath = Join-Path $CodexHome "auth.json"
+  if (-not (Test-Path -LiteralPath $authPath)) { return $false }
+  try {
+    $auth = Get-Content -LiteralPath $authPath -Raw | ConvertFrom-Json
+    $mode = [string](Get-ObjectPropertyValue -Object $auth -Name "auth_mode")
+    $tokens = Get-ObjectPropertyValue -Object $auth -Name "tokens"
+    return $mode -eq "chatgpt" -and $null -ne $tokens
+  } catch {
+    return $false
+  }
+}
+
 function Update-CodexConfig {
   param(
     [string]$ExistingContent,
@@ -202,7 +217,9 @@ function Update-CodexConfig {
       }
     }
 
-    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway(?:\.auth)?|mcp_servers\.simi_browser)\]\s*$') {
+    $managesWorkBrowser = $ManagedTableContent -match '(?m)^\s*\[plugins\."browser@openai-bundled"\]\s*$'
+    if ($line -match '^\s*\[(?:model_providers\.ltn_gateway(?:\.auth)?|mcp_servers\.simi_browser)\]\s*$' -or
+        ($managesWorkBrowser -and $line -match '^\s*\[plugins\."(?:browser|chrome)@openai-bundled"\]\s*$')) {
       $insideManagedTable = $true
       $section = "tables"
       continue
@@ -1165,6 +1182,18 @@ $installedNode = Get-Command node -ErrorAction SilentlyContinue
 if ($installedNode) { $nodeCommand = $installedNode.Source }
 $escapedNodeCommand = Escape-TomlString $nodeCommand
 $escapedBrowserMcpPath = Escape-TomlString (Join-Path $codexHome "browser-mcp.mjs")
+$workBrowserConfig = ""
+if (-not (Test-ChatGptCodexAuth -CodexHome $codexHome)) {
+  # OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
+  $workBrowserConfig = @"
+
+[plugins."browser@openai-bundled"]
+enabled = false
+
+[plugins."chrome@openai-bundled"]
+enabled = false
+"@
+}
 $managedRootContent = @"
 # BEGIN LTN CODEX MANAGED ROOT
 # Managed by LTN Codex installer.

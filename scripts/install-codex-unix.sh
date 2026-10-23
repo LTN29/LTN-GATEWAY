@@ -572,6 +572,13 @@ escape_toml() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+has_chatgpt_codex_auth() {
+  local auth_path="${CODEX_HOME}/auth.json"
+  [ -f "${auth_path}" ] || return 1
+  grep -Eq '"auth_mode"[[:space:]]*:[[:space:]]*"chatgpt"' "${auth_path}" &&
+    grep -Eq '"tokens"[[:space:]]*:[[:space:]]*\{' "${auth_path}"
+}
+
 merge_config() {
   local client_id="$1"
   local backup tmp escaped_base escaped_model escaped_helper escaped_node escaped_browser_mcp
@@ -581,6 +588,12 @@ merge_config() {
   escaped_helper="$(escape_toml "${HELPER_PATH}")"
   escaped_node="$(escape_toml "${RUNTIME_NODE_CMD:-node}")"
   escaped_browser_mcp="$(escape_toml "${CODEX_HOME}/browser-mcp.mjs")"
+  local manage_work_browser=0 work_browser_config=""
+  if ! has_chatgpt_codex_auth; then
+    # OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
+    manage_work_browser=1
+    work_browser_config=$'\n[plugins."browser@openai-bundled"]\nenabled = false\n\n[plugins."chrome@openai-bundled"]\nenabled = false'
+  fi
   mkdir -p "${CODEX_HOME}"
 
   if [ "${MEMBER_SELECTION}" = "1" ]; then
@@ -606,7 +619,7 @@ merge_config() {
     backup="${CONFIG_PATH}.backup-$(date +%Y%m%d-%H%M%S)"
     cp "${CONFIG_PATH}" "${backup}"
 
-    awk -v root_file="${preserved_root}" -v table_file="${preserved_tables}" -v member_selection="${MEMBER_SELECTION}" '
+    awk -v root_file="${preserved_root}" -v table_file="${preserved_tables}" -v member_selection="${MEMBER_SELECTION}" -v manage_work_browser="${manage_work_browser}" '
       BEGIN { managed=0; legacy=0; section="root" }
       /^# BEGIN LTN CODEX MANAGED$/ { managed=1; next }
       /^# END LTN CODEX MANAGED$/ { managed=0; next }
@@ -620,6 +633,11 @@ merge_config() {
         else { next }
       }
       /^[[:space:]]*\[(model_providers\.ltn_gateway(\.auth)?|mcp_servers\.simi_browser)\][[:space:]]*$/ {
+        legacy=1
+        section="tables"
+        next
+      }
+      manage_work_browser == "1" && /^[[:space:]]*\[plugins\."(browser|chrome)@openai-bundled"\][[:space:]]*$/ {
         legacy=1
         section="tables"
         next
@@ -663,7 +681,7 @@ refresh_interval_ms = 300000
 command = "${escaped_node}"
 args = ["${escaped_browser_mcp}"]
 startup_timeout_sec = 20
-tool_timeout_sec = 600
+tool_timeout_sec = 600${work_browser_config}
 # END LTN CODEX MANAGED TABLES
 EOF
     cat "${preserved_tables}"
