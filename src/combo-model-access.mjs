@@ -139,6 +139,11 @@ export function codexModelEntry(model, priority = 0, principal = null) {
     default_verbosity: null,
     apply_patch_tool_type: null,
     truncation_policy: { mode: "bytes", limit: 10000 },
+    // Required by older Codex CLI catalog parsers (e.g. 0.146); newer versions ignore it.
+    supports_parallel_tool_calls: false,
+    supports_reasoning_summaries: false,
+    auto_compact_token_limit: null,
+    effective_context_window_percent: 95,
     context_window: Number.isInteger(model.context_window) && model.context_window > 0 ? model.context_window : null,
     experimental_supported_tools: [],
     // Preserve declared capabilities; older 9Router lists omit this field.

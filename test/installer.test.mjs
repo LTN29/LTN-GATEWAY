@@ -160,7 +160,7 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /MCP-only/);
   assert.match(script, /Test-CodexManagedRuntimeConfig/);
   assert.match(script, /mcp get simi_browser --json/);
-  assert.match(script, /mcp get simi_browser 2>\$null/);
+  assert.match(script, /mcp get simi_browser 2>\$stderrPath/);
   assert.match(script, /model_providers\\\.ltn_gateway\(\?:\\\.auth\)\?/);
   assert.match(script, /Codex config parser:/);
   assert.match(script, /Codex configured provider:/);
@@ -246,6 +246,9 @@ test("installers disable OpenAI Work browser plugins for Gateway API-key logins"
     assert.match(script, /plugins\."chrome@openai-bundled"/);
     assert.match(script, /enabled = false/);
   }
-  assert.match(windows, /function Test-ChatGptCodexAuth/);
-  assert.match(unix, /has_chatgpt_codex_auth\(\)/);
+  // Must not depend on a ChatGPT auth.json: stale logins still break Work browser.
+  assert.doesNotMatch(windows, /if \(-not \(Test-ChatGptCodexAuth/);
+  assert.doesNotMatch(unix, /if ! has_chatgpt_codex_auth; then/);
+  assert.match(windows, /tool_timeout_sec = 600\$workBrowserConfig\r?\n# END LTN CODEX MANAGED TABLES/);
+  assert.match(unix, /tool_timeout_sec = 600\$\{work_browser_config\}\r?\n# END LTN CODEX MANAGED TABLES/);
 });

@@ -314,7 +314,10 @@ function Get-CodexCommandStatus {
   }
 
   try {
-    $output = & $command.Source --version 2>&1
+    # PS 5.1 turns native stderr into ErrorRecords under Stop; Codex may print
+    # harmless WARNING lines there, so only the exit code decides health.
+    $ErrorActionPreference = "Continue"
+    $output = & $command.Source --version 2>$null
     if ($LASTEXITCODE -eq 0) {
       return [pscustomobject]@{
         Found = $true
@@ -936,7 +939,7 @@ function Show-InstallerStatus {
   Write-Host "  PDF runtime: $(if (Test-Path (Join-Path (Split-Path -Parent $ConfigPath) "pdf-runtime\Scripts\python.exe")) { "đã tạo" } else { "chưa tạo" })"
   $runtimeConfig = Test-CodexManagedRuntimeConfig -ConfigPath $ConfigPath
   if ($runtimeConfig.Supported) {
-    Write-Host "  Codex config parser: $(if ($runtimeConfig.ConfigValid) { "OK" } else { "lỗi" })"
+    Write-Host "  Codex config parser: $(if ($runtimeConfig.ConfigValid) { "OK" } else { "lỗi - $($runtimeConfig.Detail)" })"
     Write-Host "  Codex configured provider: $(if ($runtimeConfig.Provider) { "ltn_gateway" } else { "không đúng" })"
     Write-Host "  Codex MCP registry: $(if ($runtimeConfig.BrowserMcp) { "simi_browser" } else { "không tìm thấy" })"
   }
@@ -960,15 +963,27 @@ function Test-CodexManagedRuntimeConfig {
   } else {
     ""
   }
-  $mcpJson = (& $codexStatus.Path mcp get simi_browser --json 2>$null | Out-String)
-  $configValid = $LASTEXITCODE -eq 0
-  if (-not $configValid) {
-    $mcpJson = (& $codexStatus.Path mcp get simi_browser 2>$null | Out-String)
+  $stderrPath = [IO.Path]::GetTempFileName()
+  try {
+    $mcpJson = (& $codexStatus.Path mcp get simi_browser --json 2>$stderrPath | Out-String)
     $configValid = $LASTEXITCODE -eq 0
+    if (-not $configValid) {
+      $mcpJson = (& $codexStatus.Path mcp get simi_browser 2>$stderrPath | Out-String)
+      $configValid = $LASTEXITCODE -eq 0
+    }
+    $detail = if ($configValid) { "" } else {
+      ((Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue) |
+        Where-Object { $_ -and $_ -notmatch '^\s*WARNING:' } |
+        Select-Object -Last 5) -join " | "
+    }
+  } finally {
+    Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
   }
   return [pscustomobject]@{
     Supported = $true
     ConfigValid = $configValid
+    Detail = $detail
+    CodexPath = $codexStatus.Path
     Provider = $configValid -and ($configText -match '(?m)^\s*model_provider\s*=\s*"ltn_gateway"\s*$')
     BrowserMcp = $configValid -and ($mcpJson -match 'browser-mcp\.mjs')
   }
@@ -1182,10 +1197,11 @@ $installedNode = Get-Command node -ErrorAction SilentlyContinue
 if ($installedNode) { $nodeCommand = $installedNode.Source }
 $escapedNodeCommand = Escape-TomlString $nodeCommand
 $escapedBrowserMcpPath = Escape-TomlString (Join-Path $codexHome "browser-mcp.mjs")
-$workBrowserConfig = ""
-if (-not (Test-ChatGptCodexAuth -CodexHome $codexHome)) {
-  # OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
-  $workBrowserConfig = @"
+# OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
+# Always disable it while Codex routes through SIMI Gateway: a leftover or
+# expired ChatGPT auth.json still triggers "Work browser access requires an
+# authenticated account" when the active provider is ltn_gateway.
+$workBrowserConfig = @"
 
 [plugins."browser@openai-bundled"]
 enabled = false
@@ -1193,7 +1209,6 @@ enabled = false
 [plugins."chrome@openai-bundled"]
 enabled = false
 "@
-}
 $managedRootContent = @"
 # BEGIN LTN CODEX MANAGED ROOT
 # Managed by LTN Codex installer.
@@ -1216,7 +1231,7 @@ env_http_headers = { "X-LTN-Client-ID" = "LTN_CLIENT_ID" }
 command = "$escapedNodeCommand"
 args = ["$escapedBrowserMcpPath"]
 startup_timeout_sec = 20
-tool_timeout_sec = 600
+tool_timeout_sec = 600$workBrowserConfig
 # END LTN CODEX MANAGED TABLES
 "@
 
@@ -1249,9 +1264,22 @@ $env:NINEROUTER_KEY = $TeamApiKey
 $env:LTN_BROWSER_BRIDGE_TOKEN = $browserBridgeToken
 
 $runtimeConfigStatus = Test-CodexManagedRuntimeConfig -ConfigPath $configPath
+if ($runtimeConfigStatus.Supported -and -not $runtimeConfigStatus.ConfigValid -and
+    $runtimeConfigStatus.Detail -match 'model_catalog_json' -and -not $SkipCodexInstall) {
+  # Older Codex CLI builds reject newer model catalog fields; upgrade once and recheck.
+  Write-Warning "Codex CLI hiện tại quá cũ để đọc model catalog của SIMI. Đang cập nhật Codex CLI..."
+  try {
+    Install-OfficialCodexCli
+    Refresh-ProcessPath
+    $runtimeConfigStatus = Test-CodexManagedRuntimeConfig -ConfigPath $configPath
+  } catch {
+    Write-Warning "Không tự cập nhật được Codex CLI: $($_.Exception.Message)"
+  }
+}
 if ($runtimeConfigStatus.Supported) {
   if (-not $runtimeConfigStatus.ConfigValid) {
-    Write-Warning "Codex CLI hiện tại chưa xác minh được MCP simi_browser; cấu hình đã được cài và có thể kiểm tra lại bằng Status."
+    $reason = if ($runtimeConfigStatus.Detail) { " Lỗi Codex: $($runtimeConfigStatus.Detail)" } else { "" }
+    Write-Warning "Codex CLI ($($runtimeConfigStatus.CodexPath)) chưa xác minh được MCP simi_browser.$reason"
   } elseif (-not $runtimeConfigStatus.Provider) {
     Write-Warning "Cấu hình model_provider=ltn_gateway chưa được xác nhận; hãy chạy Status sau khi mở Terminal mới."
   } elseif (-not $runtimeConfigStatus.BrowserMcp) {
@@ -1278,7 +1306,7 @@ Write-Host "  2. Kiểm tra: codex --version"
 Write-Host "  3. Khởi động: codex"
 Write-Host "  4. Prompt trực tiếp: Vào URL này tôi đã login và kiểm tra dữ liệu."
 if (-not $configChanged) {
-  Write-Host "  Cấu hình không đổi: chỉ tạo New chat, không cần đóng/mở hoặc đăng nhập lại."
+  Write-Host "  Cấu hình không đổi: tạo New chat. Nếu Codex Desktop vẫn báo lỗi cũ, thoát hẳn (Quit) rồi mở lại một lần."
 } else {
   Write-Host "  Provider/MCP đã thay đổi: đóng và mở lại Codex Desktop một lần để giao diện nạp cấu hình mới."
 }

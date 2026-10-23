@@ -588,12 +588,12 @@ merge_config() {
   escaped_helper="$(escape_toml "${HELPER_PATH}")"
   escaped_node="$(escape_toml "${RUNTIME_NODE_CMD:-node}")"
   escaped_browser_mcp="$(escape_toml "${CODEX_HOME}/browser-mcp.mjs")"
-  local manage_work_browser=0 work_browser_config=""
-  if ! has_chatgpt_codex_auth; then
-    # OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
-    manage_work_browser=1
-    work_browser_config=$'\n[plugins."browser@openai-bundled"]\nenabled = false\n\n[plugins."chrome@openai-bundled"]\nenabled = false'
-  fi
+  # OpenAI Work browser requires a ChatGPT login; API-key users use simi_browser.
+  # Always disable it while Codex routes through SIMI Gateway: a leftover or
+  # expired ChatGPT auth.json still triggers "Work browser access requires an
+  # authenticated account" when the active provider is ltn_gateway.
+  local manage_work_browser=1
+  local work_browser_config=$'\n[plugins."browser@openai-bundled"]\nenabled = false\n\n[plugins."chrome@openai-bundled"]\nenabled = false'
   mkdir -p "${CODEX_HOME}"
 
   if [ "${MEMBER_SELECTION}" = "1" ]; then
@@ -1384,7 +1384,7 @@ install_or_repair() {
   case "${OS_NAME}" in
     macos)
       if [ "${CONFIG_CHANGED}" = "0" ]; then
-        echo "  4. Cau hinh khong doi: chi tao New chat, khong can dong/mo hoac dang nhap lai."
+        echo "  4. Cau hinh khong doi: tao New chat. Neu Codex Desktop van bao loi cu, thoat han (Quit) roi mo lai mot lan."
       else
         echo "  4. Provider/MCP da thay doi: dong va mo lai Codex Desktop mot lan de giao dien nap cau hinh moi."
       fi

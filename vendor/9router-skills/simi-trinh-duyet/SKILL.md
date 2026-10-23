@@ -68,7 +68,7 @@ not readable CVs; report blocked/empty pages separately.
 
 Use `data.rows` to retain each candidate's Excel `rowNumber` and identifying
 fields. Use `data.cvs` as the authoritative page result list and attach each
-result to every returned `rowNumbers`. If sheet/column is unknown, first use `browser_read_local_workbook` to obtain
+result to every returned `rowNumbers`. If sheet/column is unknown, first use `simi_browser.browser_read_local_workbook` to obtain
 `sheetNames` and `headers` before calling the CV tool.
 If the workbook has multiple sheets or the intended URL column is unclear,
 report `sheetNames` and `headers` and ask the user which sheet/column to use;
