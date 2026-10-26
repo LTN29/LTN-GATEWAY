@@ -231,6 +231,27 @@ PY
 User chat bằng `muse2api/*` hoặc nhắc "Muse" thì dùng thẳng skill
 `muse-tao-anh`, không chạy khối lệnh này.
 
+## Khi nào dừng
+
+Áp dụng cho cả ảnh từ model và chỉnh trực tiếp trên ảnh gốc:
+
+- Xem ảnh kết quả **một lần** ở cỡ bình thường. Ảnh từ model đúng yêu cầu chính
+  thì trả luôn và kết thúc lượt; không chạy lại để "làm đẹp hơn" (khối lệnh
+  Gateway và `ltn-muse` vẫn giữ quy tắc chạy một lần).
+- Chỉnh trực tiếp ảnh gốc: chỉ sửa thêm khi lỗi **thấy rõ** ở cỡ xem bình
+  thường, tối đa **2 lần sửa**, mỗi lần chỉ chỉnh ngưỡng/mask. Lỗi nhỏ phải
+  zoom mới thấy thì không tự sửa; nêu ngắn để user quyết định.
+- Không dùng công cụ tạo hình trực quan/visualization để xem ảnh, không
+  zoom/crop soi từng vùng, không xuất nhiều bản.
+
+Chỉnh trực tiếp ảnh gốc bằng Python (đổi màu, sáng/tối, crop, retouch nhẹ) chỉ
+khi user yêu cầu chỉnh trên ảnh gốc, và cần Pillow. Runtime của installer không
+cài Pillow: kiểm tra bằng `python -c "import PIL"`; thiếu Pillow thì **không tự
+`pip install`**, dùng đường Gateway (khối lệnh `simi-tao-anh` với `Mode = 'edit'`)
+hoặc `muse-tao-anh`. Có Pillow thì làm trong **một** lệnh: đọc ảnh gốc, tạo mask
+theo màu/vùng cần đổi (loại trừ da/nền, làm mờ biên 1-2px), giữ độ sáng/bóng,
+lưu file mới, không ghi đè ảnh gốc.
+
 ## Viết prompt
 
 Ảnh mới: chủ thể và hành động; bố cục, khung hình; chi tiết bắt buộc; phong cách,
