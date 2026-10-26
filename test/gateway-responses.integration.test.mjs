@@ -354,6 +354,20 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(spreadsheetTool.status, 200);
     assert.match(spreadsheetTool.body, /openpyxl/);
+    const museSkill = await rawGet(
+      gatewayPort,
+      "/install/skills/muse-tao-anh/SKILL.md"
+    );
+    assert.equal(museSkill.status, 200);
+    assert.match(museSkill.body, /^---\r?\nname: muse-tao-anh/m);
+    assert.match(museSkill.body, /ltn-muse/);
+    const museTool = await rawGet(
+      gatewayPort,
+      "/install/tools/muse-image.py"
+    );
+    assert.equal(museTool.status, 200);
+    assert.match(museTool.body, /muse2api\/muse-image-chat/);
+    assert.doesNotMatch(museTool.body, /\bsk-[A-Za-z0-9_-]{12,}\b/);
     assert.equal(
       (await rawGet(gatewayPort, "/install/skills/unknown/SKILL.md")).status,
       404

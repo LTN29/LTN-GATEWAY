@@ -99,6 +99,10 @@ const localToolPaths = new Map([
     fileURLToPath(new URL("../scripts/pdf-extract.py", import.meta.url))
   ],
   [
+    "/install/tools/muse-image.py",
+    fileURLToPath(new URL("../scripts/muse-image.py", import.meta.url))
+  ],
+  [
     "/install/tools/spreadsheet-audit.py",
     fileURLToPath(new URL("../scripts/spreadsheet-audit.py", import.meta.url))
   ]
@@ -140,7 +144,8 @@ const managedSkillNames = [
   "simi-trinh-duyet",
   "simi-doc-pdf",
   "simi-tai-lieu",
-  "simi-cai-dat"
+  "simi-cai-dat",
+  "muse-tao-anh"
 ];
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
   `/install/skills/${name}/SKILL.md`,

@@ -54,6 +54,7 @@ Chọn skill đã được installer cài cục bộ theo nhu cầu:
 | Gọi thêm model qua API theo yêu cầu rõ của user | `simi-tro-chuyen` |
 | Đọc/sửa Word, Excel hoặc PDF cục bộ | `simi-tai-lieu` |
 | Tạo ảnh | `simi-tao-anh` |
+| Tạo/sửa ảnh nhiều lượt bằng Muse | `muse-tao-anh` |
 | Tạo video | `simi-tao-video` |
 | Đọc văn bản thành giọng nói | `simi-doc-van-ban` |
 | Chép lời audio/video | `simi-chep-loi` |

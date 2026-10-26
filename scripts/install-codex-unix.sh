@@ -32,7 +32,7 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat"
+MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat muse-tao-anh"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -789,7 +789,7 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 13 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
+  echo "Da cai/cap nhat 14 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
 }
 
 get_or_create_browser_bridge_token() {
@@ -1282,7 +1282,7 @@ install_local_tools() {
   tools_dir="${CODEX_HOME}/tools"
   mkdir -p "${tools_dir}"
   chmod 700 "${tools_dir}"
-  for asset in 9router-client.mjs pdf-extract.py document-tool.py; do
+  for asset in 9router-client.mjs pdf-extract.py document-tool.py muse-image.py; do
     asset_path="${tools_dir}/${asset}"
     asset_tmp="${asset_path}.$$.$(date +%s).tmp"
     if ! curl --fail --silent --show-error --max-redirs 0 \
@@ -1326,8 +1326,22 @@ fi
 exec "\${python_bin}" "${tools_dir}/pdf-extract.py" "\$@"
 EOF
   chmod 700 "${BIN_DIR}/ltn-pdf"
+  cat > "${BIN_DIR}/ltn-muse" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -n "\${LTN_PYTHON_PATH:-}" ]; then
+  python_bin="\${LTN_PYTHON_PATH}"
+elif [ -x "${CODEX_HOME}/pdf-runtime/bin/python" ]; then
+  python_bin="${CODEX_HOME}/pdf-runtime/bin/python"
+else
+  python_bin="\${PYTHON_BIN:-\${RUNTIME_PYTHON_CMD:-python3}}"
+fi
+exec "\${python_bin}" "${tools_dir}/muse-image.py" "\$@"
+EOF
+  chmod 700 "${BIN_DIR}/ltn-muse"
   echo "Da cai lenh mang: ltn-9router"
   echo "Da cai lenh PDF: ltn-pdf"
+  echo "Da cai lenh Muse: ltn-muse"
 }
 
 verify_codex_managed_runtime_config() {
@@ -1443,7 +1457,7 @@ status() {
       skill_count=$((skill_count + 1))
     fi
   done
-  echo "Simi skills: ${skill_count}/13"
+  echo "Simi skills: ${skill_count}/14"
   if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
     echo "Browser bridge token: da tao"
   else
@@ -1491,7 +1505,7 @@ uninstall_ltn() {
   account="$(id -un)"
   remove_managed_config
   rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs" "${CODEX_HOME}/browser-mcp.mjs"
-  rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf"
+  rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf" "${BIN_DIR}/ltn-muse"
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime" "${LTN_RUNTIME_DIR}"
   rm -rf "${CODEX_HOME}/browser-extension"
   rm -f "${BIN_DIR}/ltn-browser-bridge" "${BIN_DIR}/ltn-browser-page" "${BIN_DIR}/ltn-chrome-debug"

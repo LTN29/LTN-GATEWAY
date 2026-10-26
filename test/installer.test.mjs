@@ -140,6 +140,9 @@ test("Windows installer supports idempotent repair, key rotation and uninstall c
   assert.match(script, /simi-trinh-duyet/);
   assert.match(script, /simi-doc-pdf/);
   assert.match(script, /simi-cai-dat/);
+  assert.match(script, /muse-tao-anh/);
+  assert.match(script, /muse-image\.py/);
+  assert.match(script, /ltn-muse\.cmd/);
   assert.match(script, /Install-BrowserBridge/);
   assert.match(script, /Install-LocalTools/);
   assert.match(script, /install\/tools\/\$asset/);

@@ -408,7 +408,8 @@ function Install-Managed9RouterSkills {
     "simi-trinh-duyet",
     "simi-doc-pdf",
     "simi-tai-lieu",
-    "simi-cai-dat"
+    "simi-cai-dat",
+    "muse-tao-anh"
   )
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $skillsRoot = Join-Path $CodexHome "skills"
@@ -816,7 +817,7 @@ function Install-LocalTools {
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $toolsDir = Join-Path $CodexHome "tools"
   New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
-  foreach ($asset in @("9router-client.mjs", "pdf-extract.py", "document-tool.py")) {
+  foreach ($asset in @("9router-client.mjs", "pdf-extract.py", "document-tool.py", "muse-image.py")) {
     $assetPath = Join-Path $toolsDir $asset
     $assetTemp = "$assetPath.$([Guid]::NewGuid().ToString('N')).tmp"
     try {
@@ -875,8 +876,25 @@ if defined LTN_PYTHON_PATH (
 endlocal
 "@
   [IO.File]::WriteAllText((Join-Path $BinDir "ltn-pdf.cmd"), $pdfWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
+
+  $museWrapper = @"
+@echo off
+setlocal
+if defined LTN_PYTHON_PATH (
+  "%LTN_PYTHON_PATH%" "$escapedCodexHome\tools\muse-image.py" %*
+) else if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" (
+  "$escapedCodexHome\pdf-runtime\Scripts\python.exe" "$escapedCodexHome\tools\muse-image.py" %*
+) else if defined PY_PYTHON (
+  py -3 "$escapedCodexHome\tools\muse-image.py" %*
+) else (
+  python "$escapedCodexHome\tools\muse-image.py" %*
+)
+endlocal
+"@
+  [IO.File]::WriteAllText((Join-Path $BinDir "ltn-muse.cmd"), $museWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài lệnh mạng: ltn-9router"
   Write-Host "Đã cài lệnh PDF: ltn-pdf (runtime: $(if ($PdfRuntimeReady) { "OK" } else { "chưa sẵn sàng" }))"
+  Write-Host "Đã cài lệnh Muse: ltn-muse"
 }
 
 function Show-InstallerStatus {
@@ -925,9 +943,10 @@ function Show-InstallerStatus {
   $skillCount = @(
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
-    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat"
+    "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat",
+    "muse-tao-anh"
   ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
-  Write-Host "  Simi skills: $skillCount/13"
+  Write-Host "  Simi skills: $skillCount/14"
   $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
   Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
   $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
@@ -1000,7 +1019,7 @@ function Invoke-LtnUninstall {
     $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedRootContent "" -ManagedTableContent ""
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
-  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd")) {
+  foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd", "ltn-muse.cmd")) {
     $wrapperPath = Join-Path $BinDir $wrapper
     if (Test-Path $wrapperPath) {
       Remove-Item -LiteralPath $wrapperPath -Force
@@ -1011,6 +1030,7 @@ function Invoke-LtnUninstall {
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
     "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat",
+    "muse-tao-anh",
     "9router", "9router-chat", "9router-image", "9router-video", "9router-tts",
     "9router-stt", "9router-embeddings", "9router-web-search", "9router-web-fetch",
     "9router-browser", "9router-pdf"

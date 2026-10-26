@@ -115,7 +115,10 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /install_managed_9router_skills\(\)/);
   assert.match(script, /install\/skills\/\$\{skill_name\}\/SKILL\.md/);
   assert.match(script, /MANAGED_SKILL_NAMES=/);
-  assert.match(script, /Simi skills: \$\{skill_count\}\/13/);
+  assert.match(script, /Simi skills: \$\{skill_count\}\/14/);
+  assert.match(script, /muse-tao-anh/);
+  assert.match(script, /muse-image\.py/);
+  assert.match(script, /ltn-muse/);
   assert.match(script, /ensure_runtime_dependencies\(\)/);
   // macOS uses private runtimes now; these assertions previously required the
   // removed Homebrew installer and failed even on the unchanged HEAD script.

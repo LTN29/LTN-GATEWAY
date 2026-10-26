@@ -16,6 +16,11 @@ Refresh these files deliberately with the Codex skill installer, review the
 diff, run the installer and capability-proxy tests, then deploy the Gateway.
 
 Skill instructions describe conditional capabilities, not new permissions.
-Combo-member accounts currently permit conversation APIs only; web/media/vector
-Gateway calls can return 403. Use available authorized native tools or report
-the missing capability instead of bypassing Gateway access checks.
+Capability APIs (web/media/vector) are open to every account, including
+Combo-member accounts; only conversation APIs are limited to Combo members.
+If the Gateway returns 403, report that the feature is not enabled for the
+account and stop instead of bypassing Gateway access checks.
+
+`muse-tao-anh` is a SIMI-authored skill (not from upstream). It uses the
+managed `ltn-muse` wrapper and `scripts/muse-image.py`, calling the Muse
+model through the conversation API, so the model must be in the account's Combo.
