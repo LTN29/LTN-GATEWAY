@@ -85,7 +85,10 @@ test("muse-image refuses an oversized reference before calling the Gateway", asy
   if (!py) return t.skip("python not available");
   const dir = await mkdtemp(join(tmpdir(), "muse-ref-"));
   const big = join(dir, "big.png");
-  await writeFile(big, Buffer.concat([PNG, Buffer.alloc(300_000, 1)]));
+  // Random bytes: too big for the budget and not decodable, so the result does not
+  // depend on whether Pillow is installed (Pillow cannot shrink it either).
+  const { randomBytes } = await import("node:crypto");
+  await writeFile(big, randomBytes(300_000));
   let chatCalls = 0;
   await withMock((req, res) => {
     chatCalls += 1;
@@ -96,7 +99,7 @@ test("muse-image refuses an oversized reference before calling the Gateway", asy
       py,
       base,
       ["--prompt", "sua anh", "--ref", big],
-      { MUSE_MAX_REQUEST_BYTES: "100000", PYTHONPATH: join(dir, "no-pil") }
+      { MUSE_MAX_REQUEST_BYTES: "100000" }
     );
     assert.equal(result.ok, false);
     assert.match(result.error, /quá lớn/);
