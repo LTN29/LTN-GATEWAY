@@ -12,3 +12,20 @@ test("image skill distinguishes network approval, DNS, and repair failures", asy
   assert.match(skill, /Do not tell the user to run Repair for that case/);
   assert.match(skill, /Report DNS only when name resolution itself failed/);
 });
+
+test("image skill picks the image model matching the active chat model", async () => {
+  const skill = await readFile(
+    new URL("../vendor/9router-skills/simi-tao-anh/SKILL.md", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(skill, /^---\r?\nname: simi-tao-anh\r?\n/);
+  assert.match(skill, /cùng hãng với model chat đang dùng/);
+  assert.match(skill, /\/models\/image/);
+  assert.match(skill, /response_format=binary/);
+  assert.match(skill, /\/images\/edits/);
+  assert.match(skill, /ltn-codex-token/);
+  assert.doesNotMatch(skill, /not a binary\/SSE image downloader/);
+  assert.doesNotMatch(skill, /combo_members/);
+  assert.doesNotMatch(skill, /router\.simi\.vn\//);
+});
