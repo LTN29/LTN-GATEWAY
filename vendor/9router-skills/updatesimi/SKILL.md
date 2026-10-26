@@ -1,6 +1,6 @@
 ---
-name: simi-cap-nhat
-description: Cập nhật Simi (skill, công cụ, cấu hình Gateway) ngay trong chat, không cần user mở Terminal. Dùng khi user nói "cập nhật Simi", "update Simi", "update skill", "chạy Update/Repair", hoặc khi một skill Simi báo cần Update/Repair do thiếu công cụ/skill.
+name: updatesimi
+description: Cập nhật Simi (skill, công cụ, cấu hình Gateway) ngay trong chat, không cần user mở Terminal. Dùng khi user gõ "UPDATESIMI", "updatesimi", "cập nhật Simi", "update Simi", "update skill", "chạy Update/Repair", hoặc khi một skill Simi báo cần Update/Repair do thiếu công cụ/skill.
 ---
 
 # Simi - Cập nhật

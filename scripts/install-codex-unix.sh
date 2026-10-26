@@ -32,7 +32,7 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat muse-tao-anh simi-cap-nhat"
+MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat muse-tao-anh updatesimi"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -762,6 +762,13 @@ install_managed_9router_skills() {
   skills_root="${CODEX_HOME}/skills"
   mkdir -p "${skills_root}"
   chmod 700 "${skills_root}" 2>/dev/null || true
+  # Skill da doi ten: go ban cu de Codex khong nap trung.
+  for skill_name in simi-cap-nhat; do
+    if [ -f "${skills_root}/${skill_name}/SKILL.md" ]; then
+      rm -rf -- "${skills_root:?}/${skill_name}"
+      echo "Da go skill cu ${skill_name} (da doi ten)."
+    fi
+  done
 
   for skill_name in ${MANAGED_SKILL_NAMES}; do
     skill_dir="${skills_root}/${skill_name}"

@@ -146,7 +146,7 @@ const managedSkillNames = [
   "simi-tai-lieu",
   "simi-cai-dat",
   "muse-tao-anh",
-  "simi-cap-nhat"
+  "updatesimi"
 ];
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
   `/install/skills/${name}/SKILL.md`,

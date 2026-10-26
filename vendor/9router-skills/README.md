@@ -25,6 +25,6 @@ account and stop instead of bypassing Gateway access checks.
 managed `ltn-muse` wrapper and `scripts/muse-image.py`, calling the Muse
 model through the conversation API, so the model must be in the account's Combo.
 
-`simi-cap-nhat` is a SIMI-authored skill. It runs the official full installer
+`updatesimi` is a SIMI-authored skill. It runs the official full installer
 from `https://ai.simi.vn` in non-interactive Update mode (same as menu option 5),
 reusing the stored key, so users can update from chat without a terminal.
