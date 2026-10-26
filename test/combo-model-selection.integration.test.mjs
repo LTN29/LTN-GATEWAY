@@ -34,9 +34,20 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
       res.end(JSON.stringify({ data: ["cx/gpt", "ag/gemini", "oc/free", "cc/claude-opus-5-5", "cx/gpt-6.1-sol", "ag/gemini-3.1-pro-low", "ag/gemini-3.8-flash-medium"].map((id) => ({ id, owned_by: "provider" })) }));
       return;
     }
+    if (req.method === "GET") {
+      forwarded.push({ path: req.url, payload: null });
+      res.end(JSON.stringify({ object: "list", data: [{ id: "img/model-a" }] }));
+      return;
+    }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
-    const payload = JSON.parse(Buffer.concat(chunks).toString());
+    const raw = Buffer.concat(chunks);
+    if (!String(req.headers["content-type"] || "").includes("application/json")) {
+      forwarded.push({ path: req.url, payload: null, raw });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    const payload = JSON.parse(raw.toString());
     if (payload.model === "cc/claude-opus-5-5" && payload.thinking?.type !== "adaptive") {
       res.statusCode = 400;
       res.end(JSON.stringify({ error: { message: "thinking.type.disabled is not supported for this model" } }));
@@ -131,12 +142,51 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal(messages.status, 200);
   assert.equal(forwarded.at(-1).payload.thinking.type, "adaptive");
   assert.equal(forwarded.at(-1).payload.reasoning_effort, undefined);
-  for (const path of ["/v1/responses", "/v1/chat/completions", "/v1/messages", "/v1/images/generations"]) {
+  for (const path of ["/v1/responses", "/v1/chat/completions", "/v1/messages"]) {
     const count = forwarded.length;
     assert.equal((await call(path, "key-alpha", { model: "cc/claude", input: "hi", messages: [] })).status, 403);
     assert.equal(forwarded.length, count);
   }
-  assert.equal((await call("/v1/models/image")).status, 403);
+  // Capability APIs are open to combo_members accounts and forwarded unchanged,
+  // without Combo model checks.
+  for (const path of ["/v1/models/image", "/v1/models/tts", "/v1/models/web", "/v1/models/info", "/v1/audio/voices"]) {
+    const count = forwarded.length;
+    const capabilityList = await call(path);
+    assert.equal(capabilityList.status, 200, path);
+    assert.equal(forwarded.length, count + 1);
+    assert.equal(forwarded.at(-1).path, path);
+  }
+  assert.equal((await (await call("/v1/models/image")).json()).data[0].id, "img/model-a");
+  for (const [path, body] of [
+    ["/v1/images/generations", { model: "img/model-a", prompt: "a sleeping cat" }],
+    ["/v1/search", { query: "simi" }],
+    ["/v1/web/fetch", { url: "https://example.com" }],
+    ["/v1/embeddings", { model: "emb/model", input: "hi" }],
+    ["/v1/audio/speech", { model: "tts/model", input: "hi" }],
+    ["/v1/videos/generations", { model: "vid/model", prompt: "hi" }]
+  ]) {
+    const count = forwarded.length;
+    assert.equal((await call(path, "key-alpha", body)).status, 200, path);
+    assert.equal(forwarded.length, count + 1);
+    assert.equal(forwarded.at(-1).path, path);
+    assert.deepEqual(forwarded.at(-1).payload, body);
+  }
+  // Multipart/binary capability bodies are passed through without parsing.
+  const multipart = "--b\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nstt/model\r\n--b--\r\n";
+  const transcription = await fetch(`http://127.0.0.1:${port}/v1/audio/transcriptions`, {
+    method: "POST",
+    headers: { authorization: "Bearer key-alpha", "content-type": "multipart/form-data; boundary=b" },
+    body: multipart
+  });
+  assert.equal(transcription.status, 200);
+  assert.equal(forwarded.at(-1).path, "/v1/audio/transcriptions");
+  assert.equal(forwarded.at(-1).raw.toString(), multipart);
+  // Conversational /v1/messages still enforces Combo membership and JSON.
+  const outsideMessages = await call("/v1/messages", "key-alpha", { model: "cc/claude-opus-5-5", messages: [] });
+  assert.equal(outsideMessages.status, 403);
+  const countBeforeDaily = forwarded.length;
+  assert.equal((await call("/v1/messages", "key-daily", { model: "oc/free", messages: [] })).status, 403);
+  assert.equal(forwarded.length, countBeforeDaily);
   assert.equal((await call("/v1/models", "bad-key")).status, 401);
   assert.equal((await call("/v1/responses", "key-daily", { model: "cc/claude", input: "hi" })).status, 403);
   // A denied request releases its reservation, preserving the one Premium slot.

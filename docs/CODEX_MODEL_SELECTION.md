@@ -67,9 +67,11 @@ cung cấp. Mức reasoning user yêu cầu vẫn được chuyển tiếp nguy�
 thực tế phụ thuộc provider và model.
 
 Gateway kiểm tra model ở `/v1/responses`, `/v1/chat/completions`, `/v1/messages`.
-Tài khoản bật chế độ này chỉ được dùng API hội thoại; API media, danh sách media,
-web và video bị chặn để không tạo đường vượt quyền model. Tài khoản chế độ cũ
-vẫn dùng pipeline capability hiện tại.
+Chỉ các API hội thoại này bị giới hạn theo thành viên Combo. Capability API
+(ảnh, video, giọng nói, chép lời, embedding, tìm kiếm web, đọc trang web và các
+danh sách model tương ứng như `/v1/models/image`) mở cho mọi tài khoản, kể cả
+tài khoản bật `combo_members`: Gateway chuyển thẳng sang 9Router như chế độ
+`combo`, không kiểm tra Combo và không parse body multipart/binary.
 
 Với `limited_daily`, danh sách bao gồm cả nhóm Premium và Free, nhưng request
 chỉ chấp nhận model thuộc tier hiện tại. Khi hết quota Premium, model Premium

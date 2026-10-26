@@ -122,7 +122,10 @@ Ngoại lệ được bổ sung theo yêu cầu user: `aiPolicy.modelSelection=c
 dùng Combo làm nhóm quyền, cho phép user chọn ID model trực tiếp trong nhóm.
 Gateway được đọc thành viên Combo để lọc catalog và kiểm tra quyền, không tự
 fallback hay sửa thành viên. Quy tắc không bung Combo bên dưới tiếp tục áp dụng
-cho chế độ mặc định `combo`. Xem [hướng dẫn](CODEX_MODEL_SELECTION.md).
+cho chế độ mặc định `combo`. Chỉ API hội thoại (`/v1/responses`,
+`/v1/chat/completions`, `/v1/messages`) bị giới hạn theo Combo; capability
+API (ảnh, video, giọng nói, chép lời, embedding, tìm kiếm/đọc web) mở cho mọi
+tài khoản, kể cả `combo_members`. Xem [hướng dẫn](CODEX_MODEL_SELECTION.md).
 
 9Router là nguồn quản lý duy nhất cho:
 

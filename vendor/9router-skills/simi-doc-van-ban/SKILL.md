@@ -25,10 +25,8 @@ với đường dẫn tuyệt đối và chỉ nói đã tạo khi file có th�
 cấp quyền, cài thêm công cụ hay mở API. Nếu cần Gateway, dùng `ltn-9router`:
 wrapper tự lấy key và client ID đã cài; không đọc/in key, không yêu cầu key mới.
 Không gọi trực tiếp 9Router hoặc endpoint quản trị để né quyền Gateway.
-Tài khoản `combo_members` hiện chỉ có API hội thoại; API web/media/embedding
-có thể trả 403. Khi đó dùng công cụ chuyên dụng đã được cấp quyền nếu có;
-nếu không có, báo tính năng chưa được mở cho tài khoản và dừng. Không gọi lại
-403, đổi model để né quyền, hoặc yêu cầu user chạy Repair cho lỗi này.
+Nếu Gateway trả 403, báo tính năng chưa được mở cho tài khoản và dừng. Không
+gọi lại 403, đổi model để né quyền, hoặc yêu cầu user chạy Repair cho lỗi này.
 401 là lỗi xác thực; không tự tạo key hay đổi tài khoản. Runtime/công cụ bị
 thiếu mới cần Update/Repair. Lỗi mạng phải dựa trên lỗi thực tế.
 

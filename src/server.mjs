@@ -360,11 +360,11 @@ async function proxyModels(req, res, rawKey, principal, id) {
 }
 
 async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
-  if (memberSelectionEnabled(principal)) {
-    if (req.method === "GET" || upstreamPath.split("?")[0] !== "/v1/messages") {
-      sendJson(res, 403, openAiError("Tài khoản chọn model trong Combo chỉ được dùng API hội thoại.", "permission_error"));
-      return;
-    }
+  // Combo membership only restricts conversational APIs. Other capability APIs
+  // (media, web, embeddings, model lists) are forwarded unchanged to 9Router.
+  const comboChecked = memberSelectionEnabled(principal) &&
+    req.method === "POST" && upstreamPath.split("?")[0] === "/v1/messages";
+  if (comboChecked) {
     if (!String(req.headers["content-type"] || "").includes("application/json")) {
       sendJson(res, 400, openAiError("API hội thoại yêu cầu application/json.", "invalid_request_error"));
       return;
@@ -376,7 +376,7 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
     ? undefined
     : await readBody(req, config.maxCapabilityBodyBytes);
   const connectionId = String(req.headers["x-connection-id"] || "").trim();
-  if (memberSelectionEnabled(principal)) {
+  if (comboChecked) {
     // Messages does not participate in Codex quota reservations. Keep limited_daily
     // accounts on /responses rather than providing an alternative quota bypass.
     const policy = codexConfigForPrincipal(principal);
