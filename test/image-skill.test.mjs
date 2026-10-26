@@ -42,7 +42,8 @@ test("update skill runs the official installer in non-interactive Update mode", 
   assert.match(skill, /^---\r?\nname: simi-cap-nhat\r?\n/);
   assert.match(skill, /https:\/\/ai\.simi\.vn\/install\/codex-full\.ps1/);
   assert.match(skill, /-Mode update/);
-  assert.match(skill, /bash -s -- --update/);
+  assert.match(skill, /codex\.sh/);
+  assert.match(skill, /--update/);
   assert.match(skill, /tắt hẳn Codex/);
   assert.doesNotMatch(skill, /-Mode (install|repair|uninstall)/);
   assert.doesNotMatch(skill, /sudo bash/);

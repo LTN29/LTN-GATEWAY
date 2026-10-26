@@ -47,7 +47,7 @@ Windows (PowerShell):
 macOS / Linux:
 
 ```bash
-curl -fsSL --proto '=https' https://ai.simi.vn/install/codex.sh | bash -s -- --update 2>&1 | tail -n 25; echo "LTN_UPDATE_EXIT=${PIPESTATUS[1]}"
+bash -c 'curl -fsSL --proto "=https" https://ai.simi.vn/install/codex.sh -o /tmp/ltn-codex-update.sh && bash /tmp/ltn-codex-update.sh --update > /tmp/ltn-codex-update.log 2>&1; code=$?; tail -n 25 /tmp/ltn-codex-update.log; rm -f /tmp/ltn-codex-update.sh; echo "LTN_UPDATE_EXIT=$code"'
 ```
 
 Không dùng `sudo` cho lệnh này. Nếu installer cần cài gói hệ thống và hỏi mật khẩu
