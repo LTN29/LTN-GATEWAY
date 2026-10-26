@@ -25,6 +25,9 @@ DEFAULT_BASE = "https://ai.simi.vn"
 MAX_REFS = 4
 MAX_REF_BYTES = 15 * 1024 * 1024
 MAX_IMAGE_BYTES = 40 * 1024 * 1024
+# Stay below the Gateway MAX_BODY_BYTES (default 4_000_000) and UPSTREAM_TIMEOUT_MS (180 s).
+MAX_REQUEST_BYTES = int(os.environ.get("MUSE_MAX_REQUEST_BYTES") or 3_800_000)
+DEFAULT_TIMEOUT = 170.0
 IMG_MD = re.compile(r"!\[[^\]]*\]\((\S+?)\)")
 ERROR_PREFIX = "⚠️"
 
@@ -87,7 +90,28 @@ def _slug(text: str, limit: int = 40) -> str:
     return (text[:limit].rstrip("-") or "anh")
 
 
-def _data_url(path: Path) -> str:
+def _b64_len(n: int) -> int:
+    return 4 * ((n + 2) // 3)
+
+def _shrink(data: bytes, max_side: int, quality: int) -> bytes | None:
+    """Downscale to JPEG with Pillow; None when Pillow is unavailable or fails."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im.load()
+            rgb = im.convert("RGB")
+            rgb.thumbnail((max_side, max_side))
+            buf = io.BytesIO()
+            rgb.save(buf, format="JPEG", quality=quality, optimize=True)
+            return buf.getvalue()
+    except (OSError, ValueError):
+        return None
+
+def _data_url(path: Path, budget: int) -> str:
+    """Encode a reference image, downscaling it so the request fits the Gateway limit."""
     data = path.read_bytes()
     if len(data) > MAX_REF_BYTES:
         raise ValueError(f"ảnh tham chiếu quá lớn (>15 MB): {path.name}")
@@ -96,6 +120,18 @@ def _data_url(path: Path) -> str:
         mime = "image/webp"
     if not mime.startswith("image/"):
         raise ValueError(f"không phải file ảnh: {path.name}")
+    if _b64_len(len(data)) > budget:
+        for side, quality in ((2048, 88), (1536, 85), (1024, 80), (768, 75)):
+            small = _shrink(data, side, quality)
+            if small is None:
+                break
+            if _b64_len(len(small)) <= budget:
+                data, mime = small, "image/jpeg"
+                break
+        if _b64_len(len(data)) > budget:
+            raise ValueError(
+                f"ảnh tham chiếu quá lớn để gửi qua Gateway: {path.name}. "
+                "Hãy dùng ảnh nhỏ hơn (dưới khoảng 2 MB) rồi thử lại.")
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
@@ -112,6 +148,9 @@ def _post_json(url: str, body: dict, headers: dict, timeout: float) -> dict:
             detail = json.loads(detail).get("error", {}).get("message", detail)
         except (ValueError, AttributeError):
             pass
+        if exc.code == 413:
+            raise RuntimeError("Gateway từ chối vì ảnh tham chiếu quá lớn (HTTP 413). "
+                               "Hãy dùng ảnh nhỏ hơn rồi thử lại.") from None
         raise RuntimeError(f"Gateway trả HTTP {exc.code}: {detail}") from None
 
 
@@ -164,8 +203,11 @@ def run(args: argparse.Namespace) -> dict:
 
     content: str | list = args.prompt
     if refs:
+        # The Gateway rejects bodies above MAX_BODY_BYTES; split the budget between refs.
+        room = MAX_REQUEST_BYTES - 16_000 - len(args.prompt.encode("utf-8"))
+        budget = max(64_000, room // len(refs))
         content = [{"type": "text", "text": args.prompt}] + [
-            {"type": "image_url", "image_url": {"url": _data_url(p)}} for p in refs]
+            {"type": "image_url", "image_url": {"url": _data_url(p, budget)}} for p in refs]
 
     headers = {"authorization": f"Bearer {key}", "accept": "application/json",
                "user-agent": "muse-tao-anh/1.0"}
@@ -221,7 +263,7 @@ def main() -> int:
     ap.add_argument("--model", default=os.environ.get("MUSE_IMAGE_MODEL", DEFAULT_MODEL))
     ap.add_argument("--out-dir", default=os.environ.get(
         "MUSE_IMAGE_DIR", str(Path.home() / "Pictures" / "muse")))
-    ap.add_argument("--timeout", type=float, default=330.0, help="Giây chờ Gateway")
+    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="Giây chờ Gateway")
     args = ap.parse_args()
     if not args.prompt.strip():
         print(json.dumps({"ok": False, "error": "Prompt trống."}, ensure_ascii=False))

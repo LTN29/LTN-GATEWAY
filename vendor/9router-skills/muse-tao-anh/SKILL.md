@@ -10,6 +10,17 @@ App Codex không hiện ảnh từ link ngoài, nên luôn tải ảnh về máy
 Gateway và client ID đã cài, không in key. Không hỏi user key, không đọc/in key,
 không gọi `router.simi.vn`. Nếu thiếu lệnh `ltn-muse`, báo user chạy Update.
 
+## Chạy đúng một lần rồi dừng
+
+- Lệnh cần Internet. Chạy lệnh **ngay với quyền mạng** (xin escalation/duyệt mạng
+  trong lần gọi đầu tiên); không chạy thử trong sandbox trước rồi mới xin quyền.
+- Mỗi yêu cầu của user chỉ gọi `ltn-muse` **một lần**. Lệnh có thể mất tới gần
+  3 phút; chờ lệnh kết thúc, không gọi song song hay gọi lại trong lúc chờ.
+- Ảnh user gửi kèm chỉ dùng làm `--ref`; xem ảnh đó **không** có nghĩa là đã tạo
+  xong. Chỉ coi là xong khi lệnh in `"ok": true`.
+- Khi đã có `"ok": true`: hiển thị ảnh, hỏi một câu ngắn rồi **kết thúc lượt**.
+  Không tạo thêm ảnh, không chạy lại để "làm đẹp hơn", không thử model khác.
+
 ## Tạo ảnh mới
 
 Windows PowerShell:
@@ -56,7 +67,10 @@ hoặc `error`. Mặc định lưu vào thư mục `Pictures/muse` trong thư m�
 ## Lỗi
 
 - Mỗi yêu cầu chỉ gọi **một lần**. Không tự gọi lại khi lỗi hoặc hết giờ,
-  vì có thể ảnh vẫn đang được tạo và tốn lượt của tài khoản.
+  vì có thể ảnh vẫn đang được tạo và tốn lượt của tài khoản. Báo lỗi cho user
+  rồi kết thúc lượt; user muốn thử lại thì sẽ yêu cầu.
+- Lỗi "ảnh tham chiếu quá lớn" hoặc HTTP 413: nhờ user gửi ảnh nhỏ hơn; không
+  tự cắt/nén ảnh rồi gọi lại.
 - `error` là câu "⚠️ Không tạo được ảnh..." từ Muse: báo nguyên văn ngắn gọn,
   gợi ý user chỉnh prompt.
 - HTTP 401: lỗi key, báo user; 403: tài khoản chưa được mở model Muse, báo
