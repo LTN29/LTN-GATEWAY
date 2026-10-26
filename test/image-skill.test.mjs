@@ -32,3 +32,18 @@ test("image skill picks the image model matching the active chat model", async (
   assert.doesNotMatch(skill, /combo_members/);
   assert.doesNotMatch(skill, /router\.simi\.vn\//);
 });
+
+test("update skill runs the official installer in non-interactive Update mode", async () => {
+  const skill = await readFile(
+    new URL("../vendor/9router-skills/simi-cap-nhat/SKILL.md", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(skill, /^---\r?\nname: simi-cap-nhat\r?\n/);
+  assert.match(skill, /https:\/\/ai\.simi\.vn\/install\/codex-full\.ps1/);
+  assert.match(skill, /-Mode update/);
+  assert.match(skill, /bash -s -- --update/);
+  assert.match(skill, /tắt hẳn Codex/);
+  assert.doesNotMatch(skill, /-Mode (install|repair|uninstall)/);
+  assert.doesNotMatch(skill, /sudo bash/);
+});

@@ -32,7 +32,7 @@ CODEX_HEALTH_STATUS="unknown"
 CODEX_HEALTH_REASON=""
 CODEX_HEALTH_OUTPUT=""
 CONFIG_CHANGED=0
-MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat muse-tao-anh"
+MANAGED_SKILL_NAMES="simi simi-tro-chuyen simi-tao-anh simi-tao-video simi-doc-van-ban simi-chep-loi simi-vector simi-tim-kiem-web simi-doc-trang-web simi-trinh-duyet simi-doc-pdf simi-tai-lieu simi-cai-dat muse-tao-anh simi-cap-nhat"
 
 cleanup() {
   if [ -n "${REMOTE_CONFIG_FILE}" ] && [ -f "${REMOTE_CONFIG_FILE}" ]; then
@@ -789,7 +789,7 @@ install_managed_9router_skills() {
     mv "${tmp}" "${skill_path}"
     chmod 600 "${skill_path}"
   done
-  echo "Da cai/cap nhat 14 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
+  echo "Da cai/cap nhat 15 skill Simi. Khoi dong lai Codex Desktop de nap skill moi."
 }
 
 get_or_create_browser_bridge_token() {
@@ -1457,7 +1457,7 @@ status() {
       skill_count=$((skill_count + 1))
     fi
   done
-  echo "Simi skills: ${skill_count}/14"
+  echo "Simi skills: ${skill_count}/15"
   if [ -r "${BRIDGE_TOKEN_PATH}" ]; then
     echo "Browser bridge token: da tao"
   else

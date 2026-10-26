@@ -409,7 +409,8 @@ function Install-Managed9RouterSkills {
     "simi-doc-pdf",
     "simi-tai-lieu",
     "simi-cai-dat",
-    "muse-tao-anh"
+    "muse-tao-anh",
+    "simi-cap-nhat"
   )
   $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
   $skillsRoot = Join-Path $CodexHome "skills"
@@ -944,9 +945,9 @@ function Show-InstallerStatus {
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
     "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat",
-    "muse-tao-anh"
+    "muse-tao-anh", "simi-cap-nhat"
   ).Where({ Test-Path -LiteralPath (Join-Path (Join-Path $skillsRoot $_) "SKILL.md") }).Count
-  Write-Host "  Simi skills: $skillCount/14"
+  Write-Host "  Simi skills: $skillCount/15"
   $bridgeConfigured = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable("LTN_BROWSER_BRIDGE_TOKEN", "User"))
   Write-Host "  Browser bridge token: $(if ($bridgeConfigured) { "đã tạo" } else { "chưa tạo" })"
   $browserMcpPath = Join-Path (Split-Path -Parent $ConfigPath) "browser-mcp.mjs"
@@ -1030,7 +1031,7 @@ function Invoke-LtnUninstall {
     "simi", "simi-tro-chuyen", "simi-tao-anh", "simi-tao-video",
     "simi-doc-van-ban", "simi-chep-loi", "simi-vector",
     "simi-tim-kiem-web", "simi-doc-trang-web", "simi-trinh-duyet", "simi-doc-pdf", "simi-tai-lieu", "simi-cai-dat",
-    "muse-tao-anh",
+    "muse-tao-anh", "simi-cap-nhat",
     "9router", "9router-chat", "9router-image", "9router-video", "9router-tts",
     "9router-stt", "9router-embeddings", "9router-web-search", "9router-web-fetch",
     "9router-browser", "9router-pdf"

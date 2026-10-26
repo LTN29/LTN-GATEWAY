@@ -55,6 +55,7 @@ Chọn skill đã được installer cài cục bộ theo nhu cầu:
 | Đọc/sửa Word, Excel hoặc PDF cục bộ | `simi-tai-lieu` |
 | Tạo ảnh | `simi-tao-anh` |
 | Tạo/sửa ảnh nhiều lượt bằng Muse | `muse-tao-anh` |
+| Cập nhật Simi (Update) ngay trong chat | `simi-cap-nhat` |
 | Tạo video | `simi-tao-video` |
 | Đọc văn bản thành giọng nói | `simi-doc-van-ban` |
 | Chép lời audio/video | `simi-chep-loi` |

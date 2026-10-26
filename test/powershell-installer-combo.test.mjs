@@ -282,7 +282,7 @@ test("Windows installer accepts SIMI-AI exactly and sends it through /v1/models"
     output.requests.filter((request) =>
       /^\/install\/skills\/[^/]+\/SKILL\.md$/.test(request.url)
     ).length,
-    14
+    15
   );
   assert.match(output.config, /model = "SIMI-AI"/);
   assert.match(output.config, /name = "SIMI Gateway"/);
@@ -417,7 +417,7 @@ test("Windows Update reuses key and client ID, preserves personal config and ref
   assert.match(output.config, /\[projects\."\/my\/project"\]/);
   assert.match(output.config, /model = "cx\/new-member"/);
   assert.deepEqual(output.savedCatalog, modelCatalog);
-  assert.equal(output.requests.filter((r) => /^\/install\/skills\//.test(r.url)).length, 14);
+  assert.equal(output.requests.filter((r) => /^\/install\/skills\//.test(r.url)).length, 15);
   assert.equal(output.savedClientId, "11111111-1111-4111-8111-111111111111");
 });
 
