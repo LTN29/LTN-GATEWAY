@@ -121,7 +121,8 @@ test("CDP client reads visible DOM text without a Chrome extension", async () =>
               url: "https://inventory.simi.vn/inventory",
               title: "Inventory",
               text: "TỔNG TỒN 26.659",
-              selectedText: ""
+              selectedText: "",
+              readyState: "complete"
             }
           }
         }
@@ -523,4 +524,73 @@ test("CDP client downloads a SharePoint workbook with browser download events", 
     await close(server);
     await rm(downloadDir, { recursive: true, force: true });
   }
+});
+
+async function withLoadingPage({ snapshot, navigationError }, callback) {
+  let port;
+  let evaluations = 0;
+  const sockets = new Set();
+  const wanted = "https://example.com/loading-test";
+  const server = http.createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify([{ type: "page", url: wanted, webSocketDebuggerUrl: `ws://127.0.0.1:${port}/test` }]));
+  });
+  server.on("upgrade", (req, socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+    const accept = createHash("sha1").update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+    let buffer = Buffer.alloc(0);
+    socket.on("data", chunk => {
+      buffer = Buffer.concat([buffer, chunk]);
+      let frame;
+      while ((frame = readClientFrame(buffer))) {
+        buffer = buffer.subarray(frame.consumed);
+        if (!frame.payload.length) continue;
+        const command = JSON.parse(frame.payload.toString());
+        let result = {};
+        if (command.method === "Page.navigate") result = navigationError ? { errorText: navigationError } : {};
+        if (command.method === "Runtime.evaluate") {
+          const isPage = command.params.expression.includes("readyState:");
+          result = { result: { value: isPage ? snapshot(++evaluations, wanted) : {} } };
+        }
+        socket.write(serverFrame({ id: command.id, result }));
+      }
+    });
+  });
+  port = await listen(server);
+  try { await callback({ port, wanted, evaluations: () => evaluations }); }
+  finally { for (const socket of sockets) socket.destroy(); await close(server); }
+}
+
+test("CDP waits for an advertised target whose DOM is still about:blank", async () => {
+  await withLoadingPage({ snapshot: (n, url) => ({ url: n < 3 ? "about:blank" : url, text: n < 3 ? "" : "Loaded data", readyState: "complete" }) }, async ({ port, wanted, evaluations }) => {
+    const page = await readCdpPage({ port, targetUrl: wanted, timeoutMs: 1500 });
+    assert.equal(page.text, "Loaded data");
+    assert.equal(page.finalUrl, wanted);
+    assert.ok(evaluations() >= 3);
+  });
+});
+
+test("CDP never reports a permanently blank document as a successful page", async () => {
+  await withLoadingPage({ snapshot: () => ({ url: "about:blank", text: "", readyState: "complete" }) }, async ({ port, wanted }) => {
+    await assert.rejects(readCdpPage({ port, targetUrl: wanted, timeoutMs: 1000 }), /refusing to return a blank page/);
+  });
+});
+
+test("CDP waits for asynchronously rendered text and marks genuine empty results", async () => {
+  await withLoadingPage({ snapshot: (n, url) => ({ url, text: n < 3 ? "" : "Async data", readyState: "complete" }) }, async ({ port, wanted }) => {
+    assert.equal((await readCdpPage({ port, targetUrl: wanted, timeoutMs: 1500 })).text, "Async data");
+  });
+  await withLoadingPage({ snapshot: (_, url) => ({ url, text: "", readyState: "complete" }) }, async ({ port, wanted }) => {
+    const page = await readCdpPage({ port, targetUrl: wanted, timeoutMs: 1500 });
+    assert.equal(page.accessStatus, "empty");
+    assert.match(page.extractionWarning, /not proof/);
+  });
+});
+
+test("CDP propagates navigation network failures instead of returning old content", async () => {
+  await withLoadingPage({ navigationError: "net::ERR_NAME_NOT_RESOLVED", snapshot: (_, url) => ({ url, text: "Old data", readyState: "complete" }) }, async ({ port }) => {
+    await assert.rejects(readCdpPage({ port, targetUrl: "https://missing.invalid/", timeoutMs: 1000 }), /ERR_NAME_NOT_RESOLVED/);
+  });
 });

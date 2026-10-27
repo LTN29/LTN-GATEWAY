@@ -515,7 +515,35 @@ function isOnlineWorkbook(page, requestedUrl = "") {
 }
 
 async function evaluateSettledPage(connection, requestedUrl, timeoutMs) {
-  let page = await evaluateRichPage(connection);
+  let page;
+  const loadDeadline = Date.now() + Math.max(1_000, timeoutMs);
+  const contentDeadline = Date.now() + Math.min(Math.max(1_000, timeoutMs), 4_000);
+  while (Date.now() < loadDeadline) {
+    try {
+      page = await evaluateRichPage(connection);
+      if (/^chrome-error:/i.test(String(page.url || ""))) {
+        throw new Error("Chrome could not load the requested page.");
+      }
+      // A newly created target can advertise its URL before its DOM leaves about:blank.
+      if ((!requestedUrl || /^https?:\/\//i.test(String(page.url || ""))) &&
+          ["interactive", "complete"].includes(page.readyState) &&
+          (String(page.text || "").trim() || page.loginRequired || page.accessStatus === "blocked" ||
+           Date.now() >= contentDeadline)) break;
+    } catch (error) {
+      if (/Chrome could not load/.test(error.message)) throw error;
+      // Navigation can replace the execution context while the page is loading.
+      page = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (!page || (requestedUrl && !/^https?:\/\//i.test(String(page.url || ""))) ||
+      !["interactive", "complete"].includes(page.readyState)) {
+    throw new Error("Chrome page did not finish loading; refusing to return a blank page as success.");
+  }
+  if (!String(page.text || "").trim() && !page.loginRequired && page.accessStatus !== "blocked") {
+    page.accessStatus = "empty";
+    page.extractionWarning = "The page loaded but exposed no readable text. This is not proof that the source contains no data.";
+  }
   if (!isOnlineWorkbook(page, requestedUrl)) return page;
 
   const deadline = Date.now() + Math.max(1_500, Math.min(timeoutMs, 8_000));
@@ -559,7 +587,8 @@ async function navigateAndWaitRedirects(connection, targetUrl, timeoutMs) {
   let previousUrl = "";
   try { previousUrl = String((await evaluatePage(connection))?.url || ""); } catch {}
   const directUrl = resolveNavigationUrl(targetUrl);
-  await connection.command("Page.navigate", { url: directUrl });
+  const navigation = await connection.command("Page.navigate", { url: directUrl });
+  if (navigation?.errorText) throw new Error(`Chrome navigation failed: ${navigation.errorText}`);
 
   const deadline = Date.now() + Math.max(1_000, Math.min(timeoutMs, 10_000));
   let lastPage = null;
@@ -569,8 +598,8 @@ async function navigateAndWaitRedirects(connection, targetUrl, timeoutMs) {
     try {
       lastPage = await evaluatePage(connection);
       const currentUrl = String(lastPage.url || "");
-      const navigationCommitted = targetMatchesUrl({ url: currentUrl }, directUrl) ||
-        (currentUrl && currentUrl !== previousUrl);
+      const navigationCommitted = /^https?:\/\//i.test(currentUrl) &&
+        (targetMatchesUrl({ url: currentUrl }, directUrl) || currentUrl !== previousUrl);
       stableReads = currentUrl === stableUrl ? stableReads + 1 : 0;
       stableUrl = currentUrl;
       if (navigationCommitted && stableReads >= 1 &&
@@ -644,7 +673,7 @@ export async function readCdpPages({
     plans.push({
       target,
       wanted,
-      navigate: isLikelyRedirectUrl(wanted) || !targetMatchesUrl(target, wanted)
+      navigate: true
     });
   }
 

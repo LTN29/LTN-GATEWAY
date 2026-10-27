@@ -41,6 +41,18 @@ tool returns `extraction.mode = "dom-frames-accessibility"`. If the requested
 rows are not currently exposed by Excel Online, state that limitation and ask
 the user to download the `.xlsx`; do not claim that the browser itself failed.
 
+## Validate the browser result
+
+Never treat about:blank, a chrome-error URL, or empty text as proof that the
+requested page has no data, even if accessStatus is ok. Report the result as
+unverified. Retry that URL once if navigation was transient; if it remains
+blank, report the exact failure instead of inventing a summary.
+The managed Chrome profile is separate from the user's ordinary browser.
+Login in ordinary Chrome does not prove login in the managed profile. When
+loginRequired is true, ask the user to sign in inside the managed window;
+never request passwords, cookies, or tokens in chat. A running=false status
+alone is not an error: browser_read_pages starts Chrome automatically.
+
 ## Structured Excel and link audits
 
 ### Downloaded candidate workbook and CV assessment

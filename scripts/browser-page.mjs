@@ -214,7 +214,7 @@ async function main() {
       host: cdpHost,
       port: cdpPort,
       targetUrls,
-      timeoutMs: Math.min(timeoutMs, 15_000)
+      timeoutMs
     });
     const result = pages.length === 1
       ? { object: "browser.page", data: pages[0] }
