@@ -4,6 +4,7 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
+import { activateCdpTarget, cdpTargets } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const browserPagePath = process.env.LTN_BROWSER_PAGE_PATH || join(codexHome, "browser-page.mjs");
@@ -39,6 +40,17 @@ const tools = [
         }
       },
       required: ["urls"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "browser_open_window",
+    description: "Show the visible SIMI Chrome window, optionally on a URL, and bring that tab to the front. Use this when a page needs the user to sign in, pass a CAPTCHA, or verify traffic in the managed profile that browser_read_pages reads. It never reads passwords or cookies.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", format: "uri", description: "Optional HTTP/HTTPS URL to open for the user." }
+      },
       additionalProperties: false
     }
   },
@@ -330,15 +342,78 @@ async function readCvBatch(links, maxChars) {
   }
 }
 
+const chromeDebugLauncherPath = process.env.LTN_CHROME_DEBUG_PATH || join(codexHome, "chrome-debug.mjs");
+
+function runChromeLauncher(url) {
+  if (!existsSync(chromeDebugLauncherPath)) {
+    throw new Error("Chrome launcher is missing. Run installer option 2 (Repair), then restart Codex.");
+  }
+  const nodeBin = process.env.LTN_BROWSER_NODE_PATH || process.execPath;
+  return new Promise((resolve, reject) => {
+    const child = spawn(nodeBin, url ? [chromeDebugLauncherPath, url] : [chromeDebugLauncherPath], {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: process.env
+    });
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Timed out while showing the SIMI Chrome window."));
+    }, 25_000);
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-8_000); });
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || "Chrome launcher exited with code " + code));
+    });
+  });
+}
+
+async function openBrowserWindow(args = {}) {
+  const url = args.url ? validUrls([args.url])[0] : "";
+  // Launching the same profile again asks the running Chrome to open a new visible window.
+  await runChromeLauncher(url);
+  let activated = false;
+  if (url) {
+    const deadline = Date.now() + 8_000;
+    while (!activated && Date.now() < deadline) {
+      try {
+        const targets = await cdpTargets({ host: cdpHost, port: cdpPort, timeoutMs: 2_000 });
+        const match = targets.find((target) => target?.type === "page" &&
+          String(target.url || "").startsWith(url.replace(/\/$/, "")));
+        if (match) activated = await activateCdpTarget({ host: cdpHost, port: cdpPort, targetId: match.id });
+      } catch {}
+      if (!activated) await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+  return {
+    opened: true,
+    url: url || null,
+    tabActivated: activated,
+    profilePath: process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile"),
+    instructions: "Ask the user to sign in or complete the verification in the SIMI Chrome window, then call browser_read_pages again."
+  };
+}
+
 async function browserStatus() {
+  const diagnostics = {
+    host: cdpHost, port: cdpPort, mode: "persistent-managed-profile",
+    profilePath: process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile"),
+    startupLogPath: process.env.LTN_CHROME_DEBUG_LOG_PATH || join(codexHome, "logs", "simi-browser.log"),
+    readerInstalled: existsSync(browserPagePath),
+    launcherInstalled: existsSync(process.env.LTN_CHROME_DEBUG_PATH || join(codexHome, "chrome-debug.mjs")),
+    ordinaryChromeSessionIsSeparate: true
+  };
   try {
     const response = await fetch(`http://${cdpHost}:${cdpPort}/json/version`, {
       signal: AbortSignal.timeout(1_500),
       redirect: "manual"
     });
-    return { running: response.ok, host: cdpHost, port: cdpPort, mode: "persistent-managed-profile" };
-  } catch {
-    return { running: false, host: cdpHost, port: cdpPort, mode: "persistent-managed-profile" };
+    return { ...diagnostics, running: response.ok, ...(response.ok ? {} : { connectionError: "CDP returned HTTP " + response.status }) };
+  } catch (error) {
+    return { ...diagnostics, running: false, connectionError: error.cause?.code || error.message };
   }
 }
 
@@ -347,6 +422,7 @@ async function callTool(name, args = {}) {
     return runSpreadsheetAudit(args.path, { ...args, action: name.slice("document_".length) }, documentToolPath);
   }
   if (name === "browser_status") return browserStatus();
+  if (name === "browser_open_window") return openBrowserWindow(args);
   if (name === "browser_read_local_workbook") {
     const workbookPath = String(args.workbook_path || "").trim();
     if (!workbookPath) throw new Error("workbook_path is required.");

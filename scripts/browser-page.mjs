@@ -148,18 +148,33 @@ async function checkCdp(signal) {
 
 function startChromeDebug(targetUrl) {
   if (!existsSync(chromeDebugPath)) {
-    throw new Error(`KhÃ´ng tÃ¬m tháº¥y Chrome CDP client táº¡i ${chromeDebugPath}. HÃ£y cháº¡y Repair.`);
+    return Promise.reject(new Error("Chrome launcher is missing at " + chromeDebugPath + ". Run installer option 2 (Repair)."));
   }
-
   const nodeBin = process.env.LTN_BROWSER_NODE_PATH || process.execPath;
   const childArgs = targetUrl ? [chromeDebugPath, targetUrl] : [chromeDebugPath];
-  const child = spawn(nodeBin, childArgs, {
-    detached: true,
-    windowsHide: true,
-    stdio: "ignore",
-    env: process.env
+  return new Promise((resolve, reject) => {
+    const child = spawn(nodeBin, childArgs, {
+      windowsHide: true,
+      stdio: ["ignore", "ignore", "pipe"],
+      env: process.env
+    });
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Chrome launcher timed out. Inspect " + join(codexHome, "logs", "simi-browser.log") + ". Do not reset the browser profile."));
+    }, 20_000);
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-8_000); });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(new Error("Chrome launcher failed: " + error.message));
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || "Chrome launcher exited with code " + code));
+    });
   });
-  child.unref();
 }
 
 async function ensureChromeDebug(targetUrl) {
@@ -167,7 +182,7 @@ async function ensureChromeDebug(targetUrl) {
     await checkCdp(AbortSignal.timeout(1_000));
     return;
   } catch {
-    startChromeDebug(targetUrl);
+    await startChromeDebug(targetUrl);
   }
 
   const deadline = Date.now() + 12_000;

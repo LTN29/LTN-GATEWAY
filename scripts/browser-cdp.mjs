@@ -247,6 +247,19 @@ export async function cdpTargets({ host = "127.0.0.1", port = 9222, timeoutMs = 
   return Array.isArray(payload) ? payload : [];
 }
 
+export async function activateCdpTarget({ host = "127.0.0.1", port = 9222, targetId, timeoutMs = 5_000 } = {}) {
+  if (!targetId) return false;
+  try {
+    const response = await fetch(`http://${host}:${port}/json/activate/${encodeURIComponent(targetId)}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      redirect: "manual"
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function createCdpTarget({ host = "127.0.0.1", port = 9222, targetUrl, timeoutMs = 5_000 } = {}) {
   const wanted = String(targetUrl || "").trim();
   if (!/^https?:\/\//i.test(wanted)) throw new Error("URL CDP mới không hợp lệ.");
@@ -344,7 +357,7 @@ const pageMetadataExpression = `(() => {
     if (publishedAtCandidates.length >= 100) break;
   }
   const loginRequired = Boolean(document.querySelector('input[type="password"]')) || /(?:^|\\/)(?:login|signin|sign-in|auth)(?:\\/|$|[?#])/i.test(location.href);
-  const blocked = /(?:checkpoint|captcha|temporarily blocked|content isn't available|content is not available|page isn't available)/i.test(location.href + '\\n' + bodyText);
+  const blocked = /(?:checkpoint|captcha|verify\\/traffic|verify\\/captcha|temporarily blocked|content isn't available|content is not available|page isn't available)/i.test(location.href + '\\n' + bodyText);
   return {
     publishedAtCandidates,
     loginRequired,

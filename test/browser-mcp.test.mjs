@@ -33,6 +33,7 @@ test("browser MCP exposes prompt-first multi-page tools over stdio", async () =>
   const listed = messages.find((message) => message.id === 2)?.result?.tools || [];
   assert.deepEqual(listed.map((tool) => tool.name), [
     "browser_read_pages",
+    "browser_open_window",
     "browser_status",
     "browser_read_workbook",
     "browser_read_local_workbook",
@@ -42,9 +43,9 @@ test("browser MCP exposes prompt-first multi-page tools over stdio", async () =>
     "document_edit"
   ]);
   assert.equal(listed[0].inputSchema.properties.urls.maxItems, 8);
-  assert.equal(listed[2].inputSchema.properties.max_rows.maximum, 5000);
-  assert.equal(listed[3].inputSchema.properties.workbook_path.description.includes(".xlsx"), true);
-  assert.equal(listed[4].inputSchema.properties.link_column.description.includes("CV"), true);
+  assert.equal(listed[3].inputSchema.properties.max_rows.maximum, 5000);
+  assert.equal(listed[4].inputSchema.properties.workbook_path.description.includes(".xlsx"), true);
+  assert.equal(listed[5].inputSchema.properties.link_column.description.includes("CV"), true);
   const status = messages.find((message) => message.id === 3)?.result?.structuredContent;
   assert.equal(status.running, false);
   assert.equal(status.mode, "persistent-managed-profile");

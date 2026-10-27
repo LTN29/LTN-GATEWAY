@@ -1,6 +1,6 @@
 import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
@@ -52,11 +52,11 @@ if (process.platform === "linux" && typeof process.getuid === "function" && proc
 }
 if (url) args.push(url);
 
-mkdirSync(join(codexHome, "logs"), { recursive: true, mode: 0o700 });
+mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
 const logFd = openSync(logPath, "a", 0o600);
 const child = spawn(chrome, args, {
   detached: true,
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "ignore", logFd],
   env: process.env
 });
@@ -83,7 +83,9 @@ async function waitForCdp() {
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
   throw new Error(
-    `Chrome không mở được CDP tại cổng ${port}${lastError?.cause?.code ? ` (${lastError.cause.code})` : ""}.`
+    `Chrome could not open CDP on port ${port}${lastError?.cause?.code ? ` (${lastError.cause.code})` : ""}. ` +
+    (chromeExit ? chromeExit + " " : "") +
+    `Profile: ${profile}. Check whether this profile is already open without remote debugging; do not delete it.`
   );
 }
 

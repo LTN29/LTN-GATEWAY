@@ -618,6 +618,47 @@ endlocal
   Write-Host "  User chỉ cần đăng nhập một lần trong cửa sổ Chrome mới"
 }
 
+function Install-SimiChromeShortcut {
+  param([string]$CodexHome)
+  # Shortcut opens the exact managed profile that browser_read_pages reads.
+  $candidates = @(
+    (Join-Path $env:ProgramFiles "Google\Chrome\Application\chrome.exe"),
+    (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+    (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe"),
+    (Join-Path $env:ProgramFiles "Microsoft\Edge\Application\msedge.exe"),
+    (Join-Path ${env:ProgramFiles(x86)} "Microsoft\Edge\Application\msedge.exe")
+  )
+  if ($env:LTN_CHROME_BIN) { $candidates = @($env:LTN_CHROME_BIN) + $candidates }
+  $browser = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
+  if (-not $browser) {
+    Write-Warning "Chrome/Edge not found; the SIMI Chrome shortcut was not created."
+    return
+  }
+  $profile = Join-Path $CodexHome "chrome-profile"
+  New-Item -ItemType Directory -Force -Path $profile | Out-Null
+  $arguments = '--remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="' + $profile + '" --no-first-run --no-default-browser-check'
+  $shell = New-Object -ComObject WScript.Shell
+  $locations = @(
+    [Environment]::GetFolderPath("Desktop"),
+    (Join-Path ([Environment]::GetFolderPath("Programs")) "SIMI")
+  )
+  foreach ($folder in $locations) {
+    try {
+      New-Item -ItemType Directory -Force -Path $folder | Out-Null
+      $shortcut = $shell.CreateShortcut((Join-Path $folder "SIMI Chrome.lnk"))
+      $shortcut.TargetPath = $browser
+      $shortcut.Arguments = $arguments
+      $shortcut.WorkingDirectory = Split-Path -Parent $browser
+      $shortcut.IconLocation = "$browser,0"
+      $shortcut.Description = "Chrome profile used by SIMI to read signed-in pages"
+      $shortcut.Save()
+    } catch {
+      Write-Warning "Could not create SIMI Chrome shortcut in ${folder}: $($_.Exception.Message)"
+    }
+  }
+  Write-Host "  Shortcut 'SIMI Chrome' (Desktop + Start Menu): sign in here once so SIMI can read signed-in pages"
+}
+
 function Refresh-ProcessPath {
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -1299,6 +1340,7 @@ $nodeRuntimeReady = Ensure-NodeRuntime
 $pdfRuntimeReady = Ensure-PdfRuntime -CodexHome $codexHome
 Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
 Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -BridgeToken $browserBridgeToken
+Install-SimiChromeShortcut -CodexHome $codexHome
 Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
 
 $existingConfig = ""

@@ -151,6 +151,36 @@ there and retry the read. The normal Chrome profile cannot be attached
 silently when no extension is used; the explicit debug profile is the security
 boundary.
 
+## SIMI Chrome window and sign-in
+
+SIMI reads pages in a separate, visible SIMI Chrome profile, not the user's
+everyday Chrome. A login there is saved and reused. The installer creates a
+"SIMI Chrome" shortcut on the Desktop and in the Start Menu that opens exactly
+this profile.
+
+When accessStatus is login-required or blocked (CAPTCHA, traffic
+verification such as Shopee verify/traffic, checkpoint), or the user says the
+page shows account-specific data the reader cannot see, call
+simi_browser.browser_open_window with that URL. Tell the user, in plain
+language, that the SIMI Chrome window is open on the page; ask them to sign in
+or complete the verification there, then reply so you can read again. After
+they reply, call browser_read_pages again. Never claim the user's everyday
+Chrome login applies to SIMI Chrome.
+
+## Connection failure diagnosis
+
+If a read fails to start or connect to Chrome, call browser_status and preserve
+the exact tool error. Never replace it with a generic request to restart Codex.
+Check readerInstalled, launcherInstalled, connectionError, and profilePath when
+returned. Explain the concrete missing component or startup error. Status
+running=false alone is normal before the first read; read_pages starts Chrome.
+A screenshot of a logged-in ordinary Chrome window does not establish the
+managed profile's state. Never close the user's browser, delete a profile,
+copy authentication files, or claim the user is logged out on this evidence.
+loginRequired=false means no login gate was detected, not proof of a signed-in
+account. If public product content is readable, report that verified content
+and distinguish any price/account-specific fields that were not available.
+
 ## Routing rules
 
 - Private or signed-in page: use this skill.
