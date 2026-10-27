@@ -4,7 +4,7 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import { activateCdpTarget, cdpTargets, findBrowserExecutable, isHeadlessBrowserSession, resolveBrowserProfile } from "./browser-cdp.mjs";
+import { activateCdpTarget, cdpBrowserVersion, cdpTargets, closeCdpBrowser, findBrowserExecutable, isHeadlessBrowserSession, isHeadlessBrowserVersion, resolveBrowserProfile, resolveDesktopEnv } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const browserPagePath = process.env.LTN_BROWSER_PAGE_PATH || join(codexHome, "browser-page.mjs");
@@ -373,6 +373,11 @@ function runChromeLauncher(url) {
 
 async function openBrowserWindow(args = {}) {
   const url = args.url ? validUrls([args.url])[0] : "";
+  try {
+    if (!isHeadlessBrowserSession() && isHeadlessBrowserVersion(await cdpBrowserVersion({ host: cdpHost, port: cdpPort }))) {
+      await closeCdpBrowser({ host: cdpHost, port: cdpPort });
+    }
+  } catch {}
   // Launching the same profile again asks the running Chrome to open a new visible window.
   await runChromeLauncher(url);
   let activated = false;
@@ -407,6 +412,8 @@ async function browserStatus() {
     browserPath: findBrowserExecutable()?.path || null,
     browserKind: findBrowserExecutable()?.kind || null,
     headless: isHeadlessBrowserSession(),
+    desktopDisplay: resolveDesktopEnv().DISPLAY || null,
+    desktopWayland: resolveDesktopEnv().WAYLAND_DISPLAY || null,
     startupLogPath: process.env.LTN_CHROME_DEBUG_LOG_PATH || join(codexHome, "logs", "simi-browser.log"),
     readerInstalled: existsSync(browserPagePath),
     launcherInstalled: existsSync(process.env.LTN_CHROME_DEBUG_PATH || join(codexHome, "chrome-debug.mjs")),

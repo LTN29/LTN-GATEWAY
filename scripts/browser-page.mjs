@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { downloadCdpWorkbook, readCdpPages } from "./browser-cdp.mjs";
+import { closeCdpBrowser, cdpBrowserVersion, downloadCdpWorkbook, isHeadlessBrowserSession, isHeadlessBrowserVersion, readCdpPages } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const bridgeHost = process.env.LTN_BROWSER_BRIDGE_HOST || "127.0.0.1";
@@ -178,12 +178,19 @@ function startChromeDebug(targetUrl) {
 }
 
 async function ensureChromeDebug(targetUrl) {
+  let running = false;
   try {
     await checkCdp(AbortSignal.timeout(1_000));
-    return;
-  } catch {
-    await startChromeDebug(targetUrl);
+    running = true;
+  } catch {}
+  if (running) {
+    // An earlier start without a desktop left Chrome headless; reopen it visibly.
+    let headlessInstance = false;
+    try { headlessInstance = isHeadlessBrowserVersion(await cdpBrowserVersion({ host: cdpHost, port: cdpPort })); } catch {}
+    if (!headlessInstance || isHeadlessBrowserSession()) return;
+    await closeCdpBrowser({ host: cdpHost, port: cdpPort });
   }
+  await startChromeDebug(targetUrl);
 
   const deadline = Date.now() + 12_000;
   let lastError = null;

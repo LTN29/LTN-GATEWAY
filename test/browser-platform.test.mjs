@@ -54,7 +54,7 @@ test("launch arguments: Wayland hint, root sandbox, headless servers", () => {
   const wayland = browserLaunchArgs({ platform: "linux", profile: "/p", env: { WAYLAND_DISPLAY: "wayland-0" }, isRoot: false });
   assert.ok(wayland.includes("--ozone-platform-hint=auto"));
   assert.ok(!wayland.includes("--headless=new"));
-  const server = browserLaunchArgs({ platform: "linux", profile: "/p", env: {}, isRoot: true, url: "https://example.com" });
+  const server = browserLaunchArgs({ platform: "linux", profile: "/p", env: { LTN_CHROME_HEADLESS: "1" }, isRoot: true, url: "https://example.com" });
   assert.ok(server.includes("--headless=new"));
   assert.ok(server.includes("--no-sandbox"));
   assert.equal(server.at(-1), "https://example.com");

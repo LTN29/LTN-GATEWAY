@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { connect as connectTls } from "node:tls";
 import { createConnection as createTcpConnection } from "node:net";
 import { mkdir, rename, stat } from "node:fs/promises";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
 
@@ -86,10 +86,58 @@ export function resolveBrowserProfile({
   return p.join(env.CODEX_HOME || p.join(home, ".codex"), "chrome-profile");
 }
 
-export function isHeadlessBrowserSession({ platform = process.platform, env = process.env } = {}) {
+function listDir(path) {
+  try { return readdirSync(path); } catch { return []; }
+}
+
+// Codex starts MCP servers with a minimal environment that omits DISPLAY and
+// WAYLAND_DISPLAY. Recover the user's desktop session from its sockets so
+// SIMI Chrome opens visibly instead of falling back to headless mode.
+export function resolveDesktopEnv({
+  platform = process.platform,
+  env = process.env,
+  uid = typeof process.getuid === "function" ? process.getuid() : null,
+  exists = existsSync,
+  readdir = listDir
+} = {}) {
+  if (platform !== "linux") return { ...env };
+  const result = { ...env };
+  if (!result.XDG_RUNTIME_DIR && uid !== null && exists(`/run/user/${uid}`)) {
+    result.XDG_RUNTIME_DIR = `/run/user/${uid}`;
+  }
+  const runtime = result.XDG_RUNTIME_DIR;
+  if (!result.WAYLAND_DISPLAY && runtime) {
+    const socket = readdir(runtime).filter((name) => /^wayland-\d+$/.test(name)).sort()[0];
+    if (socket) result.WAYLAND_DISPLAY = socket;
+  }
+  if (!result.DISPLAY) {
+    const x11 = readdir("/tmp/.X11-unix").filter((name) => /^X\d+$/.test(name)).sort()[0];
+    if (x11) result.DISPLAY = `:${x11.slice(1)}`;
+  }
+  if (!result.DBUS_SESSION_BUS_ADDRESS && runtime && exists(`${runtime}/bus`)) {
+    result.DBUS_SESSION_BUS_ADDRESS = `unix:path=${runtime}/bus`;
+  }
+  if (!result.XAUTHORITY && result.DISPLAY) {
+    const home = result.HOME || homedir();
+    const candidates = [`${home}/.Xauthority`];
+    if (runtime) {
+      candidates.push(`${runtime}/gdm/Xauthority`);
+      for (const name of readdir(runtime)) {
+        if (/^\.mutter-Xwaylandauth\./.test(name)) candidates.push(`${runtime}/${name}`);
+      }
+    }
+    const found = candidates.find((path) => exists(path));
+    if (found) result.XAUTHORITY = found;
+  }
+  return result;
+}
+
+export function isHeadlessBrowserSession({ platform = process.platform, env = process.env, ...probe } = {}) {
   if (env.LTN_CHROME_HEADLESS === "1") return true;
   if (env.LTN_CHROME_HEADLESS === "0") return false;
-  return platform === "linux" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+  if (platform !== "linux") return false;
+  const desktop = resolveDesktopEnv({ platform, env, ...probe });
+  return !desktop.DISPLAY && !desktop.WAYLAND_DISPLAY;
 }
 
 export function browserLaunchArgs({
@@ -110,7 +158,7 @@ export function browserLaunchArgs({
   ];
   if (platform === "linux") {
     if (isRoot) args.push("--no-sandbox");
-    if (env.WAYLAND_DISPLAY) args.push("--ozone-platform-hint=auto");
+    if (resolveDesktopEnv({ platform, env }).WAYLAND_DISPLAY) args.push("--ozone-platform-hint=auto");
   }
   if (isHeadlessBrowserSession({ platform, env })) args.push("--headless=new");
   if (url) args.push(url);
@@ -358,6 +406,32 @@ export async function cdpTargets({ host = "127.0.0.1", port = 9222, timeoutMs = 
   if (!response.ok) throw new Error(`Chrome CDP trả HTTP ${response.status}.`);
   const payload = await response.json();
   return Array.isArray(payload) ? payload : [];
+}
+
+export async function cdpBrowserVersion({ host = "127.0.0.1", port = 9222, timeoutMs = 1_500 } = {}) {
+  const response = await fetch(`http://${host}:${port}/json/version`, {
+    signal: AbortSignal.timeout(timeoutMs),
+    redirect: "manual"
+  });
+  if (!response.ok) throw new Error(`Chrome CDP returned HTTP ${response.status}.`);
+  return response.json();
+}
+
+export function isHeadlessBrowserVersion(version) {
+  return /HeadlessChrome/i.test(`${version?.Browser || ""} ${version?.["User-Agent"] || ""}`);
+}
+
+// Close a headless SIMI Chrome so it can be relaunched visibly on the same profile.
+export async function closeCdpBrowser({ host = "127.0.0.1", port = 9222, timeoutMs = 5_000 } = {}) {
+  const version = await cdpBrowserVersion({ host, port, timeoutMs });
+  const connection = await new WebSocketConnection(version.webSocketDebuggerUrl, timeoutMs).connect();
+  try { await connection.command("Browser.close"); } catch {} finally { connection.close(); }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { await cdpBrowserVersion({ host, port, timeoutMs: 500 }); } catch { return true; }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
 }
 
 export async function activateCdpTarget({ host = "127.0.0.1", port = 9222, targetId, timeoutMs = 5_000 } = {}) {

@@ -680,6 +680,7 @@ refresh_interval_ms = 300000
 [mcp_servers.simi_browser]
 command = "${escaped_node}"
 args = ["${escaped_browser_mcp}"]
+env_vars = ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP"]
 startup_timeout_sec = 20
 tool_timeout_sec = 600${work_browser_config}
 # END LTN CODEX MANAGED TABLES

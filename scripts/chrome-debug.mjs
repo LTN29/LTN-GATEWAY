@@ -2,7 +2,7 @@ import { closeSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
-import { browserLaunchArgs, findBrowserExecutable, isHeadlessBrowserSession, resolveBrowserProfile } from "./browser-cdp.mjs";
+import { browserLaunchArgs, findBrowserExecutable, isHeadlessBrowserSession, resolveBrowserProfile, resolveDesktopEnv } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const port = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
@@ -26,7 +26,7 @@ const child = spawn(chrome, args, {
   detached: true,
   windowsHide: false,
   stdio: ["ignore", "ignore", logFd],
-  env: process.env
+  env: resolveDesktopEnv()
 });
 closeSync(logFd);
 let chromeExit = "";
@@ -64,7 +64,7 @@ try {
     `Chrome CDP đã khởi động tại http://127.0.0.1:${port}`,
     `Profile: ${profile}`,
     `Browser: ${chrome}${browser.kind === "snap" ? " (snap)" : ""}`,
-    ...(headless ? ["No desktop session detected: running headless. Sign-in windows cannot be shown on this machine."] : []),
+    ...(headless ? ["No desktop session (DISPLAY/WAYLAND_DISPLAY) found: running headless. Sign-in windows cannot be shown; many shops block headless browsers."] : []),
     "Đăng nhập một lần trong profile này; các lần sau sẽ giữ session.",
     "Đọc tab: ltn-browser-page --cdp"
   ].join("\n") + "\n");
