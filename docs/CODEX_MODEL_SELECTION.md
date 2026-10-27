@@ -111,3 +111,15 @@ gán policy cho một key pilot rồi Repair trên máy pilot. Xác minh:
 - Model đã chọn đến 9Router nguyên ID và dùng được tool calls.
 - ID model ngoài nhóm trả 403, dashboard không đọc được trả 503.
 - Menu desktop và mức reasoning trên phiên bản Codex của user.
+
+## Common plugins installed with model setup
+
+The Windows and macOS/Linux installers attempt to install documents, pdf,
+spreadsheets, presentations, template-creator, visualize, and computer-use
+after configuring the Gateway. They use `codex plugin list --available --json`
+and install discovered marketplace IDs using `codex plugin add`. Existing
+plugins (including disabled ones) are preserved. Missing marketplace entries,
+older CLIs without plugin support, and download failures produce warnings
+without aborting Gateway setup. On CLI-only installations, open Codex Desktop
+to initialize its marketplaces and rerun Update/Repair. This does not register
+new marketplace sources or connect Gmail, Drive, GitHub, or other accounts.

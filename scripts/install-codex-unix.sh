@@ -1368,6 +1368,36 @@ verify_codex_managed_runtime_config() {
   echo "Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
 }
 
+install_common_codex_plugins() {
+  # Only use marketplace entries exposed by this installation; do not invent sources.
+  if ! "${RUNTIME_NODE_CMD:-node}" - "${CODEX_CMD_PATH}" <<'PLUGINJS'
+const { spawnSync } = require("node:child_process");
+const codex = process.argv[2];
+const defaults = ["documents", "pdf", "spreadsheets", "presentations", "template-creator", "visualize", "computer-use"];
+try {
+  const result = spawnSync(codex, ["plugin", "list", "--available", "--json"], { encoding: "utf8", timeout: 60000 });
+  if (result.status !== 0) throw new Error("Codex plugin list is unavailable");
+  const catalog = JSON.parse(result.stdout);
+  for (const name of defaults) {
+    if ((catalog.installed || []).some(p => p.name === name)) continue;
+    const entry = (catalog.available || []).find(p => p.name === name);
+    if (!entry) {
+      console.warn("Plugin '" + name + "' is not in the configured marketplace; open Codex Desktop and rerun the installer.");
+      continue;
+    }
+    const added = spawnSync(codex, ["plugin", "add", entry.pluginId, "--json"], { encoding: "utf8", timeout: 120000 });
+    if (added.status !== 0) console.warn("Could not install plugin '" + name + "': " + (added.error?.message || added.stderr || added.stdout));
+    else console.log("  Plugin installed: " + name);
+  }
+} catch (error) {
+  console.warn("Common plugins were not installed: " + error.message + ". Gateway setup will continue.");
+}
+PLUGINJS
+  then
+    echo "Common plugins were not installed; Gateway setup will continue." >&2
+  fi
+}
+
 install_or_repair() {
   local client_id
   ensure_dirs
@@ -1387,6 +1417,7 @@ install_or_repair() {
   install_linux_browser_autostart
   install_local_tools
   verify_codex_managed_runtime_config
+  install_common_codex_plugins
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."

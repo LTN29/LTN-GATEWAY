@@ -169,6 +169,32 @@ function Get-OrCreateClientId {
   return $clientId
 }
 
+function Install-CommonCodexPlugins {
+  $defaults = @("documents", "pdf", "spreadsheets", "presentations", "template-creator", "visualize", "computer-use")
+  try {
+    $command = Get-Command codex -ErrorAction Stop
+    $raw = & $command.Source plugin list --available --json 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "Codex plugin list is unavailable" }
+    $catalog = ($raw -join "`n") | ConvertFrom-Json
+    $installed = @(Get-ObjectPropertyValue -Object $catalog -Name "installed")
+    $available = @(Get-ObjectPropertyValue -Object $catalog -Name "available")
+    foreach ($name in $defaults) {
+      # Preserve explicit user choices, including installed but disabled plugins.
+      if (@($installed | Where-Object { $_ -and $_.name -eq $name }).Count -gt 0) { continue }
+      $entry = $available | Where-Object { $_ -and $_.name -eq $name } | Select-Object -First 1
+      if (-not $entry) {
+        Write-Warning "Plugin '$name' is not in the configured marketplace; open Codex Desktop and rerun the installer."
+        continue
+      }
+      $result = & $command.Source plugin add $entry.pluginId --json 2>&1
+      if ($LASTEXITCODE -ne 0) { Write-Warning "Could not install plugin '$name': $result" }
+      else { Write-Host "  Plugin installed: $name" }
+    }
+  } catch {
+    Write-Warning "Common plugins were not installed: $($_.Exception.Message). Gateway setup will continue."
+  }
+}
+
 function Test-ChatGptCodexAuth {
   param([string]$CodexHome)
 
@@ -609,14 +635,77 @@ function Install-WingetPackage {
   }
 
   Write-Host "Đang cài runtime Windows: $PackageId..."
-  & $winget.Source install `
-    --id $PackageId `
-    --exact `
-    --source winget `
-    --accept-package-agreements `
-    --accept-source-agreements `
-    --silent | Out-Host
-  return ($LASTEXITCODE -eq 0)
+  try {
+    & $winget.Source install `
+      --id $PackageId `
+      --exact `
+      --source winget `
+      --accept-package-agreements `
+      --accept-source-agreements `
+      --silent | Out-Host
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    Write-Warning "winget failed for $PackageId; trying direct runtime fallback where available."
+    return $false
+  }
+}
+
+function Add-RuntimeUserPath {
+  param([string]$Directory)
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if (@($userPath -split ';') -notcontains $Directory) {
+    [Environment]::SetEnvironmentVariable("Path", (($Directory, $userPath | Where-Object { $_ }) -join ';'), "User")
+  }
+  Refresh-ProcessPath
+}
+
+function Install-DirectWindowsRuntime {
+  param([ValidateSet("node", "python")][string]$Kind)
+  if ($env:LTN_SKIP_RUNTIME_INSTALL -eq "1") { return $false }
+  $homeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+  $runtimeRoot = Join-Path $homeDir "runtime"
+  $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+  $nodeArch = switch ($arch) { "ARM64" { "arm64" } "AMD64" { "x64" } "x86" { "x86" } default { return $false } }
+  New-Item -ItemType Directory -Force -Path $runtimeRoot | Out-Null
+  try {
+    if ($Kind -eq "node") {
+      $base = "https://nodejs.org/dist/latest-v22.x"
+      $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$base/SHASUMS256.txt" -TimeoutSec 60).Content
+      $entry = [regex]::Match([string]$sums, "(?m)^([a-f0-9]{64})\s+(node-v22\.[0-9]+\.[0-9]+-win-$nodeArch\.zip)\s*$")
+      if (-not $entry.Success) { throw "Official Node checksum entry missing" }
+      $archive = Join-Path $runtimeRoot $entry.Groups[2].Value
+      Invoke-WebRequest -UseBasicParsing -Uri "$base/$($entry.Groups[2].Value)" -OutFile $archive -TimeoutSec 180
+      if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $entry.Groups[1].Value) { throw "Node SHA256 mismatch" }
+      $directory = Join-Path $runtimeRoot ([IO.Path]::GetFileNameWithoutExtension($archive))
+      Expand-Archive -LiteralPath $archive -DestinationPath $runtimeRoot -Force
+      $executable = Join-Path $directory "node.exe"
+      $version = (& $executable --version | Out-String).Trim()
+      if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v22\.') { throw "Node runtime verification failed" }
+      Add-RuntimeUserPath -Directory $directory
+      $env:LTN_BROWSER_NODE_PATH = $executable
+      [Environment]::SetEnvironmentVariable("LTN_BROWSER_NODE_PATH", $executable, "User")
+    } else {
+      $suffix = switch ($nodeArch) { "x64" { "-amd64" } "arm64" { "-arm64" } default { "" } }
+      $installer = Join-Path $runtimeRoot "python-3.13.17$suffix.exe"
+      Invoke-WebRequest -UseBasicParsing -Uri "https://www.python.org/ftp/python/3.13.17/python-3.13.17$suffix.exe" -OutFile $installer -TimeoutSec 180
+      $signature = Get-AuthenticodeSignature -LiteralPath $installer
+      if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Python Software Foundation') {
+        throw "Python installer publisher/signature verification failed"
+      }
+      $directory = Join-Path $runtimeRoot "python"
+      $process = Start-Process -FilePath $installer -ArgumentList @('/quiet', 'InstallAllUsers=0', 'Include_launcher=0', 'Include_test=0', 'PrependPath=0', ('TargetDir="' + $directory + '"')) -WindowStyle Hidden -Wait -PassThru
+      if ($process.ExitCode -notin @(0, 3010)) { throw "Python installer exit code $($process.ExitCode)" }
+      $executable = Join-Path $directory "python.exe"
+      & $executable -c 'import sys, venv, ensurepip; assert sys.version_info >= (3, 12)' | Out-Host
+      if ($LASTEXITCODE -ne 0) { throw "Python runtime verification failed" }
+      Add-RuntimeUserPath -Directory $directory
+    }
+    Write-Host "Runtime fallback ready: $executable"
+    return $true
+  } catch {
+    Write-Warning "Direct $Kind runtime installation failed: $($_.Exception.Message)"
+    return $false
+  }
 }
 
 function Ensure-NodeRuntime {
@@ -633,7 +722,15 @@ function Ensure-NodeRuntime {
     Write-Warning "Node.js hiện tại $version thấp hơn Node.js 20; sẽ thử cập nhật."
   }
 
-  if (-not (Install-WingetPackage -PackageId "OpenJS.NodeJS.LTS")) {
+  $null = Install-WingetPackage -PackageId "OpenJS.NodeJS.LTS"
+  Refresh-ProcessPath
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  $usable = $false
+  if ($node) {
+    $probe = (& $node.Source --version 2>$null | Out-String).Trim()
+    $usable = $LASTEXITCODE -eq 0 -and $probe -match '^v(\d+)' -and [int]$Matches[1] -ge 20
+  }
+  if (-not $usable -and -not (Install-DirectWindowsRuntime -Kind node)) {
     Write-Warning "Không cài được Node.js tự động. Browser bridge và lệnh ltn-9router sẽ cần Node.js 20+."
     return $false
   }
@@ -688,6 +785,10 @@ function Ensure-PdfRuntime {
       Write-Warning "Không cài được Python 3.12 tự động bằng winget."
     }
     Refresh-ProcessPath
+    $python = Get-PythonCommand
+  }
+  if (-not $python) {
+    $null = Install-DirectWindowsRuntime -Kind python
     $python = Get-PythonCommand
   }
   if (-not $python) {
@@ -1320,9 +1421,15 @@ if ($runtimeConfigStatus.Supported) {
   Write-Warning "Chưa thể gọi Codex để kiểm tra config; installer đã ghi config.toml và MCP simi_browser."
 }
 
+Install-CommonCodexPlugins
+
 $installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""
-Write-Host "Cài đặt LTN Codex hoàn tất."
+if ($nodeRuntimeReady -and $pdfRuntimeReady) {
+  Write-Host "Cài đặt LTN Codex hoàn tất."
+} else {
+  Write-Warning "Gateway configured, but runtime setup is incomplete. Browser/document tools may not work; run Repair after resolving the runtime warnings."
+}
 Write-Host "  Hệ điều hành: Windows"
 Write-Host "  Codex CLI: $(if ($installedCodexStatus.Healthy) { $installedCodexStatus.Version } else { "chưa xác định" })"
 Write-Host "  Gateway: $GatewayBaseUrl"
