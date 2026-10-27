@@ -108,6 +108,19 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     }
 
     if (req.url === "/v1/responses") {
+      if (body.input === "namespace tool") {
+        const fn = body.tools.find((tool) => tool.name === "mcp__simi_browser__browser_status");
+        const item = { id: "fc_1", type: "function_call", name: fn ? fn.name : "mcp__simi_browser", arguments: "{}", call_id: "call_ns" };
+        if (body.stream) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write(`event: response.output_item.done\ndata: ${JSON.stringify({ type: "response.output_item.done", output_index: 0, item })}\n\n`);
+          res.end(`data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_ns", status: "completed", output: [item] } })}\n\n`);
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ id: "resp_ns", object: "response", status: "completed", output: [item] }));
+        return;
+      }
       if (body.stream) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         res.write('data: {"type":"response.created","response":{"id":"resp_stream","status":"in_progress"}}\n\n');
@@ -585,6 +598,35 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(sse, /response\.output_text\.delta/);
     assert.match(sse, /Stream/);
     await waitFor(() => extractionCalls === 2);
+
+    for (const stream of [false, true]) {
+      const namespaced = await fetch(`${baseUrl}/v1/responses`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${validKey}`,
+          "content-type": "application/json",
+          "x-ltn-client-id": "11111111-1111-4111-8111-111111111111",
+          "x-request-id": `responses-namespace-${stream}`
+        },
+        body: JSON.stringify({
+          model: "client-gpt-model",
+          input: "namespace tool",
+          stream,
+          tools: [{ type: "namespace", name: "mcp__simi_browser", description: "SIMI browser", tools: [
+            { type: "function", name: "browser_status", description: "Status", parameters: { type: "object", properties: {} } }
+          ] }]
+        })
+      });
+      assert.equal(namespaced.status, 200);
+      const sent = upstreamRequests.filter((item) => item.url === "/v1/responses" && item.body.input === "namespace tool").at(-1);
+      assert.deepEqual(sent.body.tools.map((tool) => [tool.type, tool.name]), [["function", "mcp__simi_browser__browser_status"]]);
+      const text = await namespaced.text();
+      const output = stream
+        ? JSON.parse(text.split("\n").find((line) => line.startsWith("data:") && line.includes("output_item.done")).slice(5)).item
+        : JSON.parse(text).output[0];
+      assert.equal(output.name, "browser_status");
+      assert.equal(output.namespace, "mcp__simi_browser");
+    }
 
     const chat = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",

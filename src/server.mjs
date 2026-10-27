@@ -31,6 +31,7 @@ import { recordUserAnalytics } from "./user-analytics-store.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
 import { applyReasoningPolicy } from "./reasoning-policy.mjs";
 import { budgetChanged, budgetResponsesPayload } from "./request-budget.mjs";
+import { createSseNamespaceRestorer, flattenNamespaceTools, restoreNamespaceCalls } from "./tool-namespaces.mjs";
 import {
   browserPageScope,
   getBrowserPage,
@@ -308,7 +309,7 @@ function usageFromResponsePayload(payload) {
   return payload?.usage || payload?.response?.usage || null;
 }
 
-async function pipeAndCapture(upstream, res) {
+async function pipeAndCapture(upstream, res, toolMap = null) {
   if (!upstream.body) {
     res.end();
     return Buffer.alloc(0);
@@ -317,6 +318,55 @@ async function pipeAndCapture(upstream, res) {
   const reader = upstream.body.getReader();
   const captured = [];
   let capturedBytes = 0;
+  const contentType = String(upstream.headers.get("content-type") || "");
+  const restoreStream = toolMap && /text\/event-stream/i.test(contentType);
+  const restoreJson = toolMap && !restoreStream && /json/i.test(contentType);
+  const sse = restoreStream ? createSseNamespaceRestorer(toolMap) : null;
+  const decoder = restoreStream ? new TextDecoder() : null;
+  const jsonParts = [];
+
+  const capture = (chunk) => {
+    if (capturedBytes < config.maxCaptureBytes) {
+      const remaining = config.maxCaptureBytes - capturedBytes;
+      const part = chunk.length <= remaining ? chunk : chunk.subarray(0, remaining);
+      captured.push(part);
+      capturedBytes += part.length;
+    }
+  };
+
+  if (toolMap && (restoreStream || restoreJson)) {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (restoreJson) {
+        jsonParts.push(Buffer.from(value));
+        continue;
+      }
+      const text = sse.push(decoder.decode(value, { stream: true }));
+      if (text) {
+        const chunk = Buffer.from(text);
+        res.write(chunk);
+        capture(chunk);
+      }
+    }
+    let tail;
+    if (restoreJson) {
+      const raw = Buffer.concat(jsonParts);
+      try {
+        tail = Buffer.from(JSON.stringify(restoreNamespaceCalls(JSON.parse(raw.toString("utf8")), toolMap)));
+      } catch {
+        tail = raw;
+      }
+    } else {
+      tail = Buffer.from(sse.push(decoder.decode()) + sse.flush());
+    }
+    if (tail.length) {
+      res.write(tail);
+      capture(tail);
+    }
+    res.end();
+    return Buffer.concat(captured);
+  }
 
   while (true) {
     const { value, done } = await reader.read();
@@ -559,7 +609,9 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   if (budgetChanged(budgeted.stats)) {
     jsonLog("responses_context_budgeted", { requestId: id, ...budgeted.stats });
   }
-  const upstreamPayload = applyReasoningPolicy(budgeted.payload, principal);
+  const { payload: upstreamPayload, toolMap } = flattenNamespaceTools(
+    applyReasoningPolicy(budgeted.payload, principal)
+  );
   route = await selectCodexRoute({
     team,
     principal,
@@ -614,7 +666,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       res.setHeader("X-LTN-Premium-Remaining", String(route.premiumRemaining));
     }
     res.statusCode = upstream.status;
-    const captured = await pipeAndCapture(upstream, res);
+    const captured = await pipeAndCapture(upstream, res, upstream.ok ? toolMap : null);
     let responseUsage = null;
 
     if (upstream.ok) {
