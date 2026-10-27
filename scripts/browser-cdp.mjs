@@ -2,7 +2,120 @@ import { randomBytes } from "node:crypto";
 import { connect as connectTls } from "node:tls";
 import { createConnection as createTcpConnection } from "node:net";
 import { mkdir, rename, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, posix, win32 } from "node:path";
+
+function pathApi(platform) {
+  return platform === "win32" ? win32 : posix;
+}
+
+function safeRealpath(path) {
+  try { return realpathSync(path); } catch { return path; }
+}
+
+// Single source of truth for which browser SIMI launches on Windows, macOS and Linux.
+export function findBrowserExecutable({
+  platform = process.platform,
+  env = process.env,
+  exists = existsSync,
+  realpath = safeRealpath,
+  home = env.HOME || env.USERPROFILE || homedir()
+} = {}) {
+  const p = pathApi(platform);
+  const describe = (path) => {
+    const resolvedPath = realpath(path);
+    const viaSnapBin = path.startsWith("/snap/bin/");
+    const isSnap = platform === "linux" && (
+      viaSnapBin ||
+      String(resolvedPath).endsWith("/usr/bin/snap") ||
+      String(resolvedPath).startsWith("/snap/") ||
+      (/(?:^|\/)chromium(?:-browser)?$/.test(path) && exists("/snap/chromium/current"))
+    );
+    const snapName = isSnap ? (viaSnapBin ? p.basename(path) : "chromium") : null;
+    return { path, resolvedPath, kind: isSnap ? "snap" : "native", snapName };
+  };
+  if (env.LTN_CHROME_BIN) return describe(env.LTN_CHROME_BIN);
+
+  let candidates = [];
+  if (platform === "win32") {
+    candidates = [
+      [env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"],
+      [env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"],
+      [env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"],
+      [env.PROGRAMFILES, "Microsoft", "Edge", "Application", "msedge.exe"],
+      [env["PROGRAMFILES(X86)"], "Microsoft", "Edge", "Application", "msedge.exe"],
+      [env.LOCALAPPDATA, "Microsoft", "Edge", "Application", "msedge.exe"],
+      [env.LOCALAPPDATA, "Chromium", "Application", "chrome.exe"]
+    ].filter(([root]) => root).map((parts) => p.join(...parts));
+  } else if (platform === "darwin") {
+    const apps = [
+      ["Google Chrome.app", "Google Chrome"],
+      ["Microsoft Edge.app", "Microsoft Edge"],
+      ["Brave Browser.app", "Brave Browser"],
+      ["Chromium.app", "Chromium"],
+      ["Google Chrome Canary.app", "Google Chrome Canary"]
+    ];
+    candidates = ["/Applications", p.join(home, "Applications")].flatMap((root) =>
+      apps.map(([bundle, binary]) => p.join(root, bundle, "Contents", "MacOS", binary)));
+  } else {
+    // Prefer native packages: snap Chromium cannot use hidden profile folders.
+    const names = [
+      "google-chrome-stable", "google-chrome", "microsoft-edge-stable", "microsoft-edge",
+      "brave-browser", "chromium", "chromium-browser"
+    ];
+    const dirs = [...new Set([...String(env.PATH || "").split(":").filter(Boolean), "/snap/bin"])];
+    candidates = names.flatMap((name) => dirs.map((dir) => p.join(dir, name)));
+  }
+  const found = candidates.find((candidate) => exists(candidate));
+  return found ? describe(found) : null;
+}
+
+export function resolveBrowserProfile({
+  browser = null,
+  platform = process.platform,
+  env = process.env,
+  home = env.HOME || env.USERPROFILE || homedir()
+} = {}) {
+  if (env.LTN_CHROME_DEBUG_USER_DATA_DIR) return env.LTN_CHROME_DEBUG_USER_DATA_DIR;
+  const p = pathApi(platform);
+  if (browser?.kind === "snap") {
+    // Snap confinement only allows writing inside ~/snap/<name>/common.
+    return p.join(home, "snap", browser.snapName || "chromium", "common", "simi-chrome-profile");
+  }
+  return p.join(env.CODEX_HOME || p.join(home, ".codex"), "chrome-profile");
+}
+
+export function isHeadlessBrowserSession({ platform = process.platform, env = process.env } = {}) {
+  if (env.LTN_CHROME_HEADLESS === "1") return true;
+  if (env.LTN_CHROME_HEADLESS === "0") return false;
+  return platform === "linux" && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+}
+
+export function browserLaunchArgs({
+  port = 9222,
+  profile,
+  url = "",
+  platform = process.platform,
+  env = process.env,
+  isRoot = typeof process.getuid === "function" && process.getuid() === 0
+} = {}) {
+  const args = [
+    `--remote-debugging-port=${port}`,
+    "--remote-debugging-address=127.0.0.1",
+    `--user-data-dir=${profile}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-dev-shm-usage"
+  ];
+  if (platform === "linux") {
+    if (isRoot) args.push("--no-sandbox");
+    if (env.WAYLAND_DISPLAY) args.push("--ozone-platform-hint=auto");
+  }
+  if (isHeadlessBrowserSession({ platform, env })) args.push("--headless=new");
+  if (url) args.push(url);
+  return args;
+}
 
 function withTimeout(promise, timeoutMs, message) {
   let timer;

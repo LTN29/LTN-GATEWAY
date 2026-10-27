@@ -913,6 +913,72 @@ EOF
   echo "  User chi can dang nhap mot lan trong cua so Chrome moi"
 }
 
+install_simi_chrome_launcher() {
+  # Give users a visible entry point to the exact profile that SIMI reads.
+  local launcher_path app_dir desktop_dir entry_path entry_tmp escaped_exec
+  launcher_path="${BIN_DIR}/ltn-chrome-debug"
+  [ -x "${launcher_path}" ] || return 0
+
+  case "${OS_NAME}" in
+    macos)
+      app_dir="${HOME}/Applications/SIMI Chrome.app"
+      mkdir -p "${app_dir}/Contents/MacOS"
+      cat > "${app_dir}/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>SIMI Chrome</string>
+  <key>CFBundleDisplayName</key><string>SIMI Chrome</string>
+  <key>CFBundleIdentifier</key><string>vn.simi.chrome-launcher</string>
+  <key>CFBundleExecutable</key><string>simi-chrome</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSUIElement</key><true/>
+</dict>
+</plist>
+PLIST
+      cat > "${app_dir}/Contents/MacOS/simi-chrome" <<EOF
+#!/usr/bin/env bash
+exec "${launcher_path}" >/dev/null 2>&1
+EOF
+      chmod 755 "${app_dir}/Contents/MacOS/simi-chrome"
+      echo "Da tao ung dung 'SIMI Chrome' trong ~/Applications (mo bang Launchpad/Spotlight)."
+      ;;
+    linux)
+      escaped_exec="$(printf '%s' "${launcher_path}" | sed 's/\\/\\\\/g; s/"/\\"/g; s/%/%%/g')"
+      for desktop_dir in "${XDG_DATA_HOME:-${HOME}/.local/share}/applications" \
+        "$(command -v xdg-user-dir >/dev/null 2>&1 && xdg-user-dir DESKTOP 2>/dev/null || printf '%s' "${HOME}/Desktop")"; do
+        [ -n "${desktop_dir}" ] || continue
+        if [ "${desktop_dir}" = "${HOME}" ]; then continue; fi
+        case "${desktop_dir}" in
+          */applications) mkdir -p "${desktop_dir}" ;;
+          *) [ -d "${desktop_dir}" ] || continue ;;
+        esac
+        entry_path="${desktop_dir}/simi-chrome.desktop"
+        entry_tmp="${entry_path}.$.tmp"
+        cat > "${entry_tmp}" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SIMI Chrome
+Comment=Chrome profile used by SIMI to read signed-in pages
+Exec="${escaped_exec}"
+Icon=google-chrome
+Terminal=false
+Categories=Network;WebBrowser;
+EOF
+        chmod 755 "${entry_tmp}"
+        mv "${entry_tmp}" "${entry_path}"
+        if command -v gio >/dev/null 2>&1; then
+          gio set "${entry_path}" metadata::trusted true >/dev/null 2>&1 || true
+        fi
+      done
+      echo "Da tao loi tat 'SIMI Chrome' trong menu ung dung va Desktop."
+      ;;
+  esac
+}
+
 install_linux_browser_autostart() {
   local autostart_dir desktop_path desktop_tmp escaped_exec
   [ "${OS_NAME}" = "linux" ] || return 0
@@ -1414,6 +1480,7 @@ install_or_repair() {
   echo "[7/7] Cai full skill 9Router..."
   install_managed_9router_skills
   install_browser_bridge
+  install_simi_chrome_launcher
   install_linux_browser_autostart
   install_local_tools
   verify_codex_managed_runtime_config

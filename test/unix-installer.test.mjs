@@ -154,7 +154,7 @@ test("Unix full installer supports macOS/Linux without embedding secrets or comb
   assert.match(script, /install_linux_browser_autostart\(\)/);
   assert.match(script, /simi-browser\.desktop/);
   assert.match(script, /X-GNOME-Autostart-enabled=true/);
-  assert.match(script, /install_browser_bridge\n  install_linux_browser_autostart\n  install_local_tools/);
+  assert.match(script, /install_browser_bridge\n  install_simi_chrome_launcher\n  install_linux_browser_autostart\n  install_local_tools/);
   assert.match(script, /SIMI Browser autostart: da bat/);
   assert.match(script, /page_client_path="\$\{CODEX_HOME\}\/browser-page\.mjs"/);
   assert.match(script, /exec .*page_client_path/);

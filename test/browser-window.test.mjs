@@ -24,3 +24,13 @@ test("browser MCP can bring SIMI Chrome forward for sign-in and verification", a
   assert.match(skill, /simi_browser\.browser_open_window/);
   assert.match(skill, /SIMI Chrome/);
 });
+
+test("macOS and Ubuntu installers create a visible SIMI Chrome launcher", async () => {
+  const unix = await read("../scripts/install-codex-unix.sh");
+  assert.match(unix, /install_browser_bridge\n  install_simi_chrome_launcher\n/);
+  assert.match(unix, /SIMI Chrome\.app/);
+  assert.match(unix, /CFBundleExecutable/);
+  assert.match(unix, /simi-chrome\.desktop/);
+  assert.match(unix, /metadata::trusted true/);
+  assert.match(unix, /xdg-user-dir DESKTOP/);
+});

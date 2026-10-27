@@ -1,58 +1,26 @@
-import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { closeSync, mkdirSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { browserLaunchArgs, findBrowserExecutable, isHeadlessBrowserSession, resolveBrowserProfile } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const port = Number(process.env.LTN_CHROME_DEBUG_PORT || 9222);
-const profile = process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile");
 const logPath = process.env.LTN_CHROME_DEBUG_LOG_PATH || join(codexHome, "logs", "simi-browser.log");
 const url = String(process.argv[2] || "").trim();
 
-function findChrome() {
-  const candidates = process.platform === "win32"
-    ? [
-        join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
-        join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
-        join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
-        join(process.env.PROGRAMFILES || "", "Microsoft", "Edge", "Application", "msedge.exe"),
-        join(process.env["PROGRAMFILES(X86)"] || "", "Microsoft", "Edge", "Application", "msedge.exe"),
-        join(process.env.LOCALAPPDATA || "", "Microsoft", "Edge", "Application", "msedge.exe"),
-        join(process.env.LOCALAPPDATA || "", "Chromium", "Application", "chrome.exe")
-      ]
-    : process.platform === "darwin"
-      ? [
-          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-          "/Applications/Chromium.app/Contents/MacOS/Chromium",
-          join(homedir(), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-          join(homedir(), "Applications/Chromium.app/Contents/MacOS/Chromium")
-        ]
-      : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "microsoft-edge-stable"];
-
-  for (const candidate of candidates) {
-    if (candidate && (candidate.includes("\\") || candidate.includes("/") ? existsSync(candidate) : spawnSync(candidate, ["--version"], { stdio: "ignore" }).status === 0)) {
-      return candidate;
-    }
-  }
-  throw new Error("Không tìm thấy Google Chrome. Đặt LTN_CHROME_BIN tới file Chrome nếu cần.");
+const browser = findBrowserExecutable();
+if (!browser) {
+  process.stderr.write("ltn-chrome-debug: Chrome, Edge, Brave or Chromium was not found. Install Google Chrome, or set LTN_CHROME_BIN to the browser executable.\n");
+  process.exit(1);
 }
-
-const chrome = process.env.LTN_CHROME_BIN || findChrome();
-const args = [
-  `--remote-debugging-port=${port}`,
-  "--remote-debugging-address=127.0.0.1",
-  `--user-data-dir=${profile}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "--disable-dev-shm-usage"
-];
-if (process.platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0) {
-  args.push("--no-sandbox");
-}
-if (url) args.push(url);
+const chrome = browser.path;
+const profile = resolveBrowserProfile({ browser });
+const headless = isHeadlessBrowserSession();
+const args = browserLaunchArgs({ port, profile, url });
 
 mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
+mkdirSync(profile, { recursive: true, mode: 0o700 });
 const logFd = openSync(logPath, "a", 0o600);
 const child = spawn(chrome, args, {
   detached: true,
@@ -95,6 +63,8 @@ try {
   process.stdout.write([
     `Chrome CDP đã khởi động tại http://127.0.0.1:${port}`,
     `Profile: ${profile}`,
+    `Browser: ${chrome}${browser.kind === "snap" ? " (snap)" : ""}`,
+    ...(headless ? ["No desktop session detected: running headless. Sign-in windows cannot be shown on this machine."] : []),
     "Đăng nhập một lần trong profile này; các lần sau sẽ giữ session.",
     "Đọc tab: ltn-browser-page --cdp"
   ].join("\n") + "\n");

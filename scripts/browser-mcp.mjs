@@ -4,7 +4,7 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import { activateCdpTarget, cdpTargets } from "./browser-cdp.mjs";
+import { activateCdpTarget, cdpTargets, findBrowserExecutable, isHeadlessBrowserSession, resolveBrowserProfile } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const browserPagePath = process.env.LTN_BROWSER_PAGE_PATH || join(codexHome, "browser-page.mjs");
@@ -389,18 +389,24 @@ async function openBrowserWindow(args = {}) {
     }
   }
   return {
-    opened: true,
+    opened: !isHeadlessBrowserSession(),
     url: url || null,
     tabActivated: activated,
-    profilePath: process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile"),
-    instructions: "Ask the user to sign in or complete the verification in the SIMI Chrome window, then call browser_read_pages again."
+    profilePath: resolveBrowserProfile({ browser: findBrowserExecutable() }),
+    visible: !isHeadlessBrowserSession(),
+    instructions: isHeadlessBrowserSession()
+      ? "This machine has no desktop session, so the SIMI Chrome window cannot be shown. Sign in from a desktop session, or ask an administrator to copy an authorized profile."
+      : "Ask the user to sign in or complete the verification in the SIMI Chrome window, then call browser_read_pages again."
   };
 }
 
 async function browserStatus() {
   const diagnostics = {
     host: cdpHost, port: cdpPort, mode: "persistent-managed-profile",
-    profilePath: process.env.LTN_CHROME_DEBUG_USER_DATA_DIR || join(codexHome, "chrome-profile"),
+    profilePath: resolveBrowserProfile({ browser: findBrowserExecutable() }),
+    browserPath: findBrowserExecutable()?.path || null,
+    browserKind: findBrowserExecutable()?.kind || null,
+    headless: isHeadlessBrowserSession(),
     startupLogPath: process.env.LTN_CHROME_DEBUG_LOG_PATH || join(codexHome, "logs", "simi-browser.log"),
     readerInstalled: existsSync(browserPagePath),
     launcherInstalled: existsSync(process.env.LTN_CHROME_DEBUG_PATH || join(codexHome, "chrome-debug.mjs")),
