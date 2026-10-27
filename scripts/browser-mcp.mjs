@@ -20,7 +20,7 @@ const pythonPath = process.env.LTN_PYTHON_PATH || (process.platform === "win32"
 const tools = [
   {
     name: "browser_read_pages",
-    description: "Open and read one or more authorized web pages in the persistent SIMI Chrome profile. Chrome starts automatically, tabs are opened concurrently, and signed-in sessions are reused. Use this for URLs the user says are already logged in.",
+    description: "Open and read one or more web pages in the persistent SIMI Chrome profile, reusing signed-in sessions. Use this FIRST for Shopee, Lazada, Tiki, TikTok, Facebook, Instagram, SharePoint and other e-commerce, social or dashboard URLs, and whenever the user says they are logged in or wants product price, voucher, stock or order data. Do not substitute curl, web fetch or web search for these URLs.",
     inputSchema: {
       type: "object",
       properties: {

@@ -5,6 +5,10 @@ description: Tìm kiếm Internet qua Simi Gateway bằng nhiều công cụ và
 
 # Simi - Tìm kiếm Internet
 
+Khi user đưa link cụ thể cần đọc, đặc biệt link sàn TMĐT/mạng xã hội
+(Shopee, Lazada, Tiki, TikTok, Facebook...), không thay bằng tìm kiếm: dùng
+`simi-trinh-duyet`. Chỉ search khi user hỏi thông tin chưa có link.
+
 Ưu tiên công cụ search được cung cấp trong phiên. Với Gateway đã được cấp quyền,
 discover bằng `ltn-9router GET /models/web` và chọn mục `kind=webSearch`.
 `POST /search` nhận `model`, `query`, `max_results` (thường bắt đầu 5).

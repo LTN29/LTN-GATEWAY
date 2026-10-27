@@ -1,9 +1,16 @@
 ---
 name: simi-doc-trang-web
-description: Đọc URL công khai thành Markdown, văn bản hoặc HTML qua Simi Gateway. Dùng khi user muốn đọc bài viết, trích xuất nội dung trang, xem tài liệu cài đặt hoặc khi máy không truy cập trực tiếp được URL; không dùng như proxy tải file nhị phân.
+description: Đọc URL công khai dạng bài viết/tài liệu (tin tức, blog, docs) thành Markdown hoặc văn bản qua Simi Gateway. KHÔNG dùng cho Shopee, Lazada, Tiki, TikTok, Facebook, SharePoint hay trang sàn TMĐT/mạng xã hội/dashboard — các trang đó dùng simi-trinh-duyet. Không dùng như proxy tải file nhị phân.
 ---
 
 # Simi - Đọc nội dung trang web
+
+Không dùng skill này cho sàn TMĐT, mạng xã hội hoặc dashboard (Shopee, Lazada,
+Tiki, TikTok Shop, Facebook, TikTok, Instagram, SharePoint, Google Docs...),
+kể cả khi trang có vẻ công khai: chuyển sang `simi-trinh-duyet`. Nếu kết quả
+fetch là trang xác minh, CAPTCHA, đăng nhập hoặc nội dung rỗng, dừng fetch và
+chuyển sang `simi-trinh-duyet`. Không thử curl, wget, r.jina.ai hay API riêng
+của website để né.
 
 Ưu tiên công cụ mở/đọc URL đã có trong phiên. Trang cần login dùng
 `simi-trinh-duyet` và profile của user; Gateway fetch không có phiên login đó.
