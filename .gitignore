@@ -39,3 +39,5 @@ admin-ui/dist/
 # Generated training materials and installation guides.
 output/pdf/giao-an-*.pdf
 output/pdf/huong-dan-*.pdf
+data/device-updates*.json
+data/device-updates*.json.*

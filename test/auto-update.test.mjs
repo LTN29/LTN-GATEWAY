@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,62 +20,141 @@ async function serve(routes) {
   return { server, url: `http://127.0.0.1:${server.address().port}` };
 }
 
-test("auto-update refreshes only changed files, verifies checksums and never writes outside CODEX_HOME", async () => {
+function manifestFor(files, extra = {}) {
+  return { object: "simi.auto_update.manifest", installerVersion: 3, bundleVersion: "abcdef0123456789", ...extra, files };
+}
+
+async function withHome(setup, run) {
   const home = await mkdtemp(join(tmpdir(), "simi-auto-update-"));
   await mkdir(join(home, "skills", "simi-trinh-duyet"), { recursive: true });
   await mkdir(join(home, "tools"), { recursive: true });
   await writeFile(join(home, "skills", "simi-trinh-duyet", "SKILL.md"), "old skill");
   await writeFile(join(home, "tools", "pdf-extract.py"), "same");
+  await writeFile(join(home, "browser-mcp.mjs"), "old mcp");
   await writeFile(join(home, "ltn-installer-version"), "3");
-
-  const files = {
-    "/install/skills/simi-trinh-duyet/SKILL.md": "new skill",
-    "/install/tools/browser-mcp.mjs": "new mcp",
-    "/install/tools/pdf-extract.py": "same",
-    "/install/tools/bad.mjs": "tampered",
-    "/install/skills/not-installed/SKILL.md": "skip me"
-  };
-  const manifest = {
-    object: "simi.auto_update.manifest",
-    installerVersion: 3,
-    releaseNote: "Sửa lỗi đọc Shopee.",
-    files: [
-      { url: "/install/skills/simi-trinh-duyet/SKILL.md", target: "skills/simi-trinh-duyet/SKILL.md", sha256: sha("new skill") },
-      { url: "/install/tools/browser-mcp.mjs", target: "browser-mcp.mjs", sha256: sha("new mcp") },
-      { url: "/install/tools/pdf-extract.py", target: "tools/pdf-extract.py", sha256: sha("same") },
-      { url: "/install/tools/bad.mjs", target: "tools/bad.mjs", sha256: sha("expected") },
-      { url: "/install/skills/not-installed/SKILL.md", target: "skills/not-installed/SKILL.md", sha256: sha("skip me") },
-      { url: "/install/tools/browser-mcp.mjs", target: "../escape.mjs", sha256: sha("new mcp") },
-      { url: "/install/tools/browser-mcp.mjs", target: "config.toml", sha256: sha("new mcp") }
-    ]
-  };
-  const { server, url } = await serve({ ...files, "/install/manifest.json": JSON.stringify(manifest) });
+  const { server, url } = await serve(setup);
   try {
     process.env.CODEX_HOME = home;
     process.env.LTN_GATEWAY_BASE_URL = `${url}/v1`;
-    const { runAutoUpdate } = await import(`../scripts/auto-update.mjs?case=${Date.now()}`);
-    const status = await runAutoUpdate();
-
-    assert.equal(status.error, undefined);
-    assert.deepEqual(status.updated.sort(), ["browser-mcp.mjs", "skills/simi-trinh-duyet/SKILL.md"]);
-    assert.equal(await readFile(join(home, "skills", "simi-trinh-duyet", "SKILL.md"), "utf8"), "new skill");
-    assert.equal(await readFile(join(home, "browser-mcp.mjs"), "utf8"), "new mcp");
-    assert.equal(existsSync(join(home, "tools", "bad.mjs")), false, "checksum mismatch is not installed");
-    assert.ok(status.failed.some((item) => item.target === "tools/bad.mjs" && /checksum/.test(item.error)));
-    assert.equal(existsSync(join(home, "skills", "not-installed")), false, "skills the user does not have are not added");
-    assert.equal(existsSync(join(home, "..", "escape.mjs")), false);
-    assert.equal(existsSync(join(home, "config.toml")), false, "config.toml is never written by auto-update");
-    assert.equal(status.fullUpdateRequired, false);
-    assert.equal(existsSync(join(home, "auto-update.lock")), false, "lock is released");
-    const saved = JSON.parse(await readFile(join(home, "logs", "auto-update.json"), "utf8"));
-    assert.equal(saved.updated.length, 2);
-
-    const second = await runAutoUpdate();
-    assert.deepEqual(second.updated, [], "a second run downloads nothing");
+    const mod = await import(`../scripts/auto-update.mjs?case=${Date.now()}-${Math.random()}`);
+    await run(mod, home, url);
   } finally {
     server.close();
     delete process.env.CODEX_HOME;
     delete process.env.LTN_GATEWAY_BASE_URL;
+    await rm(home, { recursive: true, force: true });
+  }
+}
+
+const goodFiles = [
+  { url: "/install/skills/simi-trinh-duyet/SKILL.md", target: "skills/simi-trinh-duyet/SKILL.md", sha256: sha("new skill") },
+  { url: "/install/tools/browser-mcp.mjs", target: "browser-mcp.mjs", sha256: sha("new mcp") },
+  { url: "/install/tools/pdf-extract.py", target: "tools/pdf-extract.py", sha256: sha("same") },
+  { url: "/install/skills/not-installed/SKILL.md", target: "skills/not-installed/SKILL.md", sha256: sha("skip me") },
+  { url: "/install/tools/browser-mcp.mjs", target: "../escape.mjs", sha256: sha("new mcp") },
+  { url: "/install/tools/browser-mcp.mjs", target: "config.toml", sha256: sha("new mcp") }
+];
+const routes = {
+  "/install/skills/simi-trinh-duyet/SKILL.md": "new skill",
+  "/install/tools/browser-mcp.mjs": "new mcp",
+  "/install/tools/pdf-extract.py": "same",
+  "/install/tools/bad.mjs": "tampered",
+  "/install/skills/not-installed/SKILL.md": "skip me"
+};
+
+test("auto-update swaps changed files together, keeps .prev backups and never writes outside CODEX_HOME", async () => {
+  await withHome({ ...routes, "/install/manifest.json": JSON.stringify(manifestFor(goodFiles, { releaseNote: "Sửa lỗi đọc Shopee." })) },
+    async ({ runAutoUpdate }, home) => {
+      const status = await runAutoUpdate();
+      assert.equal(status.error, undefined);
+      assert.deepEqual(status.updated.sort(), ["browser-mcp.mjs", "skills/simi-trinh-duyet/SKILL.md"]);
+      assert.equal(await readFile(join(home, "browser-mcp.mjs"), "utf8"), "new mcp");
+      assert.equal(await readFile(join(home, "browser-mcp.mjs.prev"), "utf8"), "old mcp", "previous version is kept");
+      assert.equal(existsSync(join(home, "skills", "not-installed")), false, "skills the user does not have are not added");
+      assert.equal(existsSync(join(home, "..", "escape.mjs")), false);
+      assert.equal(existsSync(join(home, "config.toml")), false, "config.toml is never written by auto-update");
+      assert.equal(status.rejected.length, 2, "malformed entries are reported but do not block the batch");
+      assert.equal(status.syncedBundle, "abcdef0123456789");
+      assert.equal(status.fullUpdateRequired, false);
+      assert.equal(existsSync(join(home, "auto-update.lock")), false, "lock is released");
+      const saved = JSON.parse(await readFile(join(home, "logs", "auto-update.json"), "utf8"));
+      assert.equal(saved.updated.length, 2);
+      const second = await runAutoUpdate();
+      assert.deepEqual(second.updated, [], "a second run downloads nothing");
+      assert.equal(second.syncedBundle, "abcdef0123456789");
+    });
+});
+
+test("one bad checksum leaves every file untouched and no temporary files behind", async () => {
+  const files = [...goodFiles, { url: "/install/tools/bad.mjs", target: "tools/bad.mjs", sha256: sha("expected") }];
+  await withHome({ ...routes, "/install/manifest.json": JSON.stringify(manifestFor(files)) },
+    async ({ runAutoUpdate }, home) => {
+      const status = await runAutoUpdate();
+      assert.deepEqual(status.updated, []);
+      assert.equal(status.batchAborted, true);
+      assert.ok(status.failed.some((item) => item.target === "tools/bad.mjs" && /checksum/.test(item.error)));
+      assert.equal(await readFile(join(home, "browser-mcp.mjs"), "utf8"), "old mcp");
+      assert.equal(await readFile(join(home, "skills", "simi-trinh-duyet", "SKILL.md"), "utf8"), "old skill");
+      assert.equal(existsSync(join(home, "tools", "bad.mjs")), false);
+      const leftovers = (await readdir(home, { recursive: true })).filter((name) => name.endsWith(".update"));
+      assert.deepEqual(leftovers, []);
+      assert.equal(status.syncedBundle, null, "a failed batch is not reported as synced");
+    });
+});
+
+test("a paused manifest changes nothing and does not ask for the full installer", async () => {
+  await withHome({ ...routes, "/install/manifest.json": JSON.stringify(manifestFor([], { paused: true, installerVersion: 9 })) },
+    async ({ runAutoUpdate }, home) => {
+      const status = await runAutoUpdate();
+      assert.equal(status.paused, true);
+      assert.equal(status.fullUpdateRequired, false);
+      assert.equal(await readFile(join(home, "browser-mcp.mjs"), "utf8"), "old mcp");
+    });
+});
+
+test("holdLock keeps the lock for the full installer step", async () => {
+  await withHome({ "/install/manifest.json": JSON.stringify(manifestFor([])) },
+    async ({ runAutoUpdate }, home) => {
+      const status = await runAutoUpdate({ holdLock: true });
+      assert.equal(status.lockHeld, true);
+      assert.equal(existsSync(join(home, "auto-update.lock")), true);
+      const second = await runAutoUpdate();
+      assert.equal(second.skipped, "Another update is running.");
+    });
+});
+
+test("the update report carries versions only and authenticates with the stored key", async () => {
+  const received = [];
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => {
+      received.push({ url: req.url, headers: req.headers, body: JSON.parse(raw) });
+      res.writeHead(200, { "content-type": "application/json" }).end("{\"ok\":true}");
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const home = await mkdtemp(join(tmpdir(), "simi-auto-update-"));
+  try {
+    await writeFile(join(home, "ltn-client-id"), "0b9d8c1e-3f2a-4b5c-9d8e-7f6a5b4c3d2e");
+    await writeFile(join(home, "ltn-installer-version"), "3");
+    process.env.CODEX_HOME = home;
+    process.env.LTN_GATEWAY_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
+    process.env.LTN_TEAM_API_KEY = "sk-test-report";
+    const { sendUpdateReport } = await import(`../scripts/auto-update.mjs?case=report-${Date.now()}`);
+    const result = await sendUpdateReport({ checkedAt: "2026-10-29T08:00:00.000Z", syncedBundle: "abcdef0123456789", updated: ["browser-mcp.mjs"], failed: [] });
+    assert.deepEqual(result, { reported: true });
+    assert.equal(received[0].url, "/v1/simi/update-report");
+    assert.equal(received[0].headers.authorization, "Bearer sk-test-report");
+    assert.equal(received[0].headers["x-ltn-client-id"], "0b9d8c1e-3f2a-4b5c-9d8e-7f6a5b4c3d2e");
+    assert.equal(received[0].body.bundleVersion, "abcdef0123456789");
+    assert.equal(received[0].body.installerVersion, 3);
+    assert.equal(JSON.stringify(received[0].body).includes("sk-test-report"), false, "the key is never in the body");
+  } finally {
+    server.close();
+    delete process.env.CODEX_HOME;
+    delete process.env.LTN_GATEWAY_BASE_URL;
+    delete process.env.LTN_TEAM_API_KEY;
     await rm(home, { recursive: true, force: true });
   }
 });

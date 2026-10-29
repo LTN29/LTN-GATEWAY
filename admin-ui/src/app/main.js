@@ -593,13 +593,45 @@ async function pageTeamDetail(teamId) {
   render(`<div class="card"><h2>${escapeHtml(team.displayName)}</h2><p>${escapeHtml(team.teamId)} · ${team.enabled ? "Hoạt động" : "Đã khóa"}</p><p>Gói AI: ${escapeHtml(formatPolicy(team.aiPolicy?.mode))}</p></div><div class="grid compact">${metric("Nhân viên", team.memberCount)}${metric("Lượt dùng", usage.requests)}${metric("Premium", usage.premium)}${metric("Free", usage.free)}${metric("Test", usage.test)}</div>${table(["Nhân viên", "Tên", "Trạng thái"], (users.items || []).map((u) => `<tr><td>${escapeHtml(u.userId)}</td><td>${escapeHtml(u.displayName)}</td><td>${u.enabled ? "Hoạt động" : "Đã khóa"}</td></tr>`))}`);
 }
 
+const UPDATE_STATE_LABELS = {
+  current: "Mới nhất",
+  outdated: "Chưa cập nhật",
+  failing: "Lỗi cập nhật",
+  stale: "Mất liên lạc > 24h"
+};
+const PLATFORM_LABELS = { win32: "Windows", darwin: "macOS", linux: "Linux", other: "Khác" };
+
+function updatesCard(updates) {
+  if (!updates) return "";
+  const s = updates.summary || {};
+  const shipped = updates.shipped || {};
+  const rows = (updates.items || []).map((d) => {
+    const problem = (d.failed || []).map((f) => f.target).filter(Boolean).join(", ") || d.fullUpdate?.error || d.error || "";
+    return `<tr><td>${d.userId ? `<a href="/admin/users/${encodeURIComponent(d.userId)}">${escapeHtml(d.userId)}</a>` : escapeHtml(d.teamId || "")}</td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${escapeHtml(PLATFORM_LABELS[d.platform] || d.platform || "")}</td><td>${escapeHtml(UPDATE_STATE_LABELS[d.state] || d.state)}</td><td>${escapeHtml(d.bundleVersion || "")}</td><td>${escapeHtml(d.lastReportAt || "")}</td><td>${escapeHtml(problem)}</td></tr>`;
+  });
+  return `
+    <div class="card" style="margin-bottom: 24px;">
+      <h2>Cập nhật SIMI trên máy nhân viên</h2>
+      <p>Bản đang phát: <strong>${escapeHtml(shipped.bundleVersion || "?")}</strong> · Installer v${escapeHtml(shipped.installerVersion || 0)}${shipped.paused ? " · <strong>ĐANG TẠM DỪNG CẬP NHẬT</strong>" : ""}</p>
+      <div class="grid compact">
+        ${metric("Đã báo cáo", s.total || 0)}
+        ${metric("Mới nhất", s.current || 0)}
+        ${metric("Chưa cập nhật", s.outdated || 0)}
+        ${metric("Lỗi cập nhật", s.failing || 0)}
+        ${metric("Mất liên lạc > 24h", s.stale || 0)}
+      </div>
+      ${table(["Nhân viên", "Mã thiết bị", "Hệ điều hành", "Trạng thái", "Bản", "Báo cáo lần cuối", "Lỗi"], rows, "Chưa có máy nào gửi báo cáo cập nhật.")}
+    </div>`;
+}
+
 async function pageUsage() {
-  const [summary, users, teams, devices, timeseries] = await Promise.all([
+  const [summary, users, teams, devices, timeseries, updates] = await Promise.all([
     api(`/usage/summary${location.search}`),
     api(`/usage/users${location.search}`),
     api(`/usage/teams${location.search}`),
     api(`/usage/devices${location.search}`),
-    api(`/usage/timeseries${location.search}`).catch(() => [])
+    api(`/usage/timeseries${location.search}`).catch(() => []),
+    api(`/updates/devices${location.search}`).catch(() => null)
   ]);
   
   render(`
@@ -631,6 +663,8 @@ async function pageUsage() {
       ${table(["Nhân viên", "Bộ phận", "Lượt dùng", "Premium", "Free", "Test", "Lỗi", "Thiết bị", "Dùng lần cuối", "Chi tiết"], (users.items || []).map((u) => `<tr><td><a href="/admin/users/${encodeURIComponent(u.userId)}">${escapeHtml(u.userId)}</a></td><td>${escapeHtml(u.teamId)}</td><td>${u.requests}</td><td>${u.premium}</td><td>${u.free}</td><td>${u.test}</td><td>${u.errors}</td><td>${u.devices}</td><td>${escapeHtml(u.lastUsedAt || "")}</td><td>${errorDetailsButton(u.userId, u.errors)}</td></tr>`))}
     </div>
     
+    ${updatesCard(updates)}
+
     <div class="card">
       <h2>Thiết bị</h2>
       ${table(["Nhân viên", "Mã thiết bị", "Lượt dùng", "Cảnh báo"], (devices.items || []).map((d) => `<tr><td><a href="/admin/users/${encodeURIComponent(d.userId)}">${escapeHtml(d.userId)}</a></td><td>${escapeHtml(d.clientIdHashPrefix)}</td><td>${d.requests}</td><td>${escapeHtml(d.warning || "")}</td></tr>`))}

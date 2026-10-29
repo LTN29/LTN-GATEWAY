@@ -13,6 +13,7 @@ import { usageDevices, usageExport, usageSummary, usageTeam, usageTeams, usageTi
 import { approveReviewCandidate, getMemoryFile, getMemoryVersion, getReviewCandidate, listMemoryFiles, listMemoryVersions, listReviewCandidates, readMemoryAudit, rejectReviewCandidate, rollbackMemoryFile } from "./services/admin-memory-service.mjs";
 import { listSyncOutbox, retryAllSync, retrySyncItem } from "./services/admin-sync-service.mjs";
 import { configSummary, dashboardSummary, systemHealth } from "./services/admin-system-service.mjs";
+import { updateDevices } from "./services/admin-updates-service.mjs";
 
 const rateBuckets = new Map();
 const MAX_RATE_BUCKETS = 2_000;
@@ -289,6 +290,9 @@ export async function handleAdminApi(req, res) {
     } else if (req.method === "GET" && path === "/admin/api/v1/usage/devices") {
       requirePermission(admin, "usage:read", { teamId: query.teamId || null });
       sendAdminJson(res, 200, await usageDevices(scopedQuery(admin, query)), requestId);
+    } else if (req.method === "GET" && path === "/admin/api/v1/updates/devices") {
+      requirePermission(admin, "usage:read", { teamId: query.teamId || null });
+      sendAdminJson(res, 200, await updateDevices(scopedQuery(admin, query)), requestId);
     } else if (req.method === "GET" && path === "/admin/api/v1/usage/export") {
       requirePermission(admin, "usage:read", { teamId: query.teamId || null });
       const out = Buffer.from(await usageExport(scopedQuery(admin, query)), "utf8");

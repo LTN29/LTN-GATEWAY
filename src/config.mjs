@@ -144,6 +144,7 @@ export const config = {
     process.env.USER_ANALYTICS_FILE || "./data/user-analytics.json"
   ),
   userUsageFile: resolve(process.env.USER_USAGE_FILE || "./data/user-usage.json"),
+  deviceUpdatesFile: resolve(process.env.DEVICE_UPDATES_FILE || "./data/device-updates.json"),
   memoryMaxFileBytes: number(process.env.MEMORY_MAX_FILE_BYTES || 262144, 262144),
   memoryBackupLimit: number(process.env.MEMORY_BACKUP_LIMIT || 20, 20),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),

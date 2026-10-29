@@ -3,7 +3,7 @@
 // Runs on a schedule; downloads only changed files listed in the Gateway
 // manifest, verifies SHA-256, and replaces each file atomically.
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -79,8 +79,88 @@ function writeStatus(status) {
   } catch {}
 }
 
-export async function runAutoUpdate() {
-  const status = { checkedAt: new Date().toISOString(), gateway: gatewayRoot, updated: [], failed: [] };
+function releaseLock() {
+  try { unlinkSync(lockPath); } catch {}
+}
+
+function removeQuietly(path) {
+  try { unlinkSync(path); } catch {}
+}
+
+// Downloads every changed file first, then swaps them in together. A failed
+// download or checksum leaves ALL current files untouched, so tools that import
+// each other (browser-mcp.mjs -> browser-cdp.mjs) never end up half-updated.
+async function applyFiles(manifest, status) {
+  const pending = [];
+  for (const file of manifest.files) {
+    const path = safeTarget(codexHome, file?.target);
+    if (!path || !/^[a-f0-9]{64}$/.test(String(file.sha256)) || !String(file.url || "").startsWith("/install/")) {
+      // A malformed entry can never install; report it without blocking the rest.
+      status.rejected.push({ target: file?.target, error: "rejected manifest entry" });
+      continue;
+    }
+    // Never install skills the user removed or never had; core tools are always kept current.
+    if (file.target.startsWith("skills/") && !existsSync(dirname(path))) continue;
+    if (localHash(path) === file.sha256) continue;
+    pending.push({ file, path, temporary: `${path}.${process.pid}.update` });
+  }
+
+  const staged = [];
+  for (const item of pending) {
+    try {
+      const body = await fetchBuffer(`${gatewayRoot}${item.file.url}`, 60_000);
+      if (sha256(body) !== item.file.sha256) throw new Error("checksum mismatch");
+      mkdirSync(dirname(item.path), { recursive: true });
+      writeFileSync(item.temporary, body, { mode: 0o700 });
+      staged.push(item);
+    } catch (error) {
+      removeQuietly(item.temporary);
+      status.failed.push({ target: item.file.target, error: error.message });
+    }
+  }
+  if (status.failed.length) {
+    for (const item of staged) removeQuietly(item.temporary);
+    status.batchAborted = pending.length > 0;
+    return false;
+  }
+
+  const committed = [];
+  try {
+    for (const item of staged) {
+      const backup = `${item.path}.prev`;
+      const hadOriginal = existsSync(item.path);
+      if (hadOriginal) copyFileSync(item.path, backup);
+      renameSync(item.temporary, item.path);
+      committed.push({ ...item, backup, hadOriginal });
+    }
+  } catch (error) {
+    // Put back what was already swapped, newest first.
+    for (const item of committed.reverse()) {
+      try {
+        if (item.hadOriginal) renameSync(item.backup, item.path);
+        else removeQuietly(item.path);
+      } catch {}
+    }
+    for (const item of staged) removeQuietly(item.temporary);
+    status.failed.push({ target: "(commit)", error: error.message });
+    status.batchAborted = true;
+    return false;
+  }
+  status.updated.push(...staged.map((item) => item.file.target));
+  return true;
+}
+
+// holdLock keeps the lock so the caller can run the full installer under it.
+export async function runAutoUpdate({ holdLock = false } = {}) {
+  const previous = readStatus();
+  const status = {
+    checkedAt: new Date().toISOString(),
+    gateway: gatewayRoot,
+    updated: [],
+    failed: [],
+    rejected: [],
+    syncedBundle: previous?.syncedBundle || null
+  };
   if (!allowedGateway(gatewayRoot)) {
     status.error = "Gateway URL must use HTTPS.";
     writeStatus(status);
@@ -95,39 +175,78 @@ export async function runAutoUpdate() {
     if (manifest?.object !== "simi.auto_update.manifest" || !Array.isArray(manifest.files)) {
       throw new Error("Invalid update manifest.");
     }
-    for (const file of manifest.files) {
-      const path = safeTarget(codexHome, file?.target);
-      if (!path || !/^[a-f0-9]{64}$/.test(String(file.sha256)) || !String(file.url || "").startsWith("/install/")) {
-        status.failed.push({ target: file?.target, error: "rejected manifest entry" });
-        continue;
-      }
-      // Never install new skills/tools the user removed or never had, except core tools.
-      const isSkill = file.target.startsWith("skills/");
-      if (isSkill && !existsSync(dirname(path))) continue;
-      if (localHash(path) === file.sha256) continue;
-      try {
-        const body = await fetchBuffer(`${gatewayRoot}${file.url}`, 60_000);
-        if (sha256(body) !== file.sha256) throw new Error("checksum mismatch");
-        mkdirSync(dirname(path), { recursive: true });
-        const temporary = `${path}.${process.pid}.update`;
-        writeFileSync(temporary, body, { mode: 0o700 });
-        renameSync(temporary, path);
-        status.updated.push(file.target);
-      } catch (error) {
-        status.failed.push({ target: file.target, error: error.message });
-      }
+    status.serverBundle = typeof manifest.bundleVersion === "string" ? manifest.bundleVersion : null;
+    if (manifest.paused) {
+      status.paused = true;
+    } else {
+      const ok = await applyFiles(manifest, status);
+      if (ok && status.serverBundle) status.syncedBundle = status.serverBundle;
     }
     const localVersion = Number(readFileSafe(versionPath) || 0);
     status.installerVersion = { local: localVersion, server: Number(manifest.installerVersion || 0) };
     if (typeof manifest.releaseNote === "string") status.releaseNote = manifest.releaseNote.slice(0, 200);
-    status.fullUpdateRequired = Number(manifest.installerVersion || 0) > localVersion;
+    status.fullUpdateRequired = !manifest.paused && Number(manifest.installerVersion || 0) > localVersion;
   } catch (error) {
     status.error = error.message;
   } finally {
-    try { unlinkSync(lockPath); } catch {}
+    if (!holdLock) releaseLock();
   }
   writeStatus(status);
+  if (holdLock) status.lockHeld = true;
   return status;
+}
+
+function readApiKey() {
+  const fromEnv = String(process.env.LTN_TEAM_API_KEY || "").trim();
+  if (fromEnv) return fromEnv;
+  try {
+    if (process.platform === "win32") {
+      // The Windows installer stores the key as a User environment variable.
+      const result = spawnSync("reg", ["query", "HKCU\\Environment", "/v", "LTN_TEAM_API_KEY"],
+        { encoding: "utf8", timeout: 5_000, windowsHide: true });
+      const match = /LTN_TEAM_API_KEY\s+REG_(?:EXPAND_)?SZ\s+(\S+)/.exec(result.stdout || "");
+      return match ? match[1].trim() : "";
+    }
+    // macOS (Keychain) and Linux (Secret Service or 600 file) go through the installer's helper.
+    const helper = join(codexHome, "bin", "ltn-codex-token");
+    if (!existsSync(helper)) return "";
+    const result = spawnSync(helper, [], { encoding: "utf8", timeout: 5_000 });
+    return result.status === 0 ? String(result.stdout || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+// Tells the Gateway which bundle this device runs. Contains no file contents,
+// prompts or keys; the API key is only used as the Authorization header.
+export async function sendUpdateReport(status) {
+  const apiKey = readApiKey();
+  const clientId = readFileSafe(join(codexHome, "ltn-client-id"));
+  if (!apiKey || !clientId) return { reported: false, reason: !apiKey ? "no api key" : "no client id" };
+  const body = {
+    bundleVersion: status.syncedBundle || null,
+    installerVersion: Number(readFileSafe(versionPath) || 0),
+    platform: process.platform,
+    checkedAt: status.checkedAt,
+    updated: status.updated,
+    failed: status.failed,
+    fullUpdate: status.fullUpdate
+      ? { attemptedAt: status.fullUpdate.attemptedAt, exitCode: status.fullUpdate.exitCode ?? null, error: status.fullUpdate.error || null }
+      : null,
+    error: status.error || null
+  };
+  try {
+    const response = await fetch(`${gatewayRoot}/v1/simi/update-report`, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+      headers: { authorization: `Bearer ${apiKey}`, "x-ltn-client-id": clientId, "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    return response.ok ? { reported: true } : { reported: false, reason: `HTTP ${response.status}` };
+  } catch (error) {
+    return { reported: false, reason: error.message };
+  }
 }
 
 function readFileSafe(path) {
@@ -219,9 +338,20 @@ function readStatus() {
 const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const previous = readStatus();
-  const status = await runAutoUpdate();
-  if (status.fullUpdateRequired && !args.includes("--files-only")) {
-    status.fullUpdate = runFullUpdate(previous);
+  const status = await runAutoUpdate({ holdLock: true });
+  try {
+    if (status.lockHeld && status.fullUpdateRequired && !args.includes("--files-only")) {
+      status.fullUpdate = runFullUpdate(previous);
+      writeStatus(status);
+    }
+  } finally {
+    if (status.lockHeld) releaseLock();
+    delete status.lockHeld;
+  }
+  if (!status.skipped && !args.includes("--no-report")) {
+    const report = await sendUpdateReport(status);
+    status.reported = report.reported;
+    if (!report.reported) status.reportError = report.reason;
     writeStatus(status);
   }
   const notification = notificationFor(status);

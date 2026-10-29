@@ -26,7 +26,8 @@ import {
 } from "./response-parser.mjs";
 import {
   codexConfigForPrincipal,
-  selectCodexRoute
+  selectCodexRoute,
+  validateClientId
 } from "./codex-routing.mjs";
 import { recordUserAnalytics } from "./user-analytics-store.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
@@ -34,6 +35,7 @@ import { applyReasoningPolicy } from "./reasoning-policy.mjs";
 import { budgetChanged, budgetResponsesPayload } from "./request-budget.mjs";
 import { createSseNamespaceRestorer, flattenNamespaceTools, restoreNamespaceCalls } from "./tool-namespaces.mjs";
 import { sanitizeToolSchemas } from "./tool-schema-policy.mjs";
+import { normalizeUpdateReport, recordUpdateReport } from "./device-update-store.mjs";
 import {
   browserPageScope,
   getBrowserPage,
@@ -175,7 +177,11 @@ function autoUpdateEntries() {
   return entries;
 }
 
-async function buildAutoUpdateManifest() {
+export function autoUpdatePaused() {
+  return /^(0|false|no|off)$/i.test(String(process.env.SIMI_AUTO_UPDATE_ENABLED || "").trim());
+}
+
+export async function buildAutoUpdateManifest() {
   const files = [];
   for (const entry of autoUpdateEntries()) {
     try {
@@ -190,8 +196,22 @@ async function buildAutoUpdateManifest() {
       // A file missing on the server is skipped instead of breaking every client.
     }
   }
+  files.sort((a, b) => a.target.localeCompare(b.target));
+  // One short ID for "everything the Gateway currently ships"; clients report it back.
+  const bundleVersion = createHash("sha256")
+    .update(files.map((file) => `${file.target}:${file.sha256}`).join("\n"))
+    .digest("hex").slice(0, 16);
   const releaseNote = String(process.env.SIMI_RELEASE_NOTE || "").trim().slice(0, 200);
-  return { object: "simi.auto_update.manifest", installerVersion: AUTO_UPDATE_INSTALLER_VERSION, ...(releaseNote ? { releaseNote } : {}), files };
+  const manifest = {
+    object: "simi.auto_update.manifest",
+    installerVersion: AUTO_UPDATE_INSTALLER_VERSION,
+    bundleVersion,
+    ...(releaseNote ? { releaseNote } : {}),
+    files
+  };
+  // Kill switch: SIMI_AUTO_UPDATE_ENABLED=false stops all client updates at once.
+  if (autoUpdatePaused()) return { ...manifest, paused: true, files: [] };
+  return manifest;
 }
 
 const capabilityPostPaths = new Set([
@@ -1182,6 +1202,7 @@ export function createGatewayServer() {
     (req.method === "POST" && pathname === "/v1/chat/completions") ||
     (req.method === "POST" && pathname === "/v1/responses") ||
     (req.method === "POST" && pathname === "/v1/browser/page") ||
+    (req.method === "POST" && pathname === "/v1/simi/update-report") ||
     (req.method === "POST" && capabilityPostPaths.has(pathname));
 
   if (!supported) {
@@ -1272,6 +1293,36 @@ export function createGatewayServer() {
         "x-content-type-options": "nosniff"
       });
       res.end(body);
+      return;
+    }
+
+    if (req.method === "POST" && pathname === "/v1/simi/update-report") {
+      let clientId;
+      try {
+        clientId = validateClientId(req.headers["x-ltn-client-id"]);
+      } catch (error) {
+        sendJson(res, 400, openAiError(error.message, "invalid_request_error"));
+        return;
+      }
+      let report;
+      try {
+        report = normalizeUpdateReport(JSON.parse((await readBody(req, 16_384)).toString("utf8")));
+      } catch (error) {
+        sendJson(res, error.statusCode || 400, openAiError(
+          error instanceof SyntaxError ? "Báo cáo cập nhật phải là JSON." : error.message, "invalid_request_error"));
+        return;
+      }
+      const clientIdHash = createHash("sha256").update(clientId).digest("hex");
+      await recordUpdateReport(principal, clientIdHash, report, { minimal: isOutsideControlPrincipal(principal) });
+      jsonLog("auto_update_reported", {
+        requestId: id,
+        userId: principal.userId,
+        team: principal.team?.code,
+        clientIdHashPrefix: clientIdHash.slice(0, 12),
+        bundleVersion: report.bundleVersion,
+        failed: report.failed.length
+      });
+      sendJson(res, 200, { ok: true });
       return;
     }
 
