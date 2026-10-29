@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Generate or edit an image with Muse through the Simi Gateway and save it locally.
+"""Generate or edit an image (or a short video with --video) with Muse through the
+Simi Gateway and save it locally.
 
 Prints exactly one JSON line. Never prints the API key.
 """
@@ -21,6 +22,10 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_MODEL = "muse2api/muse-image-chat"
+DEFAULT_VIDEO_MODEL = "muse2api/muse-video-chat"
+DEFAULT_VIDEO_TIMEOUT = 700.0
+MAX_VIDEO_BYTES = 300 * 1024 * 1024
+VIDEO_MD = re.compile(r"\[Xem video\]\((\S+?)\)")
 DEFAULT_BASE = "https://ai.simi.vn"
 MAX_REFS = 4
 MAX_REF_BYTES = 15 * 1024 * 1024
@@ -189,6 +194,110 @@ def _save(data: bytes, mime: str, target: Path) -> Path:
     return out
 
 
+def _post_stream_text(url: str, body: dict, headers: dict, timeout: float) -> str:
+    """POST a streaming chat request and return the concatenated assistant text."""
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                 headers={**headers, "content-type": "application/json",
+                                          "accept": "text/event-stream"}, method="POST")
+    parts: list[str] = []
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            for raw in r:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    delta = (json.loads(data).get("choices") or [{}])[0].get("delta") or {}
+                except (ValueError, AttributeError, IndexError):
+                    continue
+                if isinstance(delta.get("content"), str):
+                    parts.append(delta["content"])
+    except urllib.error.HTTPError as exc:
+        detail = exc.read()[:400].decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("error", {}).get("message", detail)
+        except (ValueError, AttributeError):
+            pass
+        raise RuntimeError(f"Gateway trả HTTP {exc.code}: {detail}") from None
+    return "".join(parts).strip()
+
+def _fetch_video(url: str, target: Path, timeout: float) -> Path:
+    if not url.lower().startswith(("https://", "http://")):
+        raise RuntimeError("link video không hợp lệ")
+    req = urllib.request.Request(url, headers={"user-agent": "muse-tao-video/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        ctype = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if not ctype.startswith("video/"):
+            raise RuntimeError(f"link không trả về video (Content-Type: {ctype or 'không rõ'})")
+        ext = {"video/webm": ".webm", "video/quicktime": ".mov"}.get(ctype, ".mp4")
+        out = target.with_suffix(ext)
+        size = 0
+        with open(out, "wb") as f:
+            while chunk := r.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_VIDEO_BYTES:
+                    f.close()
+                    out.unlink(missing_ok=True)
+                    raise RuntimeError("video quá lớn")
+                f.write(chunk)
+    with open(out, "rb") as f:
+        head = f.read(12)
+    if ext in (".mp4", ".mov") and head[4:8] != b"ftyp":
+        out.unlink(missing_ok=True)
+        raise RuntimeError("file tải về không phải video hợp lệ")
+    return out
+
+def run_video(args: argparse.Namespace) -> dict:
+    key = _api_key()
+    if not key:
+        return {"ok": False, "error": "Thiếu key Gateway (LTN_TEAM_API_KEY / NINEROUTER_KEY)."}
+    refs = [Path(p).expanduser() for p in (args.ref or [])]
+    if len(refs) > 1:
+        return {"ok": False, "error": "Video chỉ nhận tối đa 1 ảnh làm khung hình đầu."}
+    for p in refs:
+        if not p.is_file():
+            return {"ok": False, "error": f"Không thấy ảnh: {p}"}
+    content: str | list = args.prompt
+    if refs:
+        budget = MAX_REQUEST_BYTES - 16_000 - len(args.prompt.encode("utf-8"))
+        content = [{"type": "text", "text": args.prompt},
+                   {"type": "image_url", "image_url": {"url": _data_url(refs[0], budget)}}]
+    headers = {"authorization": f"Bearer {key}", "user-agent": "muse-tao-video/1.0"}
+    cid = _client_id()
+    if cid:
+        headers["x-ltn-client-id"] = cid
+    model = args.model if args.model != DEFAULT_MODEL else DEFAULT_VIDEO_MODEL
+    body = {"model": model, "stream": True,
+            "messages": [{"role": "user", "content": content}]}
+    text = _post_stream_text(_base_url() + "/chat/completions", body, headers, args.timeout)
+    urls = VIDEO_MD.findall(text)
+    if not urls:
+        tail = text.split("\n\n", 1)[-1] if text else ""
+        msg = tail if ERROR_PREFIX in tail else (tail[:300] or "Muse không trả về video.")
+        return {"ok": False, "error": msg}
+    default_dir = str(Path.home() / "Videos" / "muse")
+    out_dir = Path(args.out_dir or os.environ.get("MUSE_VIDEO_DIR") or default_dir).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    stem = f"{stamp}-{_slug(args.prompt)}"
+    n = 2
+    while any(out_dir.glob(stem + "*")):
+        stem = f"{stamp}-{_slug(args.prompt)}-{n}"
+        n += 1
+    url = urls[0]
+    path = _fetch_video(url, out_dir / stem, 180)
+    item = {"path": str(path.resolve()), "url": url,
+            "download_url": url + ("&" if "?" in url else "?") + "download=1",
+            "size": path.stat().st_size}
+    meta = out_dir / f"{stem}.json"
+    meta.write_text(json.dumps({"created": stamp, "model": model, "prompt": args.prompt,
+                                "first_frame": [str(p.resolve()) for p in refs],
+                                "video": item}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "video": item, "meta": str(meta.resolve())}
+
 def run(args: argparse.Namespace) -> dict:
     key = _api_key()
     if not key:
@@ -261,19 +370,24 @@ def main() -> int:
     ap.add_argument("--prompt", required=True, help="Mô tả ảnh đầy đủ cho lượt này")
     ap.add_argument("--ref", action="append", help="Ảnh tham chiếu (lặp lại, tối đa 4)")
     ap.add_argument("--model", default=os.environ.get("MUSE_IMAGE_MODEL", DEFAULT_MODEL))
-    ap.add_argument("--out-dir", default=os.environ.get(
-        "MUSE_IMAGE_DIR", str(Path.home() / "Pictures" / "muse")))
-    ap.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="Giây chờ Gateway")
+    ap.add_argument("--out-dir", default=None)
+    ap.add_argument("--timeout", type=float, default=None, help="Giây chờ Gateway")
+    ap.add_argument("--video", action="store_true",
+                    help="Tạo video (--ref tối đa 1 ảnh làm khung hình đầu)")
     args = ap.parse_args()
+    if args.timeout is None:
+        args.timeout = DEFAULT_VIDEO_TIMEOUT if args.video else DEFAULT_TIMEOUT
+    if not args.video and args.out_dir is None:
+        args.out_dir = os.environ.get("MUSE_IMAGE_DIR", str(Path.home() / "Pictures" / "muse"))
     if not args.prompt.strip():
         print(json.dumps({"ok": False, "error": "Prompt trống."}, ensure_ascii=False))
         return 1
     try:
-        result = run(args)
+        result = run_video(args) if args.video else run(args)
     except (TimeoutError, OSError) as exc:  # includes URLError/socket timeout
         reason = getattr(exc, "reason", exc)
         result = {"ok": False, "error": f"Lỗi mạng hoặc hết thời gian chờ: {reason}. "
-                                        "Không tự gọi lại; ảnh có thể vẫn đang được tạo."}
+                                        "Không tự gọi lại; ảnh/video có thể vẫn đang được tạo."}
     except (RuntimeError, ValueError) as exc:
         result = {"ok": False, "error": str(exc)}
     print(json.dumps(result, ensure_ascii=False))
