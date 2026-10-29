@@ -33,6 +33,7 @@ import { isOutsideControlPrincipal } from "./principal-control.mjs";
 import { applyReasoningPolicy } from "./reasoning-policy.mjs";
 import { budgetChanged, budgetResponsesPayload } from "./request-budget.mjs";
 import { createSseNamespaceRestorer, flattenNamespaceTools, restoreNamespaceCalls } from "./tool-namespaces.mjs";
+import { sanitizeToolSchemas } from "./tool-schema-policy.mjs";
 import {
   browserPageScope,
   getBrowserPage,
@@ -483,7 +484,12 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
   }
   if (req.method === "POST" && upstreamPath.split("?")[0] === "/v1/messages" &&
       String(req.headers["content-type"] || "").includes("application/json")) {
-    body = JSON.stringify(applyReasoningPolicy(parseModelRequest(body), principal, "messages"));
+    const schemaFixed = sanitizeToolSchemas(
+      applyReasoningPolicy(parseModelRequest(body), principal, "messages"), "messages");
+    if (schemaFixed.changed.length) {
+      jsonLog("tool_schema_normalized", { requestId: id, format: "messages", tools: schemaFixed.changed });
+    }
+    body = JSON.stringify(schemaFixed.payload);
   }
   if (connectionId.length > 256 || /[\r\n]/.test(connectionId)) {
     const error = new Error("X-Connection-ID không hợp lệ.");
@@ -648,9 +654,11 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   if (budgetChanged(budgeted.stats)) {
     jsonLog("responses_context_budgeted", { requestId: id, ...budgeted.stats });
   }
-  const { payload: upstreamPayload, toolMap } = flattenNamespaceTools(
-    applyReasoningPolicy(budgeted.payload, principal)
-  );
+  const schemaFixed = sanitizeToolSchemas(applyReasoningPolicy(budgeted.payload, principal), "responses");
+  if (schemaFixed.changed.length) {
+    jsonLog("tool_schema_normalized", { requestId: id, format: "responses", tools: schemaFixed.changed });
+  }
+  const { payload: upstreamPayload, toolMap } = flattenNamespaceTools(schemaFixed.payload);
   route = await selectCodexRoute({
     team,
     principal,
@@ -795,6 +803,13 @@ async function handleChat(req, res, rawKey, principal, id) {
   }
 
   payload = applyReasoningPolicy(payload, principal, "chat");
+  {
+    const schemaFixed = sanitizeToolSchemas(payload, "chat");
+    if (schemaFixed.changed.length) {
+      jsonLog("tool_schema_normalized", { requestId: id, format: "chat", tools: schemaFixed.changed });
+    }
+    payload = schemaFixed.payload;
+  }
 
   if (memberSelectionEnabled(principal)) {
     if (codexConfigForPrincipal(principal).routing.mode === "limited_daily") {
