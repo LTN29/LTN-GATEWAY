@@ -659,6 +659,44 @@ function Install-SimiChromeShortcut {
   Write-Host "  Shortcut 'SIMI Chrome' (Desktop + Start Menu): sign in here once so SIMI can read signed-in pages"
 }
 
+function Install-SimiAutoUpdate {
+  param([string]$CodexHome, [string]$GatewayBaseUrl)
+  # Per-user scheduled task: at logon and every 6 hours, refresh skills/tools from the Gateway.
+  $gatewayRoot = $GatewayBaseUrl -replace '/v1$', ''
+  $scriptPath = Join-Path $CodexHome "auto-update.mjs"
+  $temp = "$scriptPath.$([Guid]::NewGuid().ToString('N')).tmp"
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri ([Uri]"$gatewayRoot/install/tools/auto-update.mjs").AbsoluteUri -OutFile $temp -MaximumRedirection 0
+    Move-Item -LiteralPath $temp -Destination $scriptPath -Force
+  } catch {
+    Write-Warning "Auto-update was not installed: $($_.Exception.Message)"
+    return
+  } finally {
+    if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+  }
+  [IO.File]::WriteAllText((Join-Path $CodexHome "ltn-installer-version"), "3", [Text.UTF8Encoding]::new($false))
+  $node = (Get-Command node -ErrorAction SilentlyContinue).Source
+  if ($env:LTN_BROWSER_NODE_PATH -and (Test-Path -LiteralPath $env:LTN_BROWSER_NODE_PATH)) { $node = $env:LTN_BROWSER_NODE_PATH }
+  if (-not $node) {
+    Write-Warning "Node.js not found; auto-update scheduled task was not created."
+    return
+  }
+  try {
+    $arguments = '"' + $scriptPath + '" --gateway "' + $gatewayRoot + '" --codex-home "' + $CodexHome + '"'
+    $action = New-ScheduledTaskAction -Execute $node -Argument $arguments
+    $triggers = @(
+      (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
+      (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Hours 6))
+    )
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName "SIMI Auto Update" -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
+    Write-Host "  Auto-update: SIMI skills/tools refresh at Windows logon and every 6 hours"
+  } catch {
+    Write-Warning "Could not register the SIMI auto-update task: $($_.Exception.Message)"
+  }
+}
+
 function Refresh-ProcessPath {
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -1170,6 +1208,10 @@ function Invoke-LtnUninstall {
     $cleanedConfig = Update-CodexConfig -ExistingContent $existingConfig -ManagedRootContent "" -ManagedTableContent ""
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
+  Unregister-ScheduledTask -TaskName "SIMI Auto Update" -Confirm:$false -ErrorAction SilentlyContinue
+  foreach ($file in @("auto-update.mjs", "auto-update.lock", "ltn-installer-version")) {
+    Remove-Item -LiteralPath (Join-Path (Split-Path -Parent $ConfigPath) $file) -Force -ErrorAction SilentlyContinue
+  }
   foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd", "ltn-muse.cmd")) {
     $wrapperPath = Join-Path $BinDir $wrapper
     if (Test-Path $wrapperPath) {
@@ -1342,6 +1384,7 @@ Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseU
 Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -BridgeToken $browserBridgeToken
 Install-SimiChromeShortcut -CodexHome $codexHome
 Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
+Install-SimiAutoUpdate -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
 
 $existingConfig = ""
 if (Test-Path $configPath) {
@@ -1349,6 +1392,21 @@ if (Test-Path $configPath) {
   Copy-Item -LiteralPath $configPath -Destination $backupPath
   $existingConfig = [IO.File]::ReadAllText($configPath)
   Write-Host "Đã sao lưu config cũ: $backupPath"
+}
+
+# Keep a model the user picked in Codex. Only apply the Gateway default on first
+# install, when the previous default is still selected, or when the chosen model
+# is no longer in the user's Combo.
+$lastDefaultPath = Join-Path $codexHome "ltn-default-model"
+$currentModelMatch = [regex]::Match($existingConfig, '(?m)^\s*model\s*=\s*"([^"]+)"')
+$currentModel = if ($currentModelMatch.Success) { $currentModelMatch.Groups[1].Value } else { "" }
+$lastDefault = if (Test-Path -LiteralPath $lastDefaultPath) { ([IO.File]::ReadAllText($lastDefaultPath)).Trim() } else { "" }
+$catalogSlugs = if ($memberSelection) { @($remoteConfig.modelCatalog.models | ForEach-Object { [string]$_.slug }) } else { @() }
+if ($currentModel -and $lastDefault -and $currentModel -ne $lastDefault -and ($catalogSlugs -contains $currentModel)) {
+  Write-Host "  Giữ model người dùng đã chọn: $currentModel"
+  $defaultModel = $currentModel
+} else {
+  try { [IO.File]::WriteAllText($lastDefaultPath, $defaultModel, [Text.UTF8Encoding]::new($false)) } catch {}
 }
 
 $escapedBaseUrl = Escape-TomlString $GatewayBaseUrl

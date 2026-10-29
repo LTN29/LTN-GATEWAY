@@ -610,6 +610,21 @@ merge_config() {
     fi
     mv "${catalog_tmp}" "${catalog_path}"
     CATALOG_CONFIG_LINE="model_catalog_json = \"$(escape_toml "${catalog_path}")\""
+    # Keep a model the user picked in Codex; apply the Gateway default only on first
+    # install, when the previous default is still selected, or when the chosen
+    # model is no longer in the user's Combo.
+    local last_default_path current_model last_default
+    last_default_path="${CODEX_HOME}/ltn-default-model"
+    current_model="$(sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${CONFIG_PATH}" 2>/dev/null | head -n 1)"
+    last_default="$(cat "${last_default_path}" 2>/dev/null || true)"
+    if [ -n "${current_model}" ] && [ -n "${last_default}" ] && [ "${current_model}" != "${last_default}" ] &&
+       "${RUNTIME_NODE_CMD:-node}" -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.exit(x.models.some(m=>m.slug===process.argv[2])?0:1)' "${catalog_path}" "${current_model}"; then
+      echo "Giu model nguoi dung da chon: ${current_model}"
+      DEFAULT_MODEL="${current_model}"
+      escaped_model="$(escape_toml "${DEFAULT_MODEL}")"
+    else
+      printf '%s' "${DEFAULT_MODEL}" > "${last_default_path}"
+    fi
   fi
 
   preserved_root="$(mktemp "${TMPDIR:-/tmp}/ltn-codex-root.XXXXXX")"
@@ -1465,6 +1480,115 @@ PLUGINJS
   fi
 }
 
+install_simi_auto_update() {
+  # Per-user job: at login and every 6 hours, refresh skills/tools from the Gateway.
+  local gateway_root script_path script_tmp node_bin plist_path unit_dir job
+  gateway_root="${GATEWAY_BASE_URL%/}"
+  gateway_root="${gateway_root%/v1}"
+  script_path="${CODEX_HOME}/auto-update.mjs"
+  script_tmp="${script_path}.$$.tmp"
+  if ! curl --fail --silent --show-error --max-redirs 0 \
+    --output "${script_tmp}" "${gateway_root}/install/tools/auto-update.mjs"; then
+    rm -f "${script_tmp}"
+    echo "Canh bao: chua cai duoc auto-update." >&2
+    return 0
+  fi
+  chmod 700 "${script_tmp}"
+  mv "${script_tmp}" "${script_path}"
+  printf '3' > "${CODEX_HOME}/ltn-installer-version"
+  node_bin="${RUNTIME_NODE_CMD:-$(command -v node 2>/dev/null || true)}"
+  if [ -z "${node_bin}" ]; then
+    echo "Canh bao: thieu Node.js, khong tao lich auto-update." >&2
+    return 0
+  fi
+  mkdir -p "${CODEX_HOME}/logs"
+
+  case "${OS_NAME}" in
+    macos)
+      plist_path="${HOME}/Library/LaunchAgents/vn.simi.auto-update.plist"
+      mkdir -p "${HOME}/Library/LaunchAgents"
+      cat > "${plist_path}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>vn.simi.auto-update</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${node_bin}</string>
+    <string>${script_path}</string>
+    <string>--gateway</string><string>${gateway_root}</string>
+    <string>--codex-home</string><string>${CODEX_HOME}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardErrorPath</key><string>${CODEX_HOME}/logs/auto-update.err</string>
+</dict>
+</plist>
+EOF
+      launchctl bootout "gui/$(id -u)/vn.simi.auto-update" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$(id -u)" "${plist_path}" >/dev/null 2>&1 || \
+        launchctl load -w "${plist_path}" >/dev/null 2>&1 || true
+      echo "Auto-update: skill/cong cu SIMI tu cap nhat khi dang nhap va moi 6 gio (launchd)."
+      ;;
+    linux)
+      unit_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user"
+      if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+        mkdir -p "${unit_dir}"
+        cat > "${unit_dir}/simi-auto-update.service" <<EOF
+[Unit]
+Description=SIMI skill and tool auto-update
+
+[Service]
+Type=oneshot
+ExecStart="${node_bin}" "${script_path}" --gateway "${gateway_root}" --codex-home "${CODEX_HOME}"
+EOF
+        cat > "${unit_dir}/simi-auto-update.timer" <<'EOF'
+[Unit]
+Description=Run SIMI auto-update at login and every 6 hours
+
+[Timer]
+OnStartupSec=2min
+OnUnitActiveSec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+        systemctl --user enable --now simi-auto-update.timer >/dev/null 2>&1 || true
+        echo "Auto-update: skill/cong cu SIMI tu cap nhat khi dang nhap va moi 6 gio (systemd --user)."
+      elif command -v crontab >/dev/null 2>&1; then
+        job="\"${node_bin}\" \"${script_path}\" --gateway \"${gateway_root}\" --codex-home \"${CODEX_HOME}\" >/dev/null 2>&1 # simi-auto-update"
+        { crontab -l 2>/dev/null | grep -v 'simi-auto-update'; printf '17 */6 * * * %s\n' "${job}"; printf '@reboot sleep 120; %s\n' "${job}"; } | crontab - || true
+        echo "Auto-update: skill/cong cu SIMI tu cap nhat moi 6 gio (cron)."
+      else
+        echo "Canh bao: khong co systemd --user hoac cron; chi cap nhat khi dung updatesimi." >&2
+      fi
+      ;;
+  esac
+}
+
+remove_simi_auto_update() {
+  case "${OS_NAME}" in
+    macos)
+      launchctl bootout "gui/$(id -u)/vn.simi.auto-update" >/dev/null 2>&1 || true
+      rm -f "${HOME}/Library/LaunchAgents/vn.simi.auto-update.plist"
+      ;;
+    linux)
+      if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user disable --now simi-auto-update.timer >/dev/null 2>&1 || true
+      fi
+      rm -f "${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user/simi-auto-update.service" \
+        "${XDG_CONFIG_HOME:-${HOME}/.config}/systemd/user/simi-auto-update.timer"
+      if command -v crontab >/dev/null 2>&1 && crontab -l 2>/dev/null | grep -q 'simi-auto-update'; then
+        crontab -l 2>/dev/null | grep -v 'simi-auto-update' | crontab - || true
+      fi
+      ;;
+  esac
+  rm -f "${CODEX_HOME}/auto-update.mjs" "${CODEX_HOME}/auto-update.lock" "${CODEX_HOME}/ltn-installer-version"
+}
 install_or_repair() {
   local client_id
   ensure_dirs
@@ -1484,6 +1608,7 @@ install_or_repair() {
   install_simi_chrome_launcher
   install_linux_browser_autostart
   install_local_tools
+  install_simi_auto_update
   verify_codex_managed_runtime_config
   install_common_codex_plugins
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
@@ -1610,6 +1735,7 @@ uninstall_ltn() {
   local account skill_name skill_dir linux_autostart_path
   account="$(id -un)"
   remove_managed_config
+  remove_simi_auto_update
   rm -f "${HELPER_PATH}" "${CLIENT_ID_PATH}" "${LINUX_KEY_PATH}" "${BRIDGE_TOKEN_PATH}" "${CODEX_HOME}/browser-bridge.mjs" "${CODEX_HOME}/browser-page.mjs" "${CODEX_HOME}/browser-cdp.mjs" "${CODEX_HOME}/chrome-debug.mjs" "${CODEX_HOME}/browser-mcp.mjs"
   rm -f "${BIN_DIR}/ltn-9router" "${BIN_DIR}/ltn-pdf" "${BIN_DIR}/ltn-muse"
   rm -rf "${CODEX_HOME}/tools" "${CODEX_HOME}/pdf-runtime" "${LTN_RUNTIME_DIR}"

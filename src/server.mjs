@@ -1,4 +1,5 @@
 import http from "node:http";
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -10,7 +11,7 @@ import {
   injectMemory
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
-import { memberSelectionEnabled, comboModelList, assertComboModelAllowed } from "./combo-model-access.mjs";
+import { memberSelectionEnabled, comboModelList, assertComboModelAllowed, preferredDefaultModel } from "./combo-model-access.mjs";
 import { scheduleMemoryExtraction } from "./extractor.mjs";
 import {
   parseModelRequest,
@@ -149,10 +150,48 @@ const managedSkillNames = [
   "muse-tao-anh",
   "updatesimi"
 ];
+const autoUpdateScriptPath = fileURLToPath(new URL("../scripts/auto-update.mjs", import.meta.url));
+// Bump when a change needs the full installer (config.toml, runtimes, MCP registration).
+const AUTO_UPDATE_INSTALLER_VERSION = 3;
 const managedSkillPaths = new Map(managedSkillNames.map((name) => [
   `/install/skills/${name}/SKILL.md`,
   fileURLToPath(new URL(`../vendor/9router-skills/${name}/SKILL.md`, import.meta.url))
 ]));
+
+// Files that installed clients refresh automatically (see scripts/auto-update.mjs).
+// "target" is relative to the client's CODEX_HOME.
+const browserRootTools = new Set(["browser-page.mjs", "browser-cdp.mjs", "chrome-debug.mjs", "browser-mcp.mjs"]);
+function autoUpdateEntries() {
+  const entries = [];
+  for (const [url, path] of localToolPaths) {
+    const name = url.slice("/install/tools/".length);
+    entries.push({ url, path, target: browserRootTools.has(name) ? name : `tools/${name}` });
+  }
+  entries.push({ url: "/install/tools/auto-update.mjs", path: autoUpdateScriptPath, target: "auto-update.mjs" });
+  for (const [url, path] of managedSkillPaths) {
+    entries.push({ url, path, target: url.slice("/install/".length) });
+  }
+  return entries;
+}
+
+async function buildAutoUpdateManifest() {
+  const files = [];
+  for (const entry of autoUpdateEntries()) {
+    try {
+      const body = await readFile(entry.path);
+      files.push({
+        url: entry.url,
+        target: entry.target,
+        sha256: createHash("sha256").update(body).digest("hex"),
+        size: body.length
+      });
+    } catch {
+      // A file missing on the server is skipped instead of breaking every client.
+    }
+  }
+  const releaseNote = String(process.env.SIMI_RELEASE_NOTE || "").trim().slice(0, 200);
+  return { object: "simi.auto_update.manifest", installerVersion: AUTO_UPDATE_INSTALLER_VERSION, ...(releaseNote ? { releaseNote } : {}), files };
+}
 
 const capabilityPostPaths = new Set([
   "/v1/messages",
@@ -520,7 +559,7 @@ async function installerConfigForPrincipal(rawKey, principal, id) {
   const codexConfig = codexConfigForPrincipal(principal);
   if (memberSelectionEnabled(principal)) {
     const catalog = await comboModelList(principal, rawKey, id);
-    return ["LTN_CODEX_INSTALLER_V2", "combo_members", catalog.data[0].id, "", "", ""].join("\n");
+    return ["LTN_CODEX_INSTALLER_V2", "combo_members", preferredDefaultModel(catalog.data), "", "", ""].join("\n");
   }
   const mode = codexConfig.routing?.mode || "";
   const premium = codexConfig.combos?.premium || "";
@@ -982,6 +1021,31 @@ export function createGatewayServer() {
     return;
   }
 
+  if (req.method === "GET" && !hasQuery && pathname === "/install/manifest.json") {
+    try {
+      const manifest = await buildAutoUpdateManifest();
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff"
+      });
+      res.end(JSON.stringify(manifest));
+    } catch (error) {
+      jsonLog("auto_update_manifest_failed", { error: error?.message || String(error) });
+      sendJson(res, 500, openAiError("Không tạo được manifest cập nhật", "gateway_error"));
+    }
+    return;
+  }
+
+  if (req.method === "GET" && !hasQuery && pathname === "/install/tools/auto-update.mjs") {
+    try {
+      await serveInstallerFile(res, autoUpdateScriptPath, "text/javascript; charset=utf-8");
+    } catch {
+      sendJson(res, 404, openAiError("Không tìm thấy local tool", "not_found_error"));
+    }
+    return;
+  }
+
   if (req.method === "GET" && !hasQuery && localToolPaths.has(pathname)) {
     const toolPath = localToolPaths.get(pathname);
     const contentType = pathname.endsWith(".py")
@@ -1166,7 +1230,7 @@ export function createGatewayServer() {
       const clientConfig = codexConfigForPrincipal(principal);
       if (memberSelectionEnabled(principal)) {
         const catalog = await comboModelList(principal, rawKey, id);
-        clientConfig.defaultModel = catalog.data[0].id;
+        clientConfig.defaultModel = preferredDefaultModel(catalog.data);
         clientConfig.modelCatalog = { models: catalog.models };
       }
       res.setHeader("Cache-Control", "no-store");

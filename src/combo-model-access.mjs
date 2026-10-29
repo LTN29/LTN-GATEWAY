@@ -154,6 +154,16 @@ export function codexModelEntry(model, priority = 0, principal = null) {
   };
 }
 
+// Default model offered to new installs and auto-updates. Users can still pick
+// any other model in their Combo; installers keep a model the user chose.
+export function preferredDefaultModel(models, pattern = process.env.CODEX_DEFAULT_MODEL_PATTERN || "claude-sonnet") {
+  const list = Array.isArray(models) ? models : [];
+  if (!list.length) return null;
+  let matcher;
+  try { matcher = new RegExp(pattern, "i"); } catch { matcher = /claude-sonnet/i; }
+  return (list.find((model) => matcher.test(String(model?.id || ""))) || list[0]).id;
+}
+
 export async function comboModelList(principal, rawKey, requestId) {
   const allowed = await allowedComboModels(principal, requestId);
   const response = await upstreamFetch("/v1/models", { rawKey, requestId });
