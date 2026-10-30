@@ -21,6 +21,7 @@ khi sửa code hoặc chuẩn bị triển khai.
 - Đồng bộ OneDrive bằng thư mục sync local hoặc Microsoft Graph.
 - Chạy nền bằng macOS LaunchAgent và tự khởi động lại.
 - **Sảnh online** cho app Văn Phòng AI: ai đang online, đang làm gì với AI, nhân vật tự chọn, nhắn tin phòng chung / team / riêng (`/v1/lobby/*`, xem [docs/LOBBY.md](docs/LOBBY.md)).
+- **Phát hành app Văn Phòng AI**: trang tải `/install/vanphong`, máy nhân viên tự cập nhật 1 nút (đăng bản mới bằng `scripts/publish-vanphong.mjs`, xem [docs/VANPHONG_APP.md](docs/VANPHONG_APP.md)).
 
 ## Các file memory có sẵn
 

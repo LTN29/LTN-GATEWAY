@@ -43,6 +43,7 @@ import {
 } from "./browser-page-store.mjs";
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import { handleLobby, isLobbyPath } from "./lobby.mjs";
+import { handleRelease, isReleasePath } from "./app-release.mjs";
 import {
   sendJson,
   openAiError,
@@ -962,6 +963,18 @@ export function createGatewayServer() {
 
   if (req.method === "OPTIONS") {
     handleOptions(res);
+    return;
+  }
+
+  // bản phát hành app Văn Phòng AI (trang tải + latest.json cho tự cập nhật)
+  if (isReleasePath(pathname)) {
+    try {
+      await handleRelease(req, res, pathname);
+    } catch (error) {
+      jsonLog("app_release_failed", { error: error?.message || String(error) });
+      if (!res.headersSent) sendJson(res, 500, openAiError("Không đọc được bản phát hành", "gateway_error"));
+      else res.destroy();
+    }
     return;
   }
 

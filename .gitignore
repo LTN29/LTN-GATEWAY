@@ -42,3 +42,4 @@ output/pdf/huong-dan-*.pdf
 data/device-updates*.json
 data/device-updates*.json.*
 data/lobby/
+data/releases/

@@ -223,3 +223,12 @@ user. Chi tiết: [docs/LOBBY.md](LOBBY.md).
 - Tin nhắn giữa người với người không đi qua 9Router, không vào memory.
 - Dữ liệu ở `LOBBY_DATA_DIR` (mặc định `./data/lobby`), không commit.
 
+
+## 12. Phát hành app Văn Phòng AI
+
+Module `src/app-release.mjs`, route công khai `/install/vanphong` (trang tải),
+`/install/vanphong/latest.json` và file build. Chi tiết: [docs/VANPHONG_APP.md](VANPHONG_APP.md).
+
+- Admin đăng bản mới: `node scripts/publish-vanphong.mjs <thư-mục-build>`.
+- File ở `VANPHONG_RELEASE_DIR` (mặc định `./data/releases/vanphong`), không commit.
+- Chỉ phục vụ file có trong `latest.json`; app kiểm tra SHA-256 trước khi cài.
