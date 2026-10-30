@@ -185,7 +185,11 @@ export async function runAutoUpdate({ holdLock = false } = {}) {
     const localVersion = Number(readFileSafe(versionPath) || 0);
     status.installerVersion = { local: localVersion, server: Number(manifest.installerVersion || 0) };
     if (typeof manifest.releaseNote === "string") status.releaseNote = manifest.releaseNote.slice(0, 200);
-    status.fullUpdateRequired = !manifest.paused && Number(manifest.installerVersion || 0) > localVersion;
+    // A venv whose base Python was removed/upgraded cannot start; the full
+    // installer rebuilds it, so treat it like an installer upgrade.
+    status.runtimeBroken = !pythonRuntimeHealthy();
+    status.fullUpdateRequired = !manifest.paused &&
+      (Number(manifest.installerVersion || 0) > localVersion || status.runtimeBroken);
   } catch (error) {
     status.error = error.message;
   } finally {
@@ -196,17 +200,44 @@ export async function runAutoUpdate({ holdLock = false } = {}) {
   return status;
 }
 
+export function pythonRuntimeHealthy(home = codexHome) {
+  const python = process.platform === "win32"
+    ? join(home, "pdf-runtime", "Scripts", "python.exe")
+    : join(home, "pdf-runtime", "bin", "python");
+  if (!existsSync(python)) return true; // never installed: nothing to repair here
+  try {
+    return spawnSync(python, ["-c", "import sys"], { stdio: "ignore", timeout: 15_000, windowsHide: true }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
+function readUserEnvironment(name) {
+  const fromEnv = String(process.env[name] || "").trim();
+  if (fromEnv || process.platform !== "win32") return fromEnv;
+  // A scheduled task may start before Explorer refreshes the environment block.
+  try {
+    const result = spawnSync("reg", ["query", "HKCU\\Environment", "/v", name],
+      { encoding: "utf8", timeout: 5_000, windowsHide: true });
+    const match = new RegExp(`${name}\\s+REG_(?:EXPAND_)?SZ\\s+(\\S+)`).exec(result.stdout || "");
+    return match ? match[1].trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function readClientId() {
+  // macOS/Linux installers keep it in a file; Windows keeps it in the User environment.
+  const value = readFileSafe(join(codexHome, "ltn-client-id")) || readUserEnvironment("LTN_CLIENT_ID");
+  return /^[0-9a-f-]{36}$/i.test(value) ? value.toLowerCase() : "";
+}
+
 function readApiKey() {
+  // The Windows installer stores the key as a User environment variable.
+  if (process.platform === "win32") return readUserEnvironment("LTN_TEAM_API_KEY");
   const fromEnv = String(process.env.LTN_TEAM_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
   try {
-    if (process.platform === "win32") {
-      // The Windows installer stores the key as a User environment variable.
-      const result = spawnSync("reg", ["query", "HKCU\\Environment", "/v", "LTN_TEAM_API_KEY"],
-        { encoding: "utf8", timeout: 5_000, windowsHide: true });
-      const match = /LTN_TEAM_API_KEY\s+REG_(?:EXPAND_)?SZ\s+(\S+)/.exec(result.stdout || "");
-      return match ? match[1].trim() : "";
-    }
     // macOS (Keychain) and Linux (Secret Service or 600 file) go through the installer's helper.
     const helper = join(codexHome, "bin", "ltn-codex-token");
     if (!existsSync(helper)) return "";
@@ -221,7 +252,7 @@ function readApiKey() {
 // prompts or keys; the API key is only used as the Authorization header.
 export async function sendUpdateReport(status) {
   const apiKey = readApiKey();
-  const clientId = readFileSafe(join(codexHome, "ltn-client-id"));
+  const clientId = readClientId();
   if (!apiKey || !clientId) return { reported: false, reason: !apiKey ? "no api key" : "no client id" };
   const body = {
     bundleVersion: status.syncedBundle || null,

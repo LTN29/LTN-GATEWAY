@@ -851,6 +851,22 @@ function Get-PythonCommand {
   return $null
 }
 
+# Native stderr becomes a terminating error under "Stop" in Windows PowerShell 5.1,
+# and a broken venv writes "No Python at ..." to stderr, so probe with "Continue".
+function Test-PythonCode {
+  param([string]$Python, [string]$Code)
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Python @('-c', $Code) 2>&1 | Out-Null
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    return $false
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
 function Ensure-PdfRuntime {
   param([string]$CodexHome)
 
@@ -877,6 +893,13 @@ function Ensure-PdfRuntime {
 
   $runtimeDir = Join-Path $CodexHome "pdf-runtime"
   $venvPython = Join-Path $runtimeDir "Scripts\python.exe"
+  # A venv keeps pointing at the Python it was created from. If that Python was
+  # removed or upgraded ("No Python at ..."), python.exe still exists but cannot
+  # start, so every Word/Excel/PDF/Muse tool fails. Rebuild it from scratch.
+  if ((Test-Path -LiteralPath $venvPython) -and -not (Test-PythonCode -Python $venvPython -Code 'import sys')) {
+    Write-Warning "Python runtime cũ đã hỏng (bản Python gốc đã bị gỡ hoặc nâng cấp). Đang tạo lại..."
+    Remove-Item -LiteralPath $runtimeDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
   if (-not (Test-Path -LiteralPath $venvPython)) {
     New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
     if ($python.Name -match '^py(\.exe)?$') {
@@ -891,9 +914,11 @@ function Ensure-PdfRuntime {
   }
 
   $marker = Join-Path $runtimeDir ".ltn-document-deps-v5"
-  if (-not (Test-Path -LiteralPath $marker)) {
+  $depsReady = Test-PythonCode -Python $venvPython -Code 'import pypdf, pdfplumber, pymupdf, openpyxl, docx, tomli'
+  if (-not (Test-Path -LiteralPath $marker) -or -not $depsReady) {
     Write-Host "Đang cài thư viện Word/Excel/PDF..."
-    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli | Out-Host
+    # pymupdf 2.x pulls onnxruntime/numpy/networkx (~100 MB) that text extraction does not need.
+    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber "pymupdf>=1.26,<2" openpyxl python-docx tomli | Out-Host
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
       return $false
@@ -1053,32 +1078,32 @@ endlocal
   $pdfWrapper = @"
 @echo off
 setlocal
-if defined LTN_PYTHON_PATH (
-  "%LTN_PYTHON_PATH%" "$escapedCodexHome\tools\pdf-extract.py" %*
-) else if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" (
-  "$escapedCodexHome\pdf-runtime\Scripts\python.exe" "$escapedCodexHome\tools\pdf-extract.py" %*
-) else if defined PY_PYTHON (
-  py -3 "$escapedCodexHome\tools\pdf-extract.py" %*
+set "LTN_PY=%LTN_PYTHON_PATH%"
+if not defined LTN_PY if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" set "LTN_PY=$escapedCodexHome\pdf-runtime\Scripts\python.exe"
+if defined LTN_PY "%LTN_PY%" -c "import sys" >nul 2>&1 || set "LTN_PY="
+if defined LTN_PY (
+  "%LTN_PY%" "$escapedCodexHome\tools\pdf-extract.py" %*
 ) else (
-  python "$escapedCodexHome\tools\pdf-extract.py" %*
+  where py >nul 2>&1
+  if errorlevel 1 (python "$escapedCodexHome\tools\pdf-extract.py" %*) else (py -3 "$escapedCodexHome\tools\pdf-extract.py" %*)
 )
-endlocal
+endlocal & exit /b %ERRORLEVEL%
 "@
   [IO.File]::WriteAllText((Join-Path $BinDir "ltn-pdf.cmd"), $pdfWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
 
   $museWrapper = @"
 @echo off
 setlocal
-if defined LTN_PYTHON_PATH (
-  "%LTN_PYTHON_PATH%" "$escapedCodexHome\tools\muse-image.py" %*
-) else if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" (
-  "$escapedCodexHome\pdf-runtime\Scripts\python.exe" "$escapedCodexHome\tools\muse-image.py" %*
-) else if defined PY_PYTHON (
-  py -3 "$escapedCodexHome\tools\muse-image.py" %*
+set "LTN_PY=%LTN_PYTHON_PATH%"
+if not defined LTN_PY if exist "$escapedCodexHome\pdf-runtime\Scripts\python.exe" set "LTN_PY=$escapedCodexHome\pdf-runtime\Scripts\python.exe"
+if defined LTN_PY "%LTN_PY%" -c "import sys" >nul 2>&1 || set "LTN_PY="
+if defined LTN_PY (
+  "%LTN_PY%" "$escapedCodexHome\tools\muse-image.py" %*
 ) else (
-  python "$escapedCodexHome\tools\muse-image.py" %*
+  where py >nul 2>&1
+  if errorlevel 1 (python "$escapedCodexHome\tools\muse-image.py" %*) else (py -3 "$escapedCodexHome\tools\muse-image.py" %*)
 )
-endlocal
+endlocal & exit /b %ERRORLEVEL%
 "@
   [IO.File]::WriteAllText((Join-Path $BinDir "ltn-muse.cmd"), $museWrapper.TrimStart(), [Text.UTF8Encoding]::new($false))
   Write-Host "Đã cài lệnh mạng: ltn-9router"

@@ -6,14 +6,23 @@ description: Tạo ảnh và sửa ảnh nhiều lượt bằng Muse (model muse
 # Muse - Tạo ảnh và sửa nhiều lượt
 
 App Codex không hiện ảnh từ link ngoài, nên luôn tải ảnh về máy rồi hiển thị bằng
-đường dẫn tuyệt đối. Dùng lệnh `ltn-muse` do installer cài; lệnh tự lấy key
-Gateway và client ID đã cài, không in key. Không hỏi user key, không đọc/in key,
-không gọi `router.simi.vn`. Nếu thiếu lệnh `ltn-muse`, báo user chạy Update.
+đường dẫn tuyệt đối. Không hỏi user key, không đọc/in key, không gọi `router.simi.vn`.
+
+## Cách gọi: ưu tiên công cụ `muse_image`
+
+- **Luôn dùng công cụ MCP `muse_image`** (máy chủ `simi_browser`) nếu có trong danh
+  sách công cụ. Công cụ chạy ngoài sandbox nên **không cần xin quyền mạng**, tự lấy
+  key/client ID và tự chọn Python chạy được trên máy.
+  Tham số: `prompt` (bắt buộc), `refs` (mảng đường dẫn ảnh tham chiếu, tối đa 4),
+  `video` (true khi tạo video). Kết quả giống lệnh `ltn-muse` bên dưới.
+- Chỉ khi **không có** công cụ `muse_image`, mới dùng lệnh `ltn-muse` (khối lệnh
+  bên dưới) và chạy ngay với quyền mạng (xin escalation trong lần gọi đầu tiên).
+- Không bao giờ trả lời "không có quyền mạng" khi chưa thử `muse_image`. Nếu
+  `muse_image` báo thiếu Python hoặc thiếu công cụ, báo user chạy Simi Update
+  (chọn 5) rồi mở lại Codex.
 
 ## Chạy đúng một lần rồi dừng
 
-- Lệnh cần Internet. Chạy lệnh **ngay với quyền mạng** (xin escalation/duyệt mạng
-  trong lần gọi đầu tiên); không chạy thử trong sandbox trước rồi mới xin quyền.
 - Mỗi yêu cầu của user chỉ gọi `ltn-muse` **một lần**. Lệnh có thể mất tới gần
   3 phút; chờ lệnh kết thúc, không gọi song song hay gọi lại trong lúc chờ.
 - Ảnh user gửi kèm chỉ dùng làm `--ref`; xem ảnh đó **không** có nghĩa là đã tạo
@@ -96,5 +105,6 @@ hoặc `error`. Mặc định lưu vào thư mục `Pictures/muse` trong thư m�
   gợi ý user chỉnh prompt.
 - HTTP 401: lỗi key, báo user; 403: tài khoản chưa được mở model Muse, báo
   tính năng chưa được mở cho tài khoản và dừng. Không đổi model để né quyền.
-- Lỗi mạng hay sandbox chặn: xin user duyệt quyền mạng, không gọi đó là lỗi DNS.
+- Lỗi mạng hay sandbox chặn khi dùng lệnh `ltn-muse`: chuyển sang công cụ
+  `muse_image` nếu có; nếu không có thì xin user duyệt quyền mạng. Không gọi đó là lỗi DNS.
 - Không hiển thị JSON, lệnh hay tham số nội bộ cho user thông thường.

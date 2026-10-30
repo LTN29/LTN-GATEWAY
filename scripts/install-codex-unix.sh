@@ -1322,6 +1322,12 @@ ensure_runtime_dependencies() {
         ;;
     esac
   fi
+  # A venv keeps pointing at the Python it was created from. If that Python was
+  # removed or upgraded, bin/python still exists but cannot start: rebuild it.
+  if [ -x "${venv_python}" ] && ! "${venv_python}" -c 'import sys' >/dev/null 2>&1; then
+    echo "Python Skill runtime cu da hong (ban Python goc da bi go). Dang tao lai..."
+    rm -rf "${runtime_dir}"
+  fi
   mkdir -p "${runtime_dir}"
   if [ ! -x "${venv_python}" ]; then
     if [ "${OS_NAME}" = "macos" ]; then
@@ -1338,16 +1344,17 @@ ensure_runtime_dependencies() {
     fi
   fi
   marker="${runtime_dir}/.ltn-document-deps-v5"
-  if [ ! -f "${marker}" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
+  if { [ ! -f "${marker}" ] || ! "${venv_python}" -c 'import pypdf, pdfplumber, pymupdf, openpyxl, docx, tomli' >/dev/null 2>&1; } &&
+     [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
     echo "Dang cai thu vien Word/Excel/PDF..."
     if [ "${OS_NAME}" = "macos" ]; then
       local uv_bin
       uv_bin="$(resolve_ltn_uv_command 2>/dev/null || true)"
       [ -n "${uv_bin}" ] || die_code 12 "Khong co uv runtime de cai dependency LTN Skills."
-      if ! "${uv_bin}" pip install --python "${venv_python}" --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli; then
+      if ! "${uv_bin}" pip install --python "${venv_python}" --upgrade pypdf pdfplumber 'pymupdf>=1.26,<2' openpyxl python-docx tomli; then
         die_code 12 "Khong tai duoc dependency PDF/Excel cho LTN Skills. Kiem tra mang roi chay Repair."
       fi
-    elif ! "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber pymupdf openpyxl python-docx tomli; then
+    elif ! "${venv_python}" -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber 'pymupdf>=1.26,<2' openpyxl python-docx tomli; then
       echo "Canh bao: khong tai duoc thu vien PDF/Excel. Kiem tra mang roi chay Repair." >&2
       return 0
     fi

@@ -248,3 +248,43 @@ test("installers keep a model the user picked and only apply the default otherwi
   assert.match(unix, /ltn-default-model/);
   assert.match(unix, /Giu model nguoi dung da chon/);
 });
+
+test("a venv whose base Python is gone asks for the full installer, a healthy one does not", { skip: process.platform === "win32" && "uses a POSIX shell stub" }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "simi-auto-update-"));
+  try {
+    const { pythonRuntimeHealthy } = await import(`../scripts/auto-update.mjs?case=venv-${Date.now()}`);
+    assert.equal(pythonRuntimeHealthy(home), true, "no runtime installed: nothing to repair");
+    await mkdir(join(home, "pdf-runtime", "bin"), { recursive: true });
+    const python = join(home, "pdf-runtime", "bin", "python");
+    await writeFile(python, "#!/bin/sh\necho 'No Python at /old/Python311/python' >&2\nexit 103\n", { mode: 0o755 });
+    assert.equal(pythonRuntimeHealthy(home), false);
+    await writeFile(python, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    assert.equal(pythonRuntimeHealthy(home), true);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Windows-style installs report with the client ID from the environment", async () => {
+  const received = [];
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => { raw += chunk; });
+    req.on("end", () => { received.push(req.headers); res.writeHead(200).end("{}"); });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const home = await mkdtemp(join(tmpdir(), "simi-auto-update-"));
+  try {
+    process.env.CODEX_HOME = home;
+    process.env.LTN_GATEWAY_BASE_URL = `http://127.0.0.1:${server.address().port}`;
+    process.env.LTN_TEAM_API_KEY = "sk-env-key";
+    process.env.LTN_CLIENT_ID = "0B9D8C1E-3F2A-4B5C-9D8E-7F6A5B4C3D2E";
+    const { sendUpdateReport } = await import(`../scripts/auto-update.mjs?case=envid-${Date.now()}`);
+    assert.deepEqual(await sendUpdateReport({ checkedAt: new Date().toISOString(), updated: [], failed: [] }), { reported: true });
+    assert.equal(received[0]["x-ltn-client-id"], "0b9d8c1e-3f2a-4b5c-9d8e-7f6a5b4c3d2e");
+  } finally {
+    server.close();
+    for (const name of ["CODEX_HOME", "LTN_GATEWAY_BASE_URL", "LTN_TEAM_API_KEY", "LTN_CLIENT_ID"]) delete process.env[name];
+    await rm(home, { recursive: true, force: true });
+  }
+});

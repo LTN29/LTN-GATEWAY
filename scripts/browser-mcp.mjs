@@ -122,6 +122,96 @@ const tools = [
   }
 ];
 
+tools.push({
+  name: "muse_image",
+  description: "Create or edit an image with Muse through the SIMI Gateway and save it on this computer. Runs outside the Codex sandbox, so it needs no network approval. Call it ONCE per user request and wait (up to about 3 minutes); never call it again automatically after an error. Returns ok, images[].path (absolute local file to show the user), images[].download_url, meta, or error.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      prompt: { type: "string", minLength: 1, maxLength: 8000, description: "Full description of the image for this turn. For an edit, restate the previous image plus the requested change." },
+      refs: { type: "array", maxItems: 4, items: { type: "string" }, description: "Absolute paths of reference images (the previous result or images the user attached)." },
+      video: { type: "boolean", default: false, description: "Create a short video instead of an image (at most one reference image as the first frame)." }
+    },
+    required: ["prompt"],
+    additionalProperties: false
+  }
+});
+
+const museScriptPath = process.env.LTN_MUSE_SCRIPT_PATH || join(codexHome, "tools", "muse-image.py");
+
+// The managed venv can break when the Python it was created from is removed or
+// upgraded ("No Python at ..."). muse-image.py only needs the standard library,
+// so fall back to any working Python instead of failing.
+let workingPython = null;
+function probePython(command, prefix) {
+  return new Promise((resolve) => {
+    const child = spawn(command, [...prefix, "-c", "import sys; assert sys.version_info >= (3, 8)"], {
+      windowsHide: true, stdio: "ignore", timeout: 15_000
+    });
+    child.once("error", () => resolve(false));
+    child.once("close", (code) => resolve(code === 0));
+  });
+}
+
+async function findPython() {
+  if (workingPython) return workingPython;
+  const candidates = [];
+  if (process.env.LTN_PYTHON_PATH) candidates.push([process.env.LTN_PYTHON_PATH, []]);
+  if (existsSync(pythonPath)) candidates.push([pythonPath, []]);
+  if (process.platform === "win32") candidates.push(["py", ["-3"]], ["python", []]);
+  else candidates.push(["python3", []], ["python", []]);
+  for (const [command, prefix] of candidates) {
+    if (await probePython(command, prefix)) {
+      workingPython = { command, prefix };
+      return workingPython;
+    }
+  }
+  throw new Error("Không tìm thấy Python chạy được trên máy. Hãy chạy Simi Update (chọn 5) rồi mở lại Codex.");
+}
+
+async function runMuse(args) {
+  const prompt = String(args.prompt || "").trim();
+  if (!prompt) throw new Error("prompt is required.");
+  const refs = Array.isArray(args.refs) ? args.refs.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  if (refs.length > 4) throw new Error("At most 4 reference images.");
+  if (!existsSync(museScriptPath)) {
+    throw new Error("Thiếu công cụ Muse trên máy. Hãy chạy Simi Update (chọn 5) rồi mở lại Codex.");
+  }
+  const python = await findPython();
+  const argv = [...python.prefix, museScriptPath, "--prompt", prompt];
+  for (const ref of refs) argv.push("--ref", ref);
+  if (args.video === true) argv.push("--video");
+  return new Promise((resolve, reject) => {
+    const child = spawn(python.command, argv, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUTF8: "1" }
+    });
+    let stdout = "";
+    let stderr = "";
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Muse chưa trả kết quả sau 5 phút. Không tự gọi lại; ảnh có thể vẫn đang được tạo."));
+    }, 300_000);
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      workingPython = null;
+      reject(error);
+    });
+    child.once("close", () => {
+      clearTimeout(timer);
+      const line = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) || "";
+      try {
+        resolve(JSON.parse(line));
+      } catch {
+        reject(new Error((stderr || stdout || "Muse returned no result.").trim().slice(-2000)));
+      }
+    });
+  });
+}
+
 const documentPathSchema = { type: "string", description: "Absolute path to a local file supplied by the user or inside the authorized project. Never discover unrelated personal files." };
 tools.push(
   {
@@ -434,6 +524,7 @@ async function callTool(name, args = {}) {
   if (["document_inspect", "document_read", "document_edit"].includes(name)) {
     return runSpreadsheetAudit(args.path, { ...args, action: name.slice("document_".length) }, documentToolPath);
   }
+  if (name === "muse_image") return runMuse(args);
   if (name === "browser_status") return browserStatus();
   if (name === "browser_open_window") return openBrowserWindow(args);
   if (name === "browser_read_local_workbook") {
