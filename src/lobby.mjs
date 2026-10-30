@@ -10,6 +10,7 @@ import { jsonLog } from "./utils.mjs";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
 const WORD = /^[a-z][a-z0-9-]{0,23}$/;
+const SEAT = /^[a-z0-9-]{1,16}$/;
 const ACTIVITIES = new Set(["idle", "chat", "work", "image", "video", "web", "doc", "away"]);
 const AVATAR_COLORS = ["hair", "skin", "shirt", "pants", "shoes", "accent"];
 const AVATAR_WORDS = ["hairStyle", "outfit", "accessory", "face"];
@@ -265,7 +266,9 @@ class Lobby {
     const status = cleanStatus(body.status);
     if (status) { m.status = status; if (!hidden) this.broadcastMember(ident.id); }
     if (body.pos && Number.isFinite(body.pos.x) && Number.isFinite(body.pos.z)) {
-      m.pos = { x: clamp(body.pos.x, -20, 20), z: clamp(body.pos.z, -20, 20) };
+      // seat: mã chỗ ngồi trong Sảnh (ghế quầy bar, bàn ăn, sofa…) – để người khác thấy mình đang ngồi
+      const seat = typeof body.pos.seat === "string" && SEAT.test(body.pos.seat) ? body.pos.seat : null;
+      m.pos = { x: clamp(body.pos.x, -20, 20), z: clamp(body.pos.z, -20, 20), seat };
       if (!hidden) this.broadcast("move", { id: ident.id, ...m.pos }, (x) => x.id !== ident.id);
     }
     if (typeof body.emote === "string" && body.emote.trim()) {
@@ -321,10 +324,10 @@ class Lobby {
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || 0));
 
-// mỗi người có chỗ đứng mặc định riêng (ổn định theo id) quanh giữa sảnh
+// mỗi người có chỗ đứng mặc định riêng (ổn định theo id) ở khoảng trống trước quầy SIMI BAR CHILL
 function spawnPoint(id) {
   const h = createHash("sha1").update(id).digest();
-  return { x: Math.round(((h[0] / 255) * 8 - 4) * 10) / 10, z: Math.round(((h[1] / 255) * 5 - 1.5) * 10) / 10 };
+  return { x: Math.round(((h[0] / 255) * 10 - 7) * 10) / 10, z: Math.round(((h[1] / 255) * 8 - 6.5) * 10) / 10, seat: null };
 }
 
 let lobby = null;

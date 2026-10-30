@@ -109,8 +109,13 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
     // trạng thái + di chuyển + biểu cảm
     await post("bao", "state", { status: { activity: "image", text: "Đang tạo ảnh", model: "muse-image" }, pos: { x: 99, z: 1.5 }, emote: "🎉" });
     assert.equal((await ngoc.next("member", (d) => d.id === "u:it-bao" && d.status?.activity === "image")).status.text, "Đang tạo ảnh");
-    assert.deepEqual(await ngoc.next("move", (d) => d.id === "u:it-bao"), { id: "u:it-bao", x: 20, z: 1.5 });
+    assert.deepEqual(await ngoc.next("move", (d) => d.id === "u:it-bao"), { id: "u:it-bao", x: 20, z: 1.5, seat: null });
     assert.equal((await ngoc.next("emote")).emote, "🎉");
+    // ngồi ghế: mã ghế hợp lệ được phát kèm, mã lạ bị bỏ
+    await post("bao", "state", { pos: { x: 1, z: -7.2, seat: "b3" } });
+    assert.equal((await ngoc.next("move", (d) => d.seat === "b3")).x, 1);
+    await post("bao", "state", { pos: { x: 1, z: -7.2, seat: "<script>" } });
+    assert.equal((await ngoc.next("move", (d) => d.id === "u:it-bao" && d.seat === null && d.z === -7.2)).seat, null);
 
     // phòng chung: ai cũng nhận
     const sent = await (await post("ngoc", "messages", { room: "all", text: "Chào cả nhà 👋" })).json();
