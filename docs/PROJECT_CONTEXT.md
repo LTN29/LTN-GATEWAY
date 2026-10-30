@@ -15,8 +15,9 @@ không phải production.
 - Chuẩn bị migration và hướng dẫn triển khai tương thích ngược.
 
 Không được suy luận trạng thái production từ `localhost` của máy hiện tại.
-Không tự commit, push, SSH, deploy hoặc thay đổi hạ tầng production nếu chưa
-được yêu cầu rõ ràng.
+Triển khai production: admin `git pull` source trên Mac mini rồi restart theo
+mục 8. Máy phát triển chuẩn bị đầy đủ thay đổi, test và hướng dẫn cấu hình đi
+kèm; không thay đổi Cloudflare/DNS/Entra khi chưa được yêu cầu.
 
 ## 2. Mục đích của LTN Gateway
 
@@ -210,3 +211,15 @@ Kết quả test trên máy phát triển chỉ được báo là:
 
 Chỉ xác nhận production hoạt động sau khi admin deploy trên Mac mini và cả
 health check local lẫn public đều đạt.
+
+## 11. Sảnh online (app Văn Phòng AI)
+
+Module `src/lobby.mjs`, route `/v1/lobby/*`, xác thực bằng chính API key của
+user. Chi tiết: [docs/LOBBY.md](LOBBY.md).
+
+- Danh tính (tên, team, vai trò) lấy từ `users.json`; client không đổi được tên.
+  Key chung của team (legacy) cần `X-LTN-Client-ID` và tự đặt tên hiển thị.
+- Chỉ chia sẻ trạng thái (đang chat AI, tạo ảnh…), không chia sẻ nội dung hỏi AI.
+- Tin nhắn giữa người với người không đi qua 9Router, không vào memory.
+- Dữ liệu ở `LOBBY_DATA_DIR` (mặc định `./data/lobby`), không commit.
+

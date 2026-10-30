@@ -42,6 +42,7 @@ import {
   storeBrowserPage
 } from "./browser-page-store.mjs";
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
+import { handleLobby, isLobbyPath } from "./lobby.mjs";
 import {
   sendJson,
   openAiError,
@@ -1203,6 +1204,7 @@ export function createGatewayServer() {
     (req.method === "POST" && pathname === "/v1/responses") ||
     (req.method === "POST" && pathname === "/v1/browser/page") ||
     (req.method === "POST" && pathname === "/v1/simi/update-report") ||
+    ((req.method === "GET" || req.method === "POST") && isLobbyPath(pathname)) ||
     (req.method === "POST" && capabilityPostPaths.has(pathname));
 
   if (!supported) {
@@ -1251,6 +1253,12 @@ export function createGatewayServer() {
         403,
         openAiError("Team đã bị vô hiệu hóa", "permission_error")
       );
+      return;
+    }
+
+    // Sảnh online (app Văn Phòng AI): cập nhật vị trí/trạng thái rất thường xuyên → không ghi log xác thực mỗi lần
+    if (isLobbyPath(pathname)) {
+      await handleLobby(req, res, principal, parsedUrl);
       return;
     }
 

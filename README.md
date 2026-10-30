@@ -20,6 +20,7 @@ khi sửa code hoặc chuẩn bị triển khai.
 - Ghi file atomic và giữ một file `.bak` local.
 - Đồng bộ OneDrive bằng thư mục sync local hoặc Microsoft Graph.
 - Chạy nền bằng macOS LaunchAgent và tự khởi động lại.
+- **Sảnh online** cho app Văn Phòng AI: ai đang online, đang làm gì với AI, nhân vật tự chọn, nhắn tin phòng chung / team / riêng (`/v1/lobby/*`, xem [docs/LOBBY.md](docs/LOBBY.md)).
 
 ## Các file memory có sẵn
 
