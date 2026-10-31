@@ -74,7 +74,7 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
   }));
   Object.assign(process.env, {
     TEAMS_FILE: join(root, "teams.json"), LTN_USERS_CONFIG_FILE: join(root, "users.json"), MEMORY_DIR: join(root, "memory"),
-    LOBBY_DATA_DIR: join(root, "lobby"), LTN_LEGACY_TEAM_KEYS_ENABLED: "true", LOBBY_CINEMA_LOOKUP: "false", UPSTREAM_BASE_URL: "http://127.0.0.1:9"
+    LOBBY_DATA_DIR: join(root, "lobby"), LTN_LEGACY_TEAM_KEYS_ENABLED: "true", LOBBY_CINEMA_LOOKUP: "false", LOBBY_ROSTER_MS: "150", UPSTREAM_BASE_URL: "http://127.0.0.1:9"
   });
   const { createGatewayServer } = await import(`../src/server.mjs?lobby=${Date.now()}`);
   const server = createGatewayServer();
@@ -159,11 +159,23 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
     for (let i = 0; i < 12; i++) if ((await post("an", "messages", { room: "all", text: "spam " + i })).status === 429) limited++;
     assert.ok(limited > 0, "giới hạn tốc độ nhắn tin");
 
-    // ẩn trạng thái: người khác thấy như đã rời Sảnh
+    // danh sách đối chiếu định kỳ: app tự sửa nếu lỡ mất sự kiện vào / rời
+    assert.ok((await ngoc.next("roster", (d) => d.ids.includes("u:it-bao"), 3000)).ids.includes("u:sales-ngoc"), "roster gồm cả mình và người đang online");
+
+    // 1 tài khoản mở app trên 2 máy → báo cho các máy đó biết (2 máy là cùng 1 người nên không thấy nhau)
+    const ngoc2 = sse(`${base}/stream`, auth("ngoc", { "x-ltn-client-id": "22222222-3333-4444-5555-666666666666" })); streams.push(ngoc2);
+    assert.equal((await ngoc2.next("hello")).me.devices, 2);
+    assert.equal((await ngoc.next("me", (d) => d.devices === 2)).devices, 2);
+    ngoc2.close();
+    assert.equal((await ngoc.next("me", (d) => d.devices === 1)).devices, 1, "tắt máy thứ 2 → còn 1 máy");
+
+    // ẩn trạng thái: người khác thấy như đã rời Sảnh, roster cũng không còn
     await post("bao", "profile", { hidden: true });
     await ngoc.next("leave", (d) => d.id === "u:it-bao");
     const list = (await (await fetch(`${base}/members`, { headers: auth("ngoc") })).json()).members;
     assert.ok(!list.some((m) => m.id === "u:it-bao"));
+    const r1 = await ngoc.next("roster", () => true, 3000); const r2 = await ngoc.next("roster", (d) => d.at > r1.at, 3000);
+    assert.ok(!r2.ids.includes("u:it-bao"), "người đang ẩn không có trong roster");
 
     // key chung của team cần client id, đặt được tên riêng
     assert.equal((await fetch(`${base}/members`, { headers: auth("legacy") })).status, 400);

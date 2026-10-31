@@ -19,6 +19,8 @@ const AVATAR_WORDS = ["hairStyle", "outfit", "accessory", "face"];
 const HISTORY_IN_MEMORY = 200;
 const PING_MS = 25_000;
 const LEAVE_GRACE_MS = 8_000;
+// cứ chừng này lại gửi danh sách ai đang online để app tự đối chiếu (sửa lệch khi mạng làm rơi sự kiện vào / rời)
+const ROSTER_MS = () => Math.max(100, Number(process.env.LOBBY_ROSTER_MS || 30_000));
 const RELEASE_CHECK_MS = () => Math.max(100, Number(process.env.LOBBY_RELEASE_CHECK_MS || 30_000));
 
 export const lobbyConfig = {
@@ -142,6 +144,8 @@ class Lobby {
     this.members = new Map(); // id -> { ident, status, pos, conns:Set, leaveTimer, bucket }
     this.app = null;          // bản app Văn Phòng AI đang phát hành { version, notes }
     this.watchRelease();
+    this.rosterTimer = setInterval(() => this.sendRoster(), ROSTER_MS());
+    this.rosterTimer.unref?.();
     // màn hình chiếu YouTube chung của cả quán
     this.cinema = new Cinema({
       broadcast: (ev, data) => this.broadcast(ev, data),
@@ -207,6 +211,25 @@ class Lobby {
     return rooms;
   }
 
+  // những người đang online mà người khác được thấy (không tính người đang ẩn)
+  onlineIds() {
+    return [...this.members.keys()].filter((id) => { const pm = this.publicMember(id); return pm && pm.online; });
+  }
+
+  sendRoster() {
+    if (![...this.members.values()].some((m) => m.conns.size)) return;
+    this.broadcast("roster", { ids: this.onlineIds(), at: Date.now() });
+  }
+
+  // 1 tài khoản mở app trên mấy máy (mỗi máy 1 X-LTN-Client-ID) – các máy đó là cùng 1 người nên không thấy nhau trong Sảnh
+  devices(m) { return new Set([...m.conns].map((r) => r.lobbyDevice)).size; }
+  tellDevices(m, before) {
+    const n = this.devices(m);
+    if (n === before) return;
+    const payload = `event: me\ndata: ${JSON.stringify({ devices: n })}\n\n`;
+    for (const r of m.conns) r.write(payload);
+  }
+
   // gửi sự kiện SSE; filter(identOfReceiver) quyết định ai nhận
   broadcast(event, data, filter = () => true) {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -261,16 +284,21 @@ class Lobby {
     });
     // đệm 2KB để proxy (Cloudflare…) đẩy dữ liệu đi ngay
     res.write(`:${" ".repeat(2048)}\n\n`);
+    const devBefore = this.devices(m);
+    const cid = String(req.headers["x-ltn-client-id"] || "").trim().toLowerCase();
+    res.lobbyDevice = UUID.test(cid) ? cid : createHash("sha1").update(`${req.socket.remoteAddress}|${req.headers["user-agent"] || ""}`).digest("hex").slice(0, 16);
     m.conns.add(res);
     const others = [...this.members.keys()].filter((id) => id !== ident.id).map((id) => this.publicMember(id)).filter((x) => x && x.online);
-    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinema.state() })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true, devices: this.devices(m) }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinema.state() })}\n\n`);
     if (!wasOnline) { this.broadcastMember(ident.id); jsonLog("lobby_join", { member: ident.id }); }
+    else this.tellDevices(m, devBefore);
     const ping = setInterval(() => res.write(": ping\n\n"), PING_MS);
     ping.unref?.();
     const close = () => {
       clearInterval(ping);
+      const devBefore = this.devices(m);
       if (!m.conns.delete(res)) return;
-      if (m.conns.size) return;
+      if (m.conns.size) { this.tellDevices(m, devBefore); return; }
       m.leaveTimer = setTimeout(() => {
         if (m.conns.size) return;
         this.broadcast("leave", { id: ident.id }, (x) => x.id !== ident.id);

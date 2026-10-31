@@ -9,7 +9,7 @@ App tự kết nối bằng chính key đã cài qua bộ cài SIMI, không cầ
 
 | Route | Việc |
 | --- | --- |
-| `GET /v1/lobby/stream` | Kênh SSE: `hello` (mình, người đang online, danh sách phòng, `cinema`, `app`), rồi `member`, `leave`, `move`, `emote`, `message`, `cinema`, `app-release`. Ping mỗi 25 giây. |
+| `GET /v1/lobby/stream` | Kênh SSE: `hello` (mình, người đang online, danh sách phòng, `cinema`, `app`), rồi `member`, `leave`, `move`, `emote`, `message`, `cinema`, `app-release`, `roster` (danh sách id đang online, mỗi `LOBBY_ROSTER_MS`), `me` (`devices`: số máy đang mở cùng tài khoản). Ping mỗi 25 giây. |
 | `GET /v1/lobby/members` | Ảnh chụp danh sách đang online + phòng (không cần SSE). |
 | `GET /v1/lobby/messages?room=…&limit=50&before=<ts>` | Lịch sử một phòng. |
 | `POST /v1/lobby/messages` | `{ room, text }` hoặc `{ to: "<memberId>", text }` để nhắn riêng. |
@@ -31,6 +31,12 @@ Phòng: `all` (cả công ty), `dm:<a>~<b>` (nhắn riêng, chỉ 2 người). P
 - Giới hạn: 8 tin / 10 giây, 12 cập nhật trạng thái / giây mỗi người, tin tối đa
   `LOBBY_MAX_MESSAGE_CHARS` ký tự.
 
+## Ai thấy ai
+
+- Người bật **ẩn** không có trong danh sách online của ai (lưu trên Gateway, tắt mở app vẫn ẩn) nhưng vẫn nhắn tin được.
+- Một tài khoản mở app trên nhiều máy (nhiều `X-LTN-Client-ID`) là **một người**: các máy đó không thấy nhau; `hello.me.devices` và sự kiện `me` cho biết số máy.
+- Mỗi `LOBBY_ROSTER_MS` Gateway gửi `roster` (id những người đang online, không tính người ẩn); app thấy lệch thì tải lại `GET /v1/lobby/members`.
+
 ## Màn chiếu YouTube
 
 - Ai cũng thêm được link YouTube (`youtube.com/watch?v=…`, `youtu.be/…`, `shorts/…`, `live/…`).
@@ -49,6 +55,7 @@ LOBBY_ENABLED=true            # false = tắt Sảnh ngay
 LOBBY_DATA_DIR=./data/lobby   # hồ sơ nhân vật + lịch sử tin nhắn
 LOBBY_RETENTION_DAYS=30       # số ngày giữ tin nhắn
 LOBBY_MAX_MESSAGE_CHARS=2000
+LOBBY_ROSTER_MS=30000           # gửi danh sách online để app tự đối chiếu
 LOBBY_CINEMA_PER_PERSON=3        # mỗi người xếp tối đa bao nhiêu video
 LOBBY_CINEMA_MAX_QUEUE=30        # cả hàng chờ
 LOBBY_CINEMA_MAX_MINUTES=180     # video dài hơn bị từ chối
