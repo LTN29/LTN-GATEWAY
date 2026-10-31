@@ -74,7 +74,7 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
   }));
   Object.assign(process.env, {
     TEAMS_FILE: join(root, "teams.json"), LTN_USERS_CONFIG_FILE: join(root, "users.json"), MEMORY_DIR: join(root, "memory"),
-    LOBBY_DATA_DIR: join(root, "lobby"), LTN_LEGACY_TEAM_KEYS_ENABLED: "true", UPSTREAM_BASE_URL: "http://127.0.0.1:9"
+    LOBBY_DATA_DIR: join(root, "lobby"), LTN_LEGACY_TEAM_KEYS_ENABLED: "true", LOBBY_CINEMA_LOOKUP: "false", UPSTREAM_BASE_URL: "http://127.0.0.1:9"
   });
   const { createGatewayServer } = await import(`../src/server.mjs?lobby=${Date.now()}`);
   const server = createGatewayServer();
@@ -91,7 +91,8 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
     const hello = await ngoc.next("hello");
     assert.equal(hello.me.name, "Ngọc");
     assert.equal(hello.me.teamName, "Sales");
-    assert.deepEqual(hello.rooms.map((r) => r.id), ["all", "team:SALES"]);
+    assert.deepEqual(hello.rooms.map((r) => r.id), ["all"], "chỉ có phòng chung cả công ty (đã bỏ phòng team)");
+    assert.deepEqual(hello.cinema.queue, [], "lời chào kèm trạng thái màn hình chiếu");
 
     const bao = sse(`${base}/stream`, auth("bao")); streams.push(bao);
     const helloBao = await bao.next("hello");
@@ -122,11 +123,24 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
     assert.equal(sent.message.name, "Ngọc");
     assert.equal((await bao.next("message", (d) => d.room === "all")).text, "Chào cả nhà 👋");
 
-    // phòng team: người team khác không đọc / không gửi được
-    assert.equal((await post("bao", "messages", { room: "team:SALES", text: "x" })).status, 403);
-    assert.equal((await fetch(`${base}/messages?room=team:SALES`, { headers: auth("bao") })).status, 403);
-    await post("ngoc", "messages", { room: "team:SALES", text: "Họp Sales 3h" });
-    await assert.rejects(bao.next("message", (d) => d.room === "team:SALES", 400));
+    // phòng team đã bỏ: không ai đọc / gửi được, kể cả người trong team
+    assert.equal((await post("ngoc", "messages", { room: "team:SALES", text: "x" })).status, 403);
+    assert.equal((await fetch(`${base}/messages?room=team:SALES`, { headers: auth("ngoc") })).status, 403);
+
+    // màn hình chiếu YouTube: thêm link → cả quán nhận, link sai bị từ chối, hàng chờ theo lượt
+    assert.equal((await post("ngoc", "cinema", { action: "add", url: "https://example.com/video" })).status, 400);
+    const added = await (await post("ngoc", "cinema", { action: "add", url: "https://youtu.be/dQw4w9WgXcQ" })).json();
+    assert.equal(added.playing, true);
+    const showing = await bao.next("cinema", (d) => d.current && d.current.videoId === "dQw4w9WgXcQ");
+    assert.equal(showing.current.byName, "Ngọc");
+    assert.ok(showing.current.startedAt > showing.now - 5000, "kèm mốc giờ bắt đầu để các máy chiếu đồng bộ");
+    await post("ngoc", "cinema", { action: "add", url: "https://www.youtube.com/watch?v=aaaaaaaaaaa" });
+    await post("bao", "cinema", { action: "add", url: "https://www.youtube.com/shorts/bbbbbbbbbbb" });
+    const q = await (await fetch(`${base}/cinema`, { headers: auth("an") })).json();
+    assert.deepEqual(q.queue.map((x) => x.videoId), ["bbbbbbbbbbb", "aaaaaaaaaaa"], "Bảo chưa có lượt nào nên được xếp trước video thứ 2 của Ngọc");
+    assert.equal((await post("bao", "cinema", { action: "remove", id: q.queue[1].id })).status, 403, "không gỡ được video của người khác");
+    await post("ngoc", "cinema", { action: "skip" });
+    assert.equal((await bao.next("cinema", (d) => d.current && d.current.videoId === "bbbbbbbbbbb")).current.byName, "Bảo", "người thêm bỏ qua → chiếu video kế tiếp");
 
     // nhắn riêng
     const dm = await (await post("bao", "messages", { to: "u:sales-ngoc", text: "Ngọc ơi, gửi mình file nhé" })).json();
@@ -160,7 +174,7 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
 
     // nội dung tin nhắn không ghi ra log, file lưu trên đĩa
     const files = await readdir(join(root, "lobby", "rooms"));
-    assert.ok(files.length >= 3);
+    assert.ok(files.length >= 2, "phòng chung + nhắn riêng"); // không còn phòng team
   } finally {
     streams.forEach((s) => s.close());
     await new Promise((r) => server.close(r));

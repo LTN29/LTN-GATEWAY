@@ -13,22 +13,43 @@ Gateway chỉ phục vụ file có tên trong `latest.json`.
 
 ## Đăng bản mới
 
-1. Build app trên máy dev (`npm run dist`, `npm run dist:mac`, `npm run dist:linux`).
-2. Chép các file build cần phát hành vào một thư mục trên máy chạy Gateway, ví dụ `~/vanphong-0.9.0/` (để chung một chỗ hoặc trong các thư mục con `windows/`, `mac/`, `linux/` đều được):
-   - `VanPhongAI-0.9.0-Setup.exe` (Windows, bản cài – tự cập nhật êm nhất)
-   - `VanPhongAI-0.9.0-portable.exe` (Windows, bản chạy ngay)
-   - `VanPhongAI-0.9.0-mac-arm64.zip`
-   - `VanPhongAI-0.9.0-linux-amd64.deb`, `VanPhongAI-0.9.0-linux-x86_64.AppImage`
-3. Chạy trong thư mục repo Gateway:
+Server Gateway production là máy **Windows** (`D:\LTN-GATEWAY`, chạy dưới dạng dịch vụ Windows `LTNGateway`).
+Server chỉ cần **file build** của app, không cần mã nguồn.
 
-```bash
-node scripts/publish-vanphong.mjs ~/vanphong-0.9.0 --notes "- Computer Use trong tab Chat
-- Tự cập nhật 1 nút"
+1. Có file build trên server, một trong hai cách:
+   - **Build ngay trên server** (cần Node.js 20+): giải nén mã nguồn app (ví dụ `D:\VanPhongAI-src`) rồi
+     `npm ci` và `npm run dist` → thư mục `dist` có `VanPhongAI-x.y.z-Setup.exe` và `VanPhongAI-x.y.z-portable.exe`.
+     Build trên Windows chỉ ra bản Windows.
+   - **Chép file build sẵn** từ máy dev vào một thư mục trên server, ví dụ `D:\vanphong-0.9.7`
+     (để chung hoặc trong các thư mục con `windows\`, `mac\`, `linux\` đều được).
+2. Chỉ đăng bản cho loại máy nhân viên đang dùng; mỗi thư mục chỉ chứa file của **1 phiên bản**:
+   - `VanPhongAI-0.9.7-Setup.exe` (Windows, bản cài – tự cập nhật êm nhất)
+   - `VanPhongAI-0.9.7-portable.exe` (Windows, bản chạy ngay)
+   - `VanPhongAI-0.9.7-mac-arm64.zip` (máy Mac của nhân viên)
+   - `VanPhongAI-0.9.7-linux-amd64.deb`, `VanPhongAI-0.9.7-linux-x86_64.AppImage` (máy Ubuntu của nhân viên)
+3. Chạy trong PowerShell trên server:
+
+```powershell
+cd D:\LTN-GATEWAY
+node --env-file=.env scripts/publish-vanphong.mjs D:\VanPhongAI-src\dist --notes "- Có gì mới ..."
+Invoke-RestMethod http://127.0.0.1:20129/install/vanphong/latest.json | Select-Object version
 ```
 
-Script chép file vào `VANPHONG_RELEASE_DIR` (mặc định `./data/releases/vanphong`), tính SHA-256
-và ghi `latest.json` sau cùng. Không cần khởi động lại Gateway. Script giữ file của 2 bản gần nhất
-(`--keep N` để đổi) và từ chối đăng bản cũ hơn bản đang có (`--force` để quay về bản cũ).
+`--env-file=.env` để script ghi đúng `VANPHONG_RELEASE_DIR` mà Gateway đang dùng. Script chép file vào
+`VANPHONG_RELEASE_DIR` (mặc định `./data/releases/vanphong`), tính SHA-256 và ghi `latest.json` sau cùng.
+**Không cần khởi động lại Gateway.** Script giữ file của 2 bản gần nhất (`--keep N` để đổi) và từ chối đăng
+bản cũ hơn bản đang có (`--force` để quay về bản cũ).
+
+Cập nhật code Gateway (khi có thay đổi trong repo) – PowerShell **Run as Administrator**:
+
+```powershell
+cd D:\LTN-GATEWAY
+git pull --ff-only
+Restart-Service LTNGateway
+Invoke-RestMethod http://127.0.0.1:20129/health
+```
+
+Server chạy macOS/Linux thì dùng lệnh tương ứng (`~/vanphong-0.9.7`, khởi động lại bằng `launchctl`/systemd).
 
 ## Trên máy nhân viên
 

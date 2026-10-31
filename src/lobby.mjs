@@ -7,6 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { sendJson, openAiError, readBody } from "./http.mjs";
 import { jsonLog } from "./utils.mjs";
 import { releaseInfo } from "./app-release.mjs";
+import { Cinema } from "./lobby-cinema.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -141,6 +142,11 @@ class Lobby {
     this.members = new Map(); // id -> { ident, status, pos, conns:Set, leaveTimer, bucket }
     this.app = null;          // bản app Văn Phòng AI đang phát hành { version, notes }
     this.watchRelease();
+    // màn hình chiếu YouTube chung của cả quán
+    this.cinema = new Cinema({
+      broadcast: (ev, data) => this.broadcast(ev, data),
+      onlineCount: () => [...this.members.values()].filter((m) => m.conns.size && !this.profileOf(m.ident).hidden).length
+    });
   }
 
   // admin đăng bản app mới (scripts/publish-vanphong.mjs ghi latest.json) → báo ngay cho mọi app đang online
@@ -184,16 +190,13 @@ class Lobby {
 
   canAccess(ident, room) {
     if (room === "all") return true;
-    if (room.startsWith("team:")) return room === `team:${ident.teamId}`;
     if (room.startsWith("dm:")) return room.slice(3).split("~").includes(ident.id);
     return false;
   }
 
   roomsFor(ident) {
-    const rooms = [
-      { id: "all", name: "Cả công ty", kind: "all" },
-      { id: `team:${ident.teamId}`, name: `Team ${ident.teamName}`, kind: "team" }
-    ];
+    // chỉ có phòng chung cả công ty + nhắn riêng (đã bỏ phòng team)
+    const rooms = [{ id: "all", name: "Cả công ty", kind: "all" }];
     for (const [room, last] of Object.entries(this.store.index.rooms)) {
       if (!room.startsWith("dm:") || !this.canAccess(ident, room)) continue;
       const other = room.slice(3).split("~").find((x) => x !== ident.id) || ident.id;
@@ -260,7 +263,7 @@ class Lobby {
     res.write(`:${" ".repeat(2048)}\n\n`);
     m.conns.add(res);
     const others = [...this.members.keys()].filter((id) => id !== ident.id).map((id) => this.publicMember(id)).filter((x) => x && x.online);
-    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinema.state() })}\n\n`);
     if (!wasOnline) { this.broadcastMember(ident.id); jsonLog("lobby_join", { member: ident.id }); }
     const ping = setInterval(() => res.write(": ping\n\n"), PING_MS);
     ping.unref?.();
@@ -322,6 +325,19 @@ class Lobby {
     return { room, data: list.slice(-limit) };
   }
 
+  async cinemaAction(ident, body) {
+    const m = this.touch(ident);
+    const action = String(body.action || "");
+    if (action === "add") {
+      if (!this.allow(m, "msg")) throw httpError(429, "Bạn thao tác hơi nhanh, đợi vài giây nhé", "rate_limit_error");
+      return this.cinema.add(ident, this.profileOf(ident).name, body.url);
+    }
+    if (action === "skip") return this.cinema.skip(ident);
+    if (action === "remove") return this.cinema.remove(ident, String(body.id || ""));
+    if (action === "duration") return this.cinema.duration(String(body.videoId || ""), body.seconds);
+    throw httpError(400, "action phải là add | skip | remove | duration");
+  }
+
   async send(ident, body) {
     const m = this.touch(ident);
     if (!this.allow(m, "msg")) throw httpError(429, "Bạn nhắn hơi nhanh, đợi vài giây nhé", "rate_limit_error");
@@ -377,6 +393,8 @@ export async function handleLobby(req, res, principal, url) {
     case "POST /v1/lobby/messages": return sendJson(res, 201, await L.send(ident, await json()));
     case "POST /v1/lobby/state": return sendJson(res, 200, await L.state(ident, await json()));
     case "POST /v1/lobby/profile": return sendJson(res, 200, await L.profile(ident, await json()));
+    case "GET /v1/lobby/cinema": L.touch(ident); return sendJson(res, 200, L.cinema.state());
+    case "POST /v1/lobby/cinema": return sendJson(res, 200, await L.cinemaAction(ident, await json()));
     default: sendJson(res, 404, openAiError("Không tìm thấy route Sảnh", "not_found_error"));
   }
 }
