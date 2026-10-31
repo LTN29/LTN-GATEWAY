@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { sendJson, openAiError, readBody } from "./http.mjs";
 import { jsonLog } from "./utils.mjs";
+import { releaseInfo } from "./app-release.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -17,6 +18,7 @@ const AVATAR_WORDS = ["hairStyle", "outfit", "accessory", "face"];
 const HISTORY_IN_MEMORY = 200;
 const PING_MS = 25_000;
 const LEAVE_GRACE_MS = 8_000;
+const RELEASE_CHECK_MS = () => Math.max(100, Number(process.env.LOBBY_RELEASE_CHECK_MS || 30_000));
 
 export const lobbyConfig = {
   get enabled() { return process.env.LOBBY_ENABLED !== "false"; },
@@ -137,6 +139,23 @@ class Lobby {
   constructor() {
     this.store = new LobbyStore();
     this.members = new Map(); // id -> { ident, status, pos, conns:Set, leaveTimer, bucket }
+    this.app = null;          // bản app Văn Phòng AI đang phát hành { version, notes }
+    this.watchRelease();
+  }
+
+  // admin đăng bản app mới (scripts/publish-vanphong.mjs ghi latest.json) → báo ngay cho mọi app đang online
+  watchRelease() {
+    let first = true; // lần đọc đầu chỉ ghi nhận bản hiện có, không báo
+    const tick = async () => {
+      const r = await releaseInfo().catch(() => null);
+      const changed = !first && r && r.version !== (this.app && this.app.version);
+      first = false;
+      this.app = r;
+      if (changed) { this.broadcast("app-release", r); jsonLog("lobby_app_release", { version: r.version }); }
+    };
+    this.releaseReady = tick();
+    this.releaseTimer = setInterval(tick, RELEASE_CHECK_MS());
+    this.releaseTimer.unref?.();
   }
 
   profileOf(ident) {
@@ -225,6 +244,7 @@ class Lobby {
 
   // ---------- các route ----------
   async stream(req, res, ident) {
+    await this.releaseReady;
     const m = this.touch(ident);
     clearTimeout(m.leaveTimer);
     const wasOnline = m.conns.size > 0;
@@ -240,7 +260,7 @@ class Lobby {
     res.write(`:${" ".repeat(2048)}\n\n`);
     m.conns.add(res);
     const others = [...this.members.keys()].filter((id) => id !== ident.id).map((id) => this.publicMember(id)).filter((x) => x && x.online);
-    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null })}\n\n`);
     if (!wasOnline) { this.broadcastMember(ident.id); jsonLog("lobby_join", { member: ident.id }); }
     const ping = setInterval(() => res.write(": ping\n\n"), PING_MS);
     ping.unref?.();

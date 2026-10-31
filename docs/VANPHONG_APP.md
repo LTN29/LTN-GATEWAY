@@ -32,10 +32,12 @@ và ghi `latest.json` sau cùng. Không cần khởi động lại Gateway. Scri
 
 ## Trên máy nhân viên
 
-- Thanh trên cùng hiện nút **⬆️ Bản mới x.y.z** → **Tải bản mới** → **Cài & mở lại app**.
-- App tải đúng file cho máy mình, kiểm tra SHA-256 rồi mới cài:
+- App **tự tải sẵn** bản mới ở chế độ nền (kiểm tra SHA-256), rồi báo **"Văn Phòng AI x.y.z đã sẵn sàng"** bằng thẻ trong app, nút **⬆️ Cập nhật x.y.z** trên thanh trên cùng và thông báo của hệ điều hành. Người dùng bấm **Cập nhật ngay** là xong:
   - Windows bản cài: chạy bộ cài im lặng, cài đè, tự mở lại.
   - Windows bản portable: thay file `.exe` đang dùng rồi mở lại.
   - macOS: thay `VanPhongAI.app`, gỡ cờ cách ly, ký ad-hoc, mở lại.
   - Ubuntu `.deb`: hỏi mật khẩu máy (pkexec) rồi `apt-get install`, mở lại. AppImage: thay file.
-- Tắt tự kiểm tra: **Cài đặt → Cập nhật**.
+- **Báo ngay qua Sảnh**: Gateway đọc lại `latest.json` mỗi 30 giây (đổi bằng `LOBBY_RELEASE_CHECK_MS`). Thấy phiên bản đổi thì gửi sự kiện `app-release` tới mọi app đang mở Sảnh, các app đó tải sẵn ngay (vài giây). Lời chào của Sảnh (`hello`) cũng kèm `app.version`.
+- Máy không mở Sảnh vẫn tự kiểm tra lúc mở app, mỗi giờ, khi quay lại app sau 20 phút và khi máy ngủ dậy.
+- App chỉ báo khi `version` trên Gateway **lớn hơn** bản đang chạy: mỗi lần đổi giao diện / tính năng nhớ tăng `version` trong `package.json` của app trước khi build.
+- Tắt tự kiểm tra và tải sẵn: **Cài đặt → Cập nhật**.

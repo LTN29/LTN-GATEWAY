@@ -31,6 +31,12 @@ async function readManifest() {
   }
 }
 
+// phiên bản đang phát hành (Sảnh dùng để báo ngay cho app khi admin đăng bản mới)
+export async function releaseInfo() {
+  const m = await readManifest();
+  return m ? { version: m.version, notes: String(m.notes || "").slice(0, 600) } : null;
+}
+
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function page(m) {
