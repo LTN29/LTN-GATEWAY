@@ -40,7 +40,15 @@ export function syncOnce(opts = {}) {
 async function doSync({ log = () => {} } = {}) {
   if (!syncConfig.repo) return { status: "disabled" };
   const rel = await getJson(`${syncConfig.api}/repos/${syncConfig.repo}/releases/latest`);
-  if (!rel || !rel.tag_name) return { status: "no-release" };
+  if (!rel || !rel.tag_name) {
+    // repo riêng tư mà token không thấy → GitHub cũng trả 404 như "chưa có Release" – phân biệt cho dễ sửa
+    if (!(await getJson(`${syncConfig.api}/repos/${syncConfig.repo}`))) {
+      throw new Error(syncConfig.token
+        ? `Token không thấy repo ${syncConfig.repo} – tạo lại token: Only select repositories → chọn đúng repo, Contents: Read-only`
+        : `Không thấy repo ${syncConfig.repo} – repo riêng tư thì cần VANPHONG_GITHUB_TOKEN trong .env`);
+    }
+    return { status: "no-release" };
+  }
   const version = String(rel.tag_name).replace(/^v/i, "");
   const cur = await currentRelease();
   if (cur && compareVersions(version, cur.version) <= 0) return { status: "up-to-date", version: cur.version };

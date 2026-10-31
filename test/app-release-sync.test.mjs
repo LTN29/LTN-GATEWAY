@@ -12,6 +12,7 @@ async function fakeGithub() {
   const srv = http.createServer((req, res) => {
     st.auth.push(req.headers.authorization || "");
     if (req.url === "/repos/LTN29/APP/releases/latest") {
+      if (st.hide && req.headers.authorization !== "Bearer tok") { res.writeHead(404); return res.end("{}"); }
       if (req.headers.authorization !== "Bearer tok") { res.writeHead(401); return res.end("{}"); }
       if (!st.tag) { res.writeHead(404); return res.end("{}"); }
       const assets = Object.entries(st.files).map(([name, body], i) => ({ id: i + 1, name, size: body.length, digest: "sha256:" + (st.badDigest ? "0".repeat(64) : createHash("sha256").update(body).digest("hex")) }));
@@ -19,6 +20,8 @@ async function fakeGithub() {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ tag_name: st.tag, body: st.notes, assets }));
     }
+    // repo riêng tư: token sai / không được cấp repo này → GitHub trả 404 (không phải 401)
+    if (req.url === "/repos/LTN29/APP") { res.writeHead(req.headers.authorization === "Bearer tok" ? 200 : 404, { "content-type": "application/json" }); return res.end("{}"); }
     const m = req.url.match(/^\/repos\/LTN29\/APP\/releases\/assets\/(\d+)$/);
     if (m) { res.writeHead(302, { location: `/blob/${m[1]}` }); return res.end(); }
     const b = req.url.match(/^\/blob\/(\d+)$/);
@@ -36,6 +39,10 @@ test("Gateway tự lấy bản app mới từ GitHub Release và đăng (latest.
   const { syncOnce } = await import("../src/app-release-sync.mjs");
   try {
     assert.equal((await syncOnce()).status, "no-release");
+    process.env.VANPHONG_GITHUB_TOKEN = "khac-repo";
+    gh.st.hide = true;
+    await assert.rejects(syncOnce(), /Token không thấy repo LTN29\/APP/, "token không được cấp repo → báo rõ, không nói 'chưa có Release'");
+    process.env.VANPHONG_GITHUB_TOKEN = "tok"; gh.st.hide = false;
 
     const setup = randomBytes(70_000), mac = randomBytes(50_000);
     Object.assign(gh.st, { tag: "v1.2.3", notes: "- Màn chiếu YouTube\n- Sửa lỗi", files: { "VanPhongAI-1.2.3-Setup.exe": setup, "VanPhongAI-1.2.3-mac-arm64.zip": mac } });
