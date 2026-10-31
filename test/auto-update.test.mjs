@@ -288,3 +288,34 @@ test("Windows-style installs report with the client ID from the environment", as
     await rm(home, { recursive: true, force: true });
   }
 });
+
+// Windows: tác vụ hẹn giờ không được bật cửa sổ console (node.exe chạy thẳng → cửa sổ đen vài giây mỗi 6 tiếng)
+test("Windows auto-update task runs hidden: installer + self-migration of old tasks", async () => {
+  const mod = await import(`../scripts/auto-update.mjs?hidden=${Date.now()}`);
+  const ps = mod.HIDDEN_TASK_PS1;
+  assert.match(ps, /Get-ScheduledTask -TaskName \$name/);
+  assert.match(ps, /if \(\$a\.Execute -match '\(\?i\)\(wscript\|conhost\)/, "tác vụ đã ẩn thì để nguyên");
+  assert.match(ps, /System32\\wscript\.exe'\) -Argument \('\/\/B \/\/Nologo "' \+ \$vbs \+ '"'\)/, "chạy qua wscript (không có cửa sổ)");
+  assert.match(ps, /System32\\vbscript\.dll/, "kiểm tra máy còn VBScript");
+  assert.match(ps, /conhost\.exe'\) -Argument \('--headless ' \+ \$cmd\)/, "máy không còn VBScript: conhost --headless");
+  assert.match(ps, /\[Text\.Encoding\]::Unicode/, "file .vbs UTF-16 có BOM – đường dẫn có dấu tiếng Việt vẫn chạy");
+  assert.match(ps, /Set-ScheduledTask -TaskName \$name -Action \$new/);
+  assert.doesNotMatch(ps, /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/, "không lẫn ký tự điều khiển");
+  assert.equal(mod.hideScheduledTask(), process.platform === "win32" ? mod.hideScheduledTask() : "skip");
+
+  // cách dựng dòng VBScript (PowerShell: 'CreateObject("WScript.Shell").Run "' + $cmd.Replace('"','""') + '", 0, True')
+  // → VBScript đọc lại phải ra đúng lệnh gốc, kể cả đường dẫn có dấu cách / tiếng Việt
+  const cmd = '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\Nguyễn Văn A\\.codex\\auto-update.mjs" --gateway "https://ai.simi.vn" --codex-home "C:\\Users\\Nguyễn Văn A\\.codex"';
+  const line = 'CreateObject("WScript.Shell").Run "' + cmd.replaceAll('"', '""') + '", 0, True';
+  const lit = /\.Run "((?:[^"]|"")*)", 0, True$/.exec(line);
+  assert.ok(lit, "dòng VBScript đúng cú pháp");
+  assert.equal(lit[1].replaceAll('""', '"'), cmd, "VBScript chạy đúng lệnh node gốc");
+  assert.match(line, /, 0, True$/, "0 = ẩn cửa sổ, True = chờ chạy xong (tác vụ không chạy chồng)");
+
+  const win = await readFile(new URL("../scripts/install-codex-windows.ps1", import.meta.url), "utf8");
+  const fn = win.slice(win.indexOf("function Install-SimiAutoUpdate"), win.indexOf("function Refresh-ProcessPath"));
+  assert.doesNotMatch(fn, /New-ScheduledTaskAction -Execute \$node/, "bộ cài không còn chạy thẳng node.exe");
+  assert.match(fn, /'CreateObject\("WScript\.Shell"\)\.Run "' \+ \$cmd\.Replace\('"', '""'\) \+ '", 0, True'/);
+  assert.ok(fn.includes(ps.match(/\$new = New-ScheduledTaskAction -Execute \(Join-Path \$env:WINDIR 'System32\\wscript\.exe'\)[^\n]*/)[0].replace("$new", "$action")), "bộ cài và script tự sửa dùng cùng một cách chạy ẩn");
+  assert.match(win, /"auto-update-hidden\.vbs"\)\) \{/, "gỡ cài đặt xoá luôn file .vbs");
+});

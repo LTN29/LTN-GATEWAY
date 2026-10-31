@@ -362,6 +362,44 @@ function sendDesktopNotification({ title, message }) {
   }
 }
 
+// Windows: tác vụ hẹn giờ cũ chạy thẳng node.exe (chương trình console) → Windows bật cửa sổ đen vài giây mỗi lần.
+// Đổi sang wscript.exe (không có cửa sổ) chạy node ở chế độ ẩn; máy không còn VBScript thì dùng conhost --headless.
+export const HIDDEN_TASK_PS1 = String.raw`$ErrorActionPreference = 'Stop'
+$name = 'SIMI Auto Update'
+$t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+if (-not $t) { 'none'; exit 0 }
+$a = @($t.Actions)[0]
+if ($a.Execute -match '(?i)(wscript|conhost)(\.exe)?"?$') { 'hidden'; exit 0 }
+$cmd = '"' + $a.Execute.Trim('"') + '" ' + [string]$a.Arguments
+$codexHome = if ([string]$a.Arguments -match '--codex-home\s+"([^"]+)"') { $Matches[1] } else { Join-Path $env:USERPROFILE '.codex' }
+if (Test-Path -LiteralPath (Join-Path $env:WINDIR 'System32\vbscript.dll')) {
+  $vbs = Join-Path $codexHome 'auto-update-hidden.vbs'
+  $body = "' SIMI Auto Update - chay an, khong bat cua so" + "${"`"}r${"`"}n" + 'CreateObject("WScript.Shell").Run "' + $cmd.Replace('"', '""') + '", 0, True' + "${"`"}r${"`"}n"
+  [IO.File]::WriteAllText($vbs, $body, [Text.Encoding]::Unicode)
+  $new = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\wscript.exe') -Argument ('//B //Nologo "' + $vbs + '"')
+} else {
+  $new = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\conhost.exe') -Argument ('--headless ' + $cmd)
+}
+Set-ScheduledTask -TaskName $name -Action $new | Out-Null
+'migrated'
+`;
+
+export function hideScheduledTask() {
+  if (process.platform !== "win32") return "skip";
+  const file = join(tmpdir(), `simi-hide-task-${process.pid}.ps1`);
+  try {
+    // có BOM để PowerShell 5.1 đọc đúng UTF-8
+    writeFileSync(file, "\uFEFF" + HIDDEN_TASK_PS1, "utf8");
+    const r = spawnSync("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", file],
+      { encoding: "utf8", timeout: 60_000, windowsHide: true });
+    return String(r.stdout || "").trim().split(/\r?\n/).pop() || `exit ${r.status}`;
+  } catch (error) {
+    return `error: ${error.message}`;
+  } finally {
+    try { unlinkSync(file); } catch {}
+  }
+}
+
 function readStatus() {
   try { return JSON.parse(readFileSync(statusPath, "utf8")); } catch { return null; }
 }
@@ -388,6 +426,10 @@ if (isMain) {
   const notification = notificationFor(status);
   if (notification && !args.includes("--no-notify")) {
     status.notified = sendDesktopNotification(notification);
+    writeStatus(status);
+  }
+  if (process.platform === "win32" && !args.includes("--no-hide-task")) {
+    status.taskWindow = hideScheduledTask();
     writeStatus(status);
   }
   process.stdout.write(`${JSON.stringify(status)}\n`);

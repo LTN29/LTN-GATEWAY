@@ -683,7 +683,17 @@ function Install-SimiAutoUpdate {
   }
   try {
     $arguments = '"' + $scriptPath + '" --gateway "' + $gatewayRoot + '" --codex-home "' + $CodexHome + '"'
-    $action = New-ScheduledTaskAction -Execute $node -Argument $arguments
+    # node.exe là chương trình console: chạy thẳng từ tác vụ hẹn giờ thì Windows bật cửa sổ đen vài giây mỗi lần.
+    # Chạy qua wscript.exe (không có cửa sổ) với node ở chế độ ẩn; máy không còn VBScript thì dùng conhost --headless.
+    $cmd = '"' + $node + '" ' + $arguments
+    if (Test-Path -LiteralPath (Join-Path $env:WINDIR 'System32\vbscript.dll')) {
+      $vbs = Join-Path $CodexHome 'auto-update-hidden.vbs'
+      $body = "' SIMI Auto Update - chay an, khong bat cua so" + "`r`n" + 'CreateObject("WScript.Shell").Run "' + $cmd.Replace('"', '""') + '", 0, True' + "`r`n"
+      [IO.File]::WriteAllText($vbs, $body, [Text.Encoding]::Unicode)
+      $action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\wscript.exe') -Argument ('//B //Nologo "' + $vbs + '"')
+    } else {
+      $action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\conhost.exe') -Argument ('--headless ' + $cmd)
+    }
     $triggers = @(
       (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
       (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Hours 6))
@@ -691,7 +701,7 @@ function Install-SimiAutoUpdate {
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -Hidden -ExecutionTimeLimit (New-TimeSpan -Minutes 30) -MultipleInstances IgnoreNew
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName "SIMI Auto Update" -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
-    Write-Host "  Auto-update: SIMI skills/tools refresh at Windows logon and every 6 hours"
+    Write-Host "  Auto-update: SIMI skills/tools refresh at Windows logon and every 6 hours (hidden, no console window)"
   } catch {
     Write-Warning "Could not register the SIMI auto-update task: $($_.Exception.Message)"
   }
@@ -1234,7 +1244,7 @@ function Invoke-LtnUninstall {
     [IO.File]::WriteAllText($ConfigPath, $cleanedConfig, [Text.UTF8Encoding]::new($false))
   }
   Unregister-ScheduledTask -TaskName "SIMI Auto Update" -Confirm:$false -ErrorAction SilentlyContinue
-  foreach ($file in @("auto-update.mjs", "auto-update.lock", "ltn-installer-version")) {
+  foreach ($file in @("auto-update.mjs", "auto-update.lock", "ltn-installer-version", "auto-update-hidden.vbs")) {
     Remove-Item -LiteralPath (Join-Path (Split-Path -Parent $ConfigPath) $file) -Force -ErrorAction SilentlyContinue
   }
   foreach ($wrapper in @("codex-fast.cmd", "codex-power.cmd", "ltn-browser-bridge.cmd", "ltn-browser-page.cmd", "ltn-chrome-debug.cmd", "ltn-9router.cmd", "ltn-pdf.cmd", "ltn-muse.cmd")) {
