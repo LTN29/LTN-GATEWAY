@@ -39,6 +39,8 @@ export function syncOnce(opts = {}) {
 
 async function doSync({ log = () => {} } = {}) {
   if (!syncConfig.repo) return { status: "disabled" };
+  // không in lại giá trị sai: hay gặp là 2 dòng .env dính nhau → token lọt vào tên repo
+  if (!/^[\w.-]+\/[\w.-]+$/.test(syncConfig.repo)) throw new Error("VANPHONG_GITHUB_REPO trong .env phải có dạng chủ/repo (vd LTN29/SIMI_VANPHONGAI), mỗi biến 1 dòng riêng");
   const rel = await getJson(`${syncConfig.api}/repos/${syncConfig.repo}/releases/latest`);
   if (!rel || !rel.tag_name) {
     // repo riêng tư mà token không thấy → GitHub cũng trả 404 như "chưa có Release" – phân biệt cho dễ sửa
@@ -55,7 +57,7 @@ async function doSync({ log = () => {} } = {}) {
 
   const assets = (rel.assets || []).filter((a) => { const k = kindOf(a.name); return k && k.version === version; });
   if (!assets.length) throw new Error(`Release ${rel.tag_name} chưa có file cài VanPhongAI-${version}-… (GitHub Actions có thể còn đang build)`);
-  const dir = join(releaseOut(), ".incoming", version);
+  const dir = join(releaseOut(), ".incoming", `${version}-${process.pid}`); // riêng từng tiến trình: script chạy tay + dịch vụ cùng lúc không xoá file của nhau
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   try {
@@ -85,6 +87,6 @@ export function startReleaseSync() {
   const tick = () => syncOnce().catch((e) => jsonLog("vanphong_release_sync_failed", { error: e.message }));
   const first = setTimeout(tick, 20_000); first.unref?.();
   const every = setInterval(tick, syncConfig.minutes * 60_000); every.unref?.();
-  jsonLog("vanphong_release_sync_started", { repo: syncConfig.repo, minutes: syncConfig.minutes });
+  jsonLog("vanphong_release_sync_started", { repo: /^[\w.-]+\/[\w.-]+$/.test(syncConfig.repo) ? syncConfig.repo : "(sai định dạng)", minutes: syncConfig.minutes });
   return { stop: () => { clearTimeout(first); clearInterval(every); } };
 }

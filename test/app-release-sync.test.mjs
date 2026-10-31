@@ -65,6 +65,10 @@ test("Gateway tự lấy bản app mới từ GitHub Release và đăng (latest.
     Object.assign(gh.st, { tag: "v1.2.2", badDigest: false, files: { "VanPhongAI-1.2.2-Setup.exe": randomBytes(1000) } });
     assert.equal((await syncOnce()).status, "up-to-date", "Release cũ hơn thì bỏ qua");
 
+    process.env.VANPHONG_GITHUB_REPO = "LTN29/APP VANPHONG_GITHUB_TOKEN=github_pat_bimat";
+    await assert.rejects(syncOnce(), (e) => /mỗi biến 1 dòng/.test(e.message) && !e.message.includes("bimat"), "2 dòng .env dính nhau → báo rõ, không in token ra log");
+    process.env.VANPHONG_GITHUB_REPO = "LTN29/APP";
+
     process.env.VANPHONG_GITHUB_TOKEN = "sai";
     await assert.rejects(syncOnce(), /VANPHONG_GITHUB_TOKEN/);
   } finally { gh.close(); }
