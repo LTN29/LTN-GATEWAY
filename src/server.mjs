@@ -44,6 +44,7 @@ import {
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import { handleLobby, isLobbyPath } from "./lobby.mjs";
 import { handleRelease, isReleasePath } from "./app-release.mjs";
+import { startReleaseSync } from "./app-release-sync.mjs";
 import {
   sendJson,
   openAiError,
@@ -1414,5 +1415,7 @@ if (isMainModule()) {
       memoryDir: config.memoryDir,
       oneDriveMode: config.oneDrive.mode
     });
+    // tự lấy bản app Văn Phòng AI mới từ GitHub Release (khi đặt VANPHONG_GITHUB_REPO)
+    startReleaseSync();
   });
 }

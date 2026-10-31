@@ -11,7 +11,31 @@ Gateway vừa là nơi tải app lần đầu, vừa là kênh tự cập nhật
 Các route này công khai giống `/install/codex.ps1` (file build không chứa key hay secret).
 Gateway chỉ phục vụ file có tên trong `latest.json`.
 
-## Đăng bản mới
+## Tự đăng từ GitHub (khuyên dùng)
+
+Repo app `LTN29/SIMI_VANPHONGAI` có GitHub Actions: mỗi lần đẩy nhãn `v<phiên bản>` (lệnh `npm run release -- 0.9.12 "Có gì mới"`
+trong repo app) thì build Windows / macOS / Ubuntu và tạo Release kèm file cài. Gateway tự lấy Release mới và đăng – không ai
+phải chép file hay đăng nhập server.
+
+Cài 1 lần trên server:
+
+1. Tạo token chỉ đọc: GitHub → Settings → Developer settings → **Fine-grained personal access tokens** → Generate new token.
+   Repository access: **Only select repositories** → `SIMI_VANPHONGAI`. Permissions → Repository → **Contents: Read-only**.
+2. Thêm vào `.env` của Gateway (token là bí mật – không commit):
+
+```env
+VANPHONG_GITHUB_REPO=LTN29/SIMI_VANPHONGAI
+VANPHONG_GITHUB_TOKEN=github_pat_...
+VANPHONG_GITHUB_POLL_MINUTES=5
+```
+
+3. Khởi động lại Gateway (PowerShell Run as administrator): `Restart-Service LTNGateway`.
+
+Từ đó Gateway hỏi Release mới nhất mỗi 5 phút; bản mới hơn bản đang phát hành thì tải file về, kiểm SHA-256 (GitHub ghi sẵn
+trong Release), đăng (ghi chú bản mới = nội dung Release) và Sảnh báo ngay cho app đang mở. Log: `vanphong_release_synced`,
+lỗi: `vanphong_release_sync_failed`. Muốn đăng ngay: `node --env-file=.env scripts/sync-vanphong-github.mjs`.
+
+## Đăng tay (khi không dùng GitHub)
 
 Server Gateway production là máy **Windows** (`D:\LTN-GATEWAY`, chạy dưới dạng dịch vụ Windows `LTNGateway`).
 Server chỉ cần **file build** của app, không cần mã nguồn.
