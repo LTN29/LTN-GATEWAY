@@ -81,15 +81,8 @@ Server chạy macOS/Linux thì dùng lệnh tương ứng (`~/vanphong-0.9.7`, k
 Intel / Ubuntu). Giao diện `site/vanphong/index.html` nằm trong repo; Gateway điền phiên bản + tên file từ `latest.json`,
 không cần sửa tay khi có bản mới.
 
-**Ảnh và video của trang không đưa lên git** (`.gitignore`: `icon.png`, `poster.webp`, `demo.mp4`, `shots/*.webp` – ~12 MB).
-Chép tay lên máy chủ vào đúng thư mục `D:\LTN-GATEWAY\site\vanphong\` (cùng chỗ với `index.html`), ví dụ từ máy dev:
-
-```powershell
-robocopy "C:\Users\LEGION\Desktop\CODE\ltn-memory-gateway\ltn-memory-gateway\site\vanphong" "\\<máy-chủ>\D$\LTN-GATEWAY\site\vanphong" icon.png poster.webp demo.mp4 /R:1 /W:1
-robocopy "C:\Users\LEGION\Desktop\CODE\ltn-memory-gateway\ltn-memory-gateway\site\vanphong\shots" "\\<máy-chủ>\D$\LTN-GATEWAY\site\vanphong\shots" *.webp /R:1 /W:1
-```
-
-Không cần khởi động lại Gateway sau khi chép (file đọc mỗi lần tải). Thiếu file thì trang vẫn chạy, ô ảnh đó tự ẩn.
+Ảnh và video của trang (`icon.png`, `poster.webp`, `demo.mp4`, `shots/*.webp`, ~12 MB) nằm luôn trong repo: máy chủ chỉ cần
+`git pull` là có, không phải chép tay. Thiếu file nào thì trang vẫn chạy, ô ảnh đó tự ẩn.
 
 - Ai cũng xem được trang, ảnh và video. Bấm **Tải** mới hiện hộp nhập email: Gateway chỉ cho tải khi email có trong danh sách
   **và đang bật**, rồi đặt cookie HttpOnly ký HMAC (mặc định 30 ngày) để lần sau bấm là tải luôn. Mỗi lần bấm tải đều kiểm tra
