@@ -75,6 +75,32 @@ Invoke-RestMethod http://127.0.0.1:20129/health
 
 Server chạy macOS/Linux thì dùng lệnh tương ứng (`~/vanphong-0.9.7`, khởi động lại bằng `launchctl`/systemd).
 
+## Trang tải và danh sách được tải
+
+`https://ai.simi.vn/install/vanphong` là trang tải nội bộ (video dùng app, tính năng, nút tải cho Windows / macOS chip Apple và
+Intel / Ubuntu). Giao diện `site/vanphong/index.html` nằm trong repo; Gateway điền phiên bản + tên file từ `latest.json`,
+không cần sửa tay khi có bản mới.
+
+**Ảnh và video của trang không đưa lên git** (`.gitignore`: `icon.png`, `poster.webp`, `demo.mp4`, `shots/*.webp` – ~12 MB).
+Chép tay lên máy chủ vào đúng thư mục `D:\LTN-GATEWAY\site\vanphong\` (cùng chỗ với `index.html`), ví dụ từ máy dev:
+
+```powershell
+robocopy "C:\Users\LEGION\Desktop\CODE\ltn-memory-gateway\ltn-memory-gateway\site\vanphong" "\\<máy-chủ>\D$\LTN-GATEWAY\site\vanphong" icon.png poster.webp demo.mp4 /R:1 /W:1
+robocopy "C:\Users\LEGION\Desktop\CODE\ltn-memory-gateway\ltn-memory-gateway\site\vanphong\shots" "\\<máy-chủ>\D$\LTN-GATEWAY\site\vanphong\shots" *.webp /R:1 /W:1
+```
+
+Không cần khởi động lại Gateway sau khi chép (file đọc mỗi lần tải). Thiếu file thì trang vẫn chạy, ô ảnh đó tự ẩn.
+
+- Ai cũng xem được trang, ảnh và video. Bấm **Tải** mới hiện hộp nhập email: Gateway chỉ cho tải khi email có trong danh sách
+  **và đang bật**, rồi đặt cookie HttpOnly ký HMAC (mặc định 30 ngày) để lần sau bấm là tải luôn. Mỗi lần bấm tải đều kiểm tra
+  lại danh sách: tắt email là chặn ngay.
+- Danh sách do admin quản lý trong **app Văn Phòng AI → tab 🛡️ Quản trị → Trang tải app**: dán cả loạt email để thêm,
+  công tắc bật / tắt từng người, xoá. Mọi thay đổi ghi vào Nhật ký quản trị. Dữ liệu lưu ở `LOBBY_DATA_DIR/download-access.json`.
+- Danh sách trống = không ai tải được qua trang (trừ khi đặt `VANPHONG_DOWNLOAD_GATE=off`).
+- Thử sai quá 12 lần / 10 phút từ một IP thì bị chặn 10 phút (chống dò email).
+- `latest.json` và file cài (`/install/vanphong/<tên file>`) vẫn công khai để app trên máy nhân viên tự cập nhật; link
+  "bản mới nhất" (`/install/vanphong/latest/<loại>`) mà nút Tải dùng thì cần đã nhập email được bật.
+
 ## Trên máy nhân viên
 
 - App **tự tải sẵn** bản mới ở chế độ nền (kiểm tra SHA-256), rồi báo **"Văn Phòng AI x.y.z đã sẵn sàng"** bằng thẻ trong app, nút **⬆️ Cập nhật x.y.z** trên thanh trên cùng và thông báo của hệ điều hành. Người dùng bấm **Cập nhật ngay** là xong:

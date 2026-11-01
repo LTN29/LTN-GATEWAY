@@ -34,6 +34,7 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
   assert.notEqual(spawnSync(process.execPath, [script, old], { env: { ...process.env, VANPHONG_RELEASE_DIR: rel }, encoding: "utf8" }).status, 0);
 
   process.env.VANPHONG_RELEASE_DIR = rel;
+  process.env.VANPHONG_DOWNLOAD_GATE = "off"; // phần chặn theo danh sách email: test/download-gate.integration.test.mjs
   const { createGatewayServer } = await import(`../src/server.mjs?release=${Date.now()}`);
   const server = createGatewayServer();
   const base = `http://127.0.0.1:${await listen(server)}/install/vanphong`;
@@ -63,5 +64,6 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
   } finally {
     await new Promise((r) => server.close(r));
     delete process.env.VANPHONG_RELEASE_DIR;
+    delete process.env.VANPHONG_DOWNLOAD_GATE;
   }
 });

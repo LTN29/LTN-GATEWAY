@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f3f1ed">
+<title>Tải Văn Phòng AI</title>
+<link rel="icon" href="/install/vanphong/site/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@200;300;400;500&display=swap">
+<style>
+/* Văn Phòng AI · trang tải — theo hệ thiết kế SIMIGO "sg": giấy & mực, một kiểu chữ (Be Vietnam Pro),
+   đường kẻ mảnh thay cho hộp, không icon trang trí, ảnh có khoảng thở. */
+:root {
+  color-scheme: light;
+  --paper: #f3f1ed; --paper-2: #e9e6e0; --paper-3: #dedad2;
+  --ink: #0d1419; --ink-2: #46525c; --ink-3: #8a949b;
+  --line: rgba(13, 20, 25, .12); --line-strong: rgba(13, 20, 25, .8);
+  --night: #0b1622; --night-2: #111f2e; --blue: #0a5d96; --aqua: #3fd8d8;
+  --gutter: clamp(20px, 5vw, 96px); --max: 1680px;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+  --sans: "Be Vietnam Pro", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+*, *::before, *::after { box-sizing: border-box }
+html { background: var(--paper); -webkit-text-size-adjust: 100% }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden }
+a { color: inherit; text-decoration: none }
+button { font: inherit; color: inherit }
+img, video { display: block; max-width: 100% }
+[hidden] { display: none !important }
+::selection { background: var(--ink); color: var(--paper) }
+
+.wrap { width: 100%; max-width: var(--max); margin-inline: auto; padding-left: max(var(--gutter), env(safe-area-inset-left, 0px)); padding-right: max(var(--gutter), env(safe-area-inset-right, 0px)) }
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px }
+.label { margin: 0; font: 500 11px/1.4 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3) }
+.display { margin: 0; font-weight: 300; font-size: clamp(48px, 6.4vw, 112px); line-height: .96; letter-spacing: -.06em }
+.tone { color: var(--ink-3) }
+.deck { margin: 0; max-width: 380px; font-size: 17px; line-height: 1.6; color: var(--ink-2) }
+.btn { display: inline-flex; align-items: center; gap: 12px; height: 52px; padding: 0 30px; border: 0; border-radius: 999px; background: var(--ink); color: #fff; font: 500 14px/1 var(--sans); letter-spacing: -.005em; cursor: pointer; white-space: nowrap; transition: background .4s ease, transform .6s var(--ease) }
+.btn:hover { background: var(--blue); transform: translateY(-2px) }
+.btn.light { background: var(--paper); color: var(--ink) }
+.btn.light:hover { background: #fff }
+.btn[aria-disabled="true"] { opacity: .35; pointer-events: none }
+.link { position: relative; display: inline-block; padding: 4px 0; background: none; border: 0; cursor: pointer; font: 500 14px/1.2 var(--sans); letter-spacing: -.005em; color: var(--ink) }
+.link::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: currentColor; transform-origin: right; transform: scaleX(.35); opacity: .5; transition: transform .6s var(--ease), opacity .3s ease }
+.link:hover::after, .link[aria-selected="true"]::after, .link[aria-checked="true"]::after { transform-origin: left; transform: scaleX(1); opacity: 1 }
+.link .t { font: 400 12px var(--mono); color: var(--ink-3); margin-left: 8px }
+.actions { display: flex; align-items: center; gap: 28px; flex-wrap: wrap }
+.section-head { row-gap: 28px; padding-bottom: clamp(48px, 6vw, 88px) }
+.section-head .label { grid-column: 1 / -1 }
+.section-head .display { grid-column: 1 / span 8 }
+.section-head .deck { grid-column: 9 / -1; align-self: end }
+
+/* ---------- thanh trên: tràn ngang ở đầu trang, thu thành viên thuốc khi cuộn ---------- */
+.nav { --nav-ink: var(--ink); --nav-muted: var(--ink-3); position: fixed; top: 0; left: 0; right: 0; z-index: 60; pointer-events: none; padding-top: env(safe-area-inset-top, 0px) }
+.nav.dark { --nav-ink: #fff; --nav-muted: rgba(255, 255, 255, .6) }
+.nav-bar { pointer-events: auto; position: relative; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; width: 100%; height: 88px; margin: 0 auto; padding: 0 max(var(--gutter), env(safe-area-inset-left, 0px)); color: var(--nav-ink); transition: width .9s var(--ease), height .9s var(--ease), margin .9s var(--ease), padding .9s var(--ease), border-radius .9s var(--ease), transform .8s var(--ease), background .6s ease, box-shadow .6s ease }
+.nav.compact .nav-bar { width: min(1100px, calc(100% - 28px)); height: 60px; margin-top: 14px; padding: 0 8px 0 22px; border-radius: 999px; background: rgba(243, 241, 237, .72); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); box-shadow: 0 18px 50px -20px rgba(13, 20, 25, .35), inset 0 0 0 1px rgba(13, 20, 25, .07) }
+.nav.compact.dark .nav-bar { background: rgba(8, 22, 38, .42); box-shadow: 0 18px 50px -20px rgba(0, 0, 0, .5), inset 0 0 0 1px rgba(255, 255, 255, .14) }
+.nav.hide .nav-bar { transform: translateY(calc(-100% - 90px)); box-shadow: none }
+.brand { justify-self: start; display: flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 500; letter-spacing: -.02em; white-space: nowrap }
+.brand img { width: 30px; height: 30px; border-radius: 8px }
+.nav-links { display: flex; gap: clamp(22px, 2.4vw, 40px) }
+.nav-links a { position: relative; padding: 8px 0; font-size: 15px; color: var(--nav-muted); transition: color .4s ease; white-space: nowrap }
+.nav-links a::after { content: ""; position: absolute; left: 0; right: 0; bottom: 2px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: right; transition: transform .6s var(--ease) }
+.nav-links a:hover, .nav-links a.cur { color: var(--nav-ink) }
+.nav-links a:hover::after, .nav-links a.cur::after { transform: scaleX(1); transform-origin: left }
+.nav-right { justify-self: end; display: flex; align-items: center; gap: 22px; min-width: 0 }
+.who { display: flex; align-items: center; gap: 14px; font-size: 13px; color: var(--nav-muted); min-width: 0 }
+.who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px }
+.who button { background: none; border: 0; padding: 0; cursor: pointer; color: var(--nav-ink); font-size: 13px; font-weight: 500 }
+.nav-cta { display: inline-flex; align-items: center; height: 46px; padding: 0 24px; border-radius: 999px; background: var(--nav-ink); color: var(--paper); font-size: 15px; font-weight: 500; transition: height .9s var(--ease), background .4s ease, color .4s ease; white-space: nowrap }
+.nav.dark .nav-cta { color: var(--ink) }
+.nav-cta:hover { background: var(--blue); color: #fff }
+.nav.compact .nav-cta { height: 44px }
+.nav-progress { position: absolute; left: 26px; right: 26px; bottom: 0; height: 1px; background: var(--nav-ink); transform: scaleX(var(--p, 0)); transform-origin: left; opacity: 0; transition: opacity .5s ease }
+.nav.compact .nav-progress { opacity: .35 }
+@media (max-width: 900px) { .nav-bar { grid-template-columns: 1fr auto } .nav-links { display: none } .who span { display: none } .nav.compact .nav-bar { padding: 0 8px 0 18px } }
+
+/* ---------- mở đầu ---------- */
+.hero { padding: calc(88px + clamp(56px, 9vh, 120px)) 0 clamp(64px, 8vw, 110px) }
+.hero .grid { align-items: end }
+.hero .label { grid-column: 1 / -1; margin-bottom: clamp(28px, 4vw, 48px) }
+.hero h1 { grid-column: 1 / span 8; margin: 0; font-weight: 300; font-size: clamp(64px, 10.4vw, 188px); line-height: .9; letter-spacing: -.07em }
+.mask { display: block; overflow: hidden; padding-bottom: .12em; margin-bottom: -.12em }
+.mask > span { display: block; will-change: transform }
+.hero .mask > span { transform: translateY(105%); opacity: 0; transition: transform 1.3s var(--ease), opacity 1s ease }
+.hero.go .mask > span { transform: none; opacity: 1 }
+.hero.go .mask:nth-child(2) > span { transition-delay: .1s } .hero.go .mask:nth-child(3) > span { transition-delay: .2s }
+.hero-aside { grid-column: 9 / -1; padding-bottom: .6vw }
+.hero-aside p { margin: 0 0 32px; max-width: 380px; font-size: 17px; line-height: 1.6; color: var(--ink-2) }
+.facts { margin: clamp(56px, 6vw, 96px) 0 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-strong) }
+.facts div { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 10px; padding: 22px 24px 0 0 }
+.facts div + div { padding-left: 24px; border-left: 1px solid var(--line) }
+.facts dd { margin: 0; font-weight: 300; font-size: clamp(40px, 4vw, 64px); line-height: 1; letter-spacing: -.05em; font-variant-numeric: tabular-nums }
+.facts dt { font-size: 13px; color: var(--ink-3) }
+
+/* ---------- video ---------- */
+.film-sec { padding-bottom: clamp(96px, 12vw, 180px) }
+.film-wrap { position: relative; clip-path: inset(var(--ci, 0%) var(--ci, 0%) var(--ci, 0%) var(--ci, 0%) round 6px); will-change: clip-path }
+.film { position: relative; aspect-ratio: 16 / 9; background: var(--night); overflow: hidden }
+.film video { width: 100%; height: 100%; object-fit: cover; transform: scale(var(--vs, 1)); transform-origin: 50% 50% }
+.film-meta { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; padding: 22px 0 0 }
+.film-meta .label b { color: var(--ink); font-weight: 500 }
+.sound { display: inline-flex; align-items: center; gap: 10px }
+.sound i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); transition: background .3s }
+.sound.on i { background: var(--aqua) }
+.chapters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 28px; border-top: 1px solid var(--line-strong) }
+.chapters button { position: relative; display: grid; gap: 6px; text-align: left; padding: 16px 16px 18px 0; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; color: var(--ink-3); transition: color .3s }
+.chapters button::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 2px; background: var(--ink); transform: scaleX(var(--cp, 0)); transform-origin: left }
+.chapters button b { font: 400 12px/1 var(--mono); letter-spacing: .04em }
+.chapters button span { font-size: 15px; letter-spacing: -.01em }
+.chapters button:hover, .chapters button.on { color: var(--ink) }
+@media (max-width: 800px) { .chapters { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+
+/* ---------- câu nói ---------- */
+.say { padding-bottom: clamp(96px, 12vw, 180px) }
+.say .grid { row-gap: 32px }
+.say .label { grid-column: 1 / -1 }
+.say p:not(.label) { grid-column: 1 / span 10; margin: 0; font-weight: 300; font-size: clamp(32px, 4.4vw, 74px); line-height: 1.08; letter-spacing: -.05em }
+.say .w { opacity: .14; transition: opacity .25s linear }
+.say .w.on { opacity: 1 }
+
+/* ---------- tính năng: chương ---------- */
+.chapters-list { border-top: 1px solid var(--line-strong) }
+.chap { position: relative; padding: clamp(40px, 5vw, 72px) 0; border-bottom: 1px solid var(--line) }
+.chap::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 1px; background: var(--line-strong); transform: scaleX(0); transform-origin: left; transition: transform 1.4s var(--ease) }
+.chap.in::before { transform: scaleX(1) }
+.chap:first-child::before { display: none }
+.chap .grid { row-gap: 32px }
+.chap-idx { grid-column: 1 / span 2; margin: 10px 0 0; font: 500 11px/1.4 var(--sans); letter-spacing: .18em; color: var(--ink-3) }
+.chap-idx span { display: block; margin-top: 6px; text-transform: uppercase; color: var(--ink) }
+.chap h3 { grid-column: 3 / span 5; margin: 0; font-weight: 300; font-size: clamp(32px, 3.2vw, 54px); line-height: 1.02; letter-spacing: -.05em }
+.chap-body { grid-column: 9 / -1; display: grid; gap: 18px; align-content: start }
+.chap-body > p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--ink-2) }
+.lines { list-style: none; margin: 4px 0 0; padding: 0 }
+.lines li { padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.5 }
+.media { grid-column: 3 / -1; display: grid; gap: 14px; margin-top: clamp(16px, 2vw, 32px) }
+.media.two { grid-template-columns: 1.2fr 1fr; align-items: start }
+.tile { position: relative; margin: 0 }
+.tile .ph { overflow: hidden; background: var(--paper-2) }
+.tile img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; transform: scale(1.06); transition: transform 1.6s var(--ease) }
+.tile:hover img { transform: scale(1.1) }
+.media.two .tile:last-child img { aspect-ratio: 4 / 3 }
+.tile figcaption { display: grid; gap: 4px; padding: 16px 0 0; background: var(--paper) }
+.tile figcaption small { font: 500 10.5px/1.6 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3) }
+.tile figcaption b { font-weight: 400; font-size: 17px; letter-spacing: -.02em }
+.rise { clip-path: inset(16% 0 0 0); transform: translateY(8%); opacity: 0; transition: clip-path 1.2s var(--ease), transform 1.2s var(--ease), opacity .8s ease }
+.rise.in { clip-path: inset(0 0 0 0); transform: none; opacity: 1 }
+.drift { will-change: transform }
+
+/* ---------- con số (cảnh ghim) ---------- */
+.stats { position: relative; background: var(--night); color: #fff; height: 380vh }
+.stats-pin { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden }
+.stats-frame { height: 100%; display: grid; grid-template-rows: auto 1fr auto; padding-top: calc(88px + 28px); padding-bottom: 40px }
+.stats .label { color: rgba(255, 255, 255, .5) }
+.stats-stage { position: relative }
+.stat { position: absolute; left: 0; right: 0; bottom: 8%; display: grid; grid-template-columns: auto 1fr; align-items: end; column-gap: clamp(24px, 4vw, 64px) }
+.stat .mask > span { transform: translateY(120%); transition: transform .7s var(--ease) }
+.stat.on .mask > span { transform: none }
+.stat.gone .mask > span { transform: translateY(-120%) }
+.stat.on .stat-text .mask:nth-child(2) > span { transition-delay: .06s }
+.stat-value { font-weight: 200; font-size: clamp(120px, 19vw, 340px); line-height: .82; letter-spacing: -.07em }
+.stat-text { display: grid; gap: 14px; padding-bottom: 1.2vw }
+.stat-title { font-weight: 300; font-size: clamp(34px, 4.4vw, 76px); line-height: 1; letter-spacing: -.05em }
+.stat-note { font-size: 13px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: rgba(255, 255, 255, .5) }
+.stats-foot { display: flex; align-items: center; gap: 24px }
+.stats-count { font-size: 14px; color: rgba(255, 255, 255, .5); font-variant-numeric: tabular-nums }
+.stats-count b { font-weight: 400; color: #fff }
+.stats-bar { flex: 1; height: 1px; background: rgba(255, 255, 255, .14) }
+.stats-bar i { display: block; height: 100%; background: #fff; transform: scaleX(0); transform-origin: left }
+@media (max-width: 720px) { .stat { grid-template-columns: 1fr; row-gap: 12px } .stat-value { font-size: 34vw } }
+
+/* ---------- so sánh ---------- */
+.vs { padding: clamp(96px, 12vw, 180px) 0 }
+.vs-table { border-top: 1px solid var(--line-strong) }
+.vs-row { display: grid; grid-template-columns: 2fr 5fr 5fr; column-gap: 24px; align-items: baseline; padding: 22px 0; border-bottom: 1px solid var(--line); transition: background .5s ease, padding .6s var(--ease) }
+.vs-row:not(.head):hover { background: var(--paper-2); padding-inline: 20px }
+.vs-row.head { padding: 16px 0 }
+.vs-row .k { font: 500 11px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3) }
+.vs-row .old { font-size: 16px; color: var(--ink-3) }
+.vs-row .new { font-weight: 300; font-size: clamp(20px, 1.8vw, 28px); line-height: 1.25; letter-spacing: -.03em }
+.vs-row.head .old, .vs-row.head .new { font: 500 11px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink) }
+@media (max-width: 800px) { .vs-row { grid-template-columns: 1fr; row-gap: 6px } .vs-row.head { display: none } .vs-row .old::before { content: "Codex gốc: " } }
+
+/* ---------- tải về ---------- */
+.dl { padding: clamp(96px, 12vw, 160px) 0; background: var(--paper-2) }
+.dl .section-head { padding-bottom: clamp(36px, 4vw, 56px) }
+.os-tabs { grid-column: 1 / -1; display: flex; gap: clamp(22px, 3vw, 48px); margin-top: 8px }
+.os-tabs .link { font-size: clamp(18px, 1.6vw, 22px); font-weight: 400; color: var(--ink-3) }
+.os-tabs .link[aria-selected="true"] { color: var(--ink) }
+.dl-body { border-top: 1px solid var(--line-strong); padding-top: clamp(32px, 4vw, 56px); row-gap: 40px }
+.dl-main { grid-column: 1 / span 6; display: grid; gap: 24px; align-content: start; min-width: 0 }
+.dl-main h3 { margin: 0; font-weight: 300; font-size: clamp(56px, 7vw, 120px); line-height: .9; letter-spacing: -.065em }
+.dl-main .req { margin: 0; font-size: 14px; color: var(--ink-3) }
+.chips { display: flex; gap: 28px; flex-wrap: wrap }
+.chips .link { font-size: 15px; color: var(--ink-3) }
+.chips .link[aria-checked="true"] { color: var(--ink) }
+.chips .link small { font-size: 12px; color: var(--ink-3); margin-left: 6px; font-weight: 400 }
+.file { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font: 400 13px var(--mono); color: var(--ink-2); overflow-wrap: anywhere }
+.hint { margin: 0; font-size: 13px; color: var(--ink-3) }
+.dl-steps { grid-column: 8 / -1; min-width: 0 }
+.dl-steps ol { list-style: none; margin: 14px 0 0; padding: 0; counter-reset: s }
+.dl-steps li { counter-increment: s; display: grid; grid-template-columns: 40px minmax(0, 1fr); padding: 18px 0; border-top: 1px solid var(--line) }
+.dl-steps li::before { content: counter(s, decimal-leading-zero); font-size: 12px; color: var(--ink-3); padding-top: 4px }
+.dl-steps b { display: block; font-weight: 400; font-size: 18px; letter-spacing: -.02em; margin-bottom: 4px }
+.dl-steps p { margin: 0; font-size: 15px; color: var(--ink-2) }
+.cmd { margin-top: 12px; display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 16px; background: var(--night); color: #dfe8ef; font: 12.5px/1.5 var(--mono); min-width: 0 }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: pre }
+.cmd button { flex: none; border: 0; padding: 6px 10px; cursor: pointer; background: rgba(255, 255, 255, .1); color: #fff; font-size: 12px }
+.dl-note { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--ink-3) }
+
+/* ---------- có gì mới ---------- */
+.news { padding: clamp(96px, 12vw, 180px) 0 }
+.values { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line-strong) }
+.values li { display: grid; grid-template-rows: auto auto 1fr; gap: 14px; min-height: 240px; padding: 28px 28px 36px 0; border-bottom: 1px solid var(--line) }
+.values li:not(:nth-child(3n + 1)) { padding-left: 28px; border-left: 1px solid var(--line) }
+.values span { font-size: 12px; color: var(--ink-3) }
+.values h4 { margin: 0; font-weight: 300; font-size: clamp(28px, 2.6vw, 42px); line-height: 1; letter-spacing: -.05em }
+.values p { margin: 0; align-self: end; max-width: 340px; font-size: 15px; line-height: 1.6; color: var(--ink-2) }
+
+/* ---------- kết ---------- */
+.final { background: var(--night); color: #fff; padding: clamp(110px, 14vw, 200px) 0 calc(36px + env(safe-area-inset-bottom, 0px)) }
+.final .label { color: rgba(255, 255, 255, .5) }
+.final h2 { margin: 28px 0 0; font-weight: 300; font-size: clamp(64px, 12vw, 220px); line-height: .88; letter-spacing: -.075em }
+.final h2 .tone { color: rgba(255, 255, 255, .38) }
+.final .actions { margin-top: clamp(40px, 5vw, 64px) }
+.final .link { color: rgba(255, 255, 255, .86) }
+.foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 14px 30px; margin-top: clamp(80px, 10vw, 140px); padding-top: 22px; border-top: 1px solid rgba(255, 255, 255, .14); font-size: 12.5px; color: rgba(255, 255, 255, .5) }
+.foot .brands { font-weight: 500; letter-spacing: .24em; font-size: 11px }
+
+/* ---------- hộp nhập email khi bấm tải ---------- */
+.modal { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 20px max(16px, env(safe-area-inset-left, 0px)) }
+.modal-back { position: absolute; inset: 0; background: rgba(13, 20, 25, .42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: fade .35s ease }
+.modal-card { position: relative; width: min(480px, 100%); padding: clamp(28px, 4vw, 44px); background: var(--paper); display: grid; gap: 28px; animation: up .7s var(--ease) }
+@keyframes fade { from { opacity: 0 } }
+@keyframes up { from { opacity: 0; transform: translateY(28px) } }
+.modal-card h3 { margin: 12px 0 0; font-weight: 300; font-size: clamp(34px, 4vw, 48px); line-height: 1; letter-spacing: -.055em }
+.modal-card .what { margin: 10px 0 0; font-size: 15px; color: var(--ink-2) }
+.modal-card form { display: grid; gap: 22px }
+.field { display: grid; gap: 6px; border-bottom: 1px solid var(--line-strong) }
+.field label { font: 500 11px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3) }
+.field input { width: 100%; height: 48px; padding: 0; border: 0; background: transparent; color: var(--ink); font: 300 22px var(--sans); letter-spacing: -.02em; outline: none }
+.field:focus-within { border-color: var(--blue) }
+.err { min-height: 20px; margin: -10px 0 0; font-size: 14px; color: #b3261e }
+.modal-x { position: absolute; right: 18px; top: 18px; border: 0; background: none; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-3) }
+.modal-x:hover { color: var(--ink) }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 95; translate: -50% 0; padding: 14px 24px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 14px; opacity: 0; transform: translateY(16px); transition: opacity .4s, transform .6s var(--ease); pointer-events: none; max-width: calc(100% - 32px) }
+.toast.on { opacity: 1; transform: none }
+
+/* ---------- cuộn: chữ lớn trồi khỏi mặt nạ ---------- */
+.up { clip-path: inset(-25% -4% 100% -4%); transform: translateY(22%); transition: clip-path 1.4s var(--ease), transform 1.4s var(--ease) }
+.up.in { clip-path: inset(-25% -4% -35% -4%); transform: none }
+.fade { opacity: 0; transform: translateY(24px); transition: opacity .85s ease, transform .85s var(--ease) }
+.fade.in { opacity: 1; transform: none }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; row-gap: 28px }
+  .grid > * { grid-column: 1 / -1 !important }
+  .hero h1 { font-size: clamp(56px, 17vw, 120px) }
+  .facts { grid-template-columns: 1fr 1fr }
+  .facts div:nth-child(3) { padding-left: 0; border-left: 0 }
+  .facts div { padding-bottom: 18px }
+  .media.two { grid-template-columns: 1fr }
+  .values { grid-template-columns: 1fr }
+  .values li { min-height: 0; padding-left: 0 !important; border-left: 0 !important }
+  .stats { height: 320vh }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero .mask > span, .up, .fade, .rise { transform: none !important; opacity: 1 !important; clip-path: none !important; transition: none !important }
+  .stats { height: auto } .stats-pin { position: relative; height: auto } .stats-stage { display: grid; gap: 56px; padding: 40px 0 }
+  .stat { position: relative; bottom: auto } .stat .mask > span { transform: none !important }
+}
+</style>
+</head>
+<body>
+<header class="nav" id="nav">
+  <div class="nav-bar">
+    <a class="brand" href="#top"><img src="/install/vanphong/site/icon.png" alt="">Văn Phòng AI</a>
+    <nav class="nav-links" aria-label="Mục lục"><a href="#video">Video</a><a href="#tinh-nang">Tính năng</a><a href="#tai-ve">Tải về</a><a href="#moi">Có gì mới</a></nav>
+    <div class="nav-right">
+      <div class="who" id="who" hidden><span id="whoMail"></span><button type="button" id="logout">Thoát</button></div>
+      <a class="nav-cta" href="#tai-ve">Tải app</a>
+    </div>
+    <i class="nav-progress" aria-hidden="true"></i>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" id="hero">
+    <div class="wrap">
+      <div class="grid">
+        <p class="label">SIMIGO · Ứng dụng nội bộ — bản @@VER@@</p>
+        <h1 aria-label="Codex, nhưng có văn phòng."><span class="mask"><span>Codex,</span></span><span class="mask"><span class="tone">nhưng có</span></span><span class="mask"><span>văn phòng.</span></span></h1>
+        <div class="hero-aside">
+          <p>Giao việc cho đội AI, chat với mọi model trong SIMI Gateway, gặp đồng nghiệp trong Sảnh 3D. Vẫn là Codex bên dưới, chỉ không còn màn hình dòng lệnh.</p>
+          <div class="actions"><a class="btn" href="#tai-ve" id="heroDl"><span>Tải cho máy này</span></a><a class="link" href="#video">Xem video<span class="t">2:39</span></a></div>
+        </div>
+      </div>
+      <dl class="facts">
+        <div class="fade"><dt>hệ điều hành: Windows, macOS, Ubuntu</dt><dd>03</dd></div>
+        <div class="fade"><dt>bài hướng dẫn ở quầy lễ tân</dt><dd>10</dd></div>
+        <div class="fade"><dt>bàn bida trong khu Game</dt><dd>02</dd></div>
+        <div class="fade"><dt>tài khoản SIMI cho mọi model</dt><dd>01</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="film-sec" id="video">
+    <div class="wrap">
+      <div class="film-wrap" id="filmWrap">
+        <div class="film"><video id="film" src="/install/vanphong/site/demo.mp4" poster="/install/vanphong/site/poster.webp" playsinline loop preload="metadata" controls></video></div>
+      </div>
+      <div class="film-meta">
+        <p class="label">Quay từ app thật · <b>2 phút 39 giây</b> · có lời hướng dẫn · dữ liệu mẫu</p>
+        <button class="link sound" type="button" id="sound"><i></i><span>Bật tiếng</span></button>
+      </div>
+      <div class="chapters" id="chapters"></div>
+    </div>
+  </section>
+
+  <section class="say">
+    <div class="wrap grid">
+      <p class="label">01 — Vì sao có app này</p>
+      <p id="say">Codex rất mạnh, nhưng phải gõ lệnh trên nền đen. Văn Phòng AI giữ nguyên sức mạnh đó và đặt nó vào một văn phòng: có người nhận việc, có chỗ trò chuyện, có cả giờ giải lao.</p>
+    </div>
+  </section>
+
+  <section class="feats" id="tinh-nang">
+    <div class="wrap">
+      <div class="grid section-head">
+        <p class="label">02 — Tính năng</p>
+        <h2 class="display up">Một app, <span class="tone">đủ mọi việc với AI.</span></h2>
+        <p class="deck fade">Sáu thứ nhân viên dùng hằng ngày. Mỗi mục mở đúng đoạn đó trong video.</p>
+      </div>
+      <div class="chapters-list">
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">01<span>Văn phòng</span></p>
+            <h3 class="up">Giao việc <span class="tone">như giao cho một phòng thật.</span></h3>
+            <div class="chap-body fade">
+              <p>Gõ việc cần làm, chọn người nhận rồi bấm Giao ngay. Trưởng phòng chia việc cho cả đội, có người soát lại trước khi nộp. Xong việc, kết quả nằm sẵn trong Khay kết quả.</p>
+              <ul class="lines"><li>Mẫu việc sẵn: email, báo cáo, tóm tắt, kế hoạch, dịch</li><li>Thấy từng người đang làm gì trong văn phòng 3D</li><li>Khay kết quả: mở xem, sao chép, mở file ngay</li></ul>
+              <button class="link seek" type="button" data-t="5">Xem trong video<span class="t">0:05</span></button>
+            </div>
+            <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/office.webp" alt="Văn phòng AI đang làm kế hoạch khuyến mãi" loading="lazy"></div><figcaption><small>Văn phòng</small><b>Kế hoạch khuyến mãi 11.11, cả phòng cùng làm</b></figcaption></figure></div>
+          </div>
+        </article>
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">02<span>Chat</span></p>
+            <h3 class="up">Chat với mọi model, <span class="tone">gọi kỹ năng bằng phím /</span></h3>
+            <div class="chap-body fade">
+              <p>Dùng Combo của công ty: tạo ảnh, tạo video, đọc PDF, tìm web, soạn Word, Excel, PowerPoint chỉ bằng một dấu gạch chéo.</p>
+              <ul class="lines"><li>Dán ảnh bằng Ctrl + V, kéo thả file vào ô chat</li><li>Bảng, danh sách hiện rõ, có nút chép câu trả lời</li><li>Chọn model và mức suy nghĩ ngay dưới ô nhập</li></ul>
+              <button class="link seek" type="button" data-t="42">Xem trong video<span class="t">0:42</span></button>
+            </div>
+            <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/chat.webp" alt="Chat tóm tắt báo cáo doanh thu" loading="lazy"></div><figcaption><small>Chat</small><b>Tóm tắt báo cáo doanh thu tháng 10</b></figcaption></figure></div>
+          </div>
+        </article>
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">03<span>Sảnh 3D</span></p>
+            <h3 class="up">Cả công ty <span class="tone">chung một sảnh.</span></h3>
+            <div class="chap-body fade">
+              <p>Mỗi người online là một nhân vật tự chọn. Thấy ai đang chat với AI, ai đang họp, ai rảnh để rủ cà phê.</p>
+              <ul class="lines"><li>Chat cả công ty và nhắn riêng, gọi tên bằng @</li><li>Màn chiếu xem chung, sàn nhảy, quầy bar, sân vườn</li><li>Thu gọn khung chat để Sảnh rộng hết màn hình</li></ul>
+              <button class="link seek" type="button" data-t="66">Xem trong video<span class="t">1:06</span></button>
+            </div>
+            <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/lobby.webp" alt="Toàn cảnh Sảnh 3D" loading="lazy"></div><figcaption><small>Toàn cảnh</small><b>Sảnh 40 × 28 m, 11 người online</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/dance.webp" alt="Sàn nhảy trong Sảnh" loading="lazy"></div><figcaption><small>Giải lao</small><b>Sàn nhảy</b></figcaption></figure></div>
+          </div>
+        </article>
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">04<span>Trợ lý SIMI</span></p>
+            <h3 class="up">Người mới <span class="tone">tự học app trong một phút.</span></h3>
+            <div class="chap-body fade">
+              <p>Bấm nút vàng Trợ lý ở bất cứ tab nào, hoặc phím F1: nhân vật tự đi tới quầy lễ tân. Hỏi gì cũng trả lời; bài hướng dẫn đọc to từng bước và chỉ sáng đúng nút cần bấm.</p>
+              <ul class="lines"><li>10 bài có giọng đọc: Chat, giao việc, Sảnh, bida, cập nhật…</li><li>Lạc trong Sảnh? Mép màn hình có mũi tên chỉ đường tới quầy</li><li>Hỏi bằng tài khoản Trợ lý, người hỏi không tốn lượt</li></ul>
+              <button class="link seek" type="button" data-t="85">Xem trong video<span class="t">1:25</span></button>
+            </div>
+            <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/coach.webp" alt="Hướng dẫn từng bước" loading="lazy"></div><figcaption><small>Hướng dẫn từng bước</small><b>Chỉ sáng đúng nút cần bấm</b></figcaption></figure></div>
+          </div>
+        </article>
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">05<span>Khu Game</span></p>
+            <h3 class="up">Bida hai người, <span class="tone">ngay trong Sảnh.</span></h3>
+            <div class="chap-body fade">
+              <p>Mời một đồng nghiệp, người kia đồng ý là cả hai ra bàn và bàn bida hiện lên. Ngắm, kéo lực, thả tay.</p>
+              <ul class="lines"><li>Luật 8 bi, có đường ngắm</li><li>Ai đi ngang cũng xem được ván trên bàn 3D</li><li>Bảng xếp hạng thắng thua cả công ty</li></ul>
+              <button class="link seek" type="button" data-t="117">Xem trong video<span class="t">1:57</span></button>
+            </div>
+            <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/pool.webp" alt="Bàn bida nhìn từ trên" loading="lazy"></div><figcaption><small>Bida 8 bi</small><b>Nhìn từ trên, kéo ngược để lấy lực</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/pool3d.webp" alt="Bàn bida trong Sảnh 3D" loading="lazy"></div><figcaption><small>Trong Sảnh</small><b>Bàn 3D lăn theo</b></figcaption></figure></div>
+          </div>
+        </article>
+        <article class="chap">
+          <div class="grid">
+            <p class="chap-idx">06<span>Cho cả đội</span></p>
+            <h3 class="up">Bận thì báo, <span class="tone">quản lý thì nắm.</span></h3>
+            <div class="chap-body fade">
+              <p>Bận thì đặt Không làm phiền: tắt chuông, đồng nghiệp thấy ngay. Trưởng nhóm xem ai online, máy nào, đã lên bản mới chưa.</p>
+              <ul class="lines"><li>Tập trung, đang họp, đi ăn, có hẹn giờ</li><li>Phân quyền theo team, khoá chat, thông báo ghim</li><li>Phát hành bản mới là máy nhân viên hiện nút Cập nhật</li></ul>
+              <button class="link seek" type="button" data-t="138">Xem trong video<span class="t">2:18</span></button>
+            </div>
+            <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/admin.webp" alt="Trang quản trị" loading="lazy"></div><figcaption><small>Quản trị</small><b>Ai online, máy nào, bản nào</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/status.webp" alt="Menu trạng thái" loading="lazy"></div><figcaption><small>Trạng thái</small><b>Không làm phiền</b></figcaption></figure></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Văn Phòng AI trong vài con số">
+    <div class="stats-pin">
+      <div class="wrap stats-frame">
+        <p class="label">03 — Văn Phòng AI trong vài con số</p>
+        <div class="stats-stage">
+          <div class="stat on"><span class="mask stat-value"><span>03</span></span><div class="stat-text"><span class="mask stat-title"><span>hệ điều hành</span></span><span class="mask stat-note"><span>Windows · macOS chip Apple và Intel · Ubuntu</span></span></div></div>
+          <div class="stat"><span class="mask stat-value"><span>06</span></span><div class="stat-text"><span class="mask stat-title"><span>khu trong Sảnh 3D</span></span><span class="mask stat-note"><span>Lễ tân · quầy bar · sàn nhảy · màn chiếu · khu Game · sân vườn</span></span></div></div>
+          <div class="stat"><span class="mask stat-value"><span>10</span></span><div class="stat-text"><span class="mask stat-title"><span>bài hướng dẫn</span></span><span class="mask stat-note"><span>Quầy lễ tân Trợ lý SIMI</span></span></div></div>
+          <div class="stat"><span class="mask stat-value"><span>01</span></span><div class="stat-text"><span class="mask stat-title"><span>tài khoản cho mọi model</span></span><span class="mask stat-note"><span>SIMI Gateway</span></span></div></div>
+        </div>
+        <div class="stats-foot"><span class="stats-count"><b>01</b> / 04</span><span class="stats-bar"><i></i></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="vs">
+    <div class="wrap">
+      <div class="grid section-head">
+        <p class="label">04 — So với Codex gốc</p>
+        <h2 class="display up">Vẫn là Codex. <span class="tone">Bỏ đi phần khó dùng.</span></h2>
+        <p class="deck fade">Bên dưới vẫn là Codex với các kỹ năng SIMI. Văn Phòng AI lo giao diện, quyền, cập nhật và chuyện người với người.</p>
+      </div>
+      <div class="vs-table">
+        <div class="vs-row head"><span class="k"></span><span class="old">Codex gốc</span><span class="new">Văn Phòng AI</span></div>
+        <div class="vs-row fade"><span class="k">Cài đặt</span><span class="old">Mỗi người tự cài, tự cấu hình key</span><span class="new">Cài một file, tự nối SIMI Gateway</span></div>
+        <div class="vs-row fade"><span class="k">Cách dùng</span><span class="old">Gõ lệnh trên nền đen</span><span class="new">Nút bấm, kỹ năng bằng phím /</span></div>
+        <div class="vs-row fade"><span class="k">Kết quả</span><span class="old">Chữ chạy trong terminal</span><span class="new">Bảng hiện rõ, lưu thành file trong Khay kết quả</span></div>
+        <div class="vs-row fade"><span class="k">Quyền</span><span class="old">Dễ chạy lệnh ngoài ý muốn</span><span class="new">Hỏi rõ ràng trước khi đụng vào máy</span></div>
+        <div class="vs-row fade"><span class="k">Làm chung</span><span class="old">Mỗi người một cửa sổ</span><span class="new">Cả đội AI làm chung, cả công ty gặp nhau trong Sảnh</span></div>
+        <div class="vs-row fade"><span class="k">Cập nhật</span><span class="old">Tự tải bản mới bằng tay</span><span class="new">App tự tải, chỉ cần bấm Cập nhật ngay</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="dl" id="tai-ve">
+    <div class="wrap">
+      <div class="grid section-head">
+        <p class="label">05 — Tải về</p>
+        <h2 class="display up">Cài trong <span class="tone">vài phút.</span></h2>
+        <p class="deck fade">Cài một lần. Từ lần sau app tự tải bản mới, đoạn chat và cài đặt được giữ nguyên.</p>
+        <div class="os-tabs" role="tablist" aria-label="Hệ điều hành" id="seg"></div>
+      </div>
+      <div class="grid dl-body">
+        <div class="dl-main" id="dlBody"></div>
+        <div class="dl-steps"><p class="label">Các bước</p><ol id="steps"></ol></div>
+        <p class="dl-note">Cần SIMI đã cài trên máy. Chưa có thì nhờ IT cài giúp.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="news" id="moi">
+    <div class="wrap">
+      <div class="grid section-head">
+        <p class="label">06 — Có gì mới ở 0.9.14</p>
+        <h2 class="display up">Bản mới, <span class="tone">máy cũ tự nhận.</span></h2>
+        <p class="deck fade">Máy đang dùng bản cũ tự tải sẵn và hiện nút Cập nhật ngay.</p>
+      </div>
+      <ul class="values">
+        <li class="fade"><span>01</span><h4>Bida hai người</h4><p>Mời, vào bàn, đánh; ai cũng xem được; có bảng xếp hạng.</p></li>
+        <li class="fade"><span>02</span><h4>Sảnh rộng gấp đôi</h4><p>Khu Game, sân vườn; thu gọn khung chat để nhìn rộng hơn.</p></li>
+        <li class="fade"><span>03</span><h4>Trợ lý biết nói</h4><p>Đọc to từng bước hướng dẫn; nút Trợ lý và phím F1 đưa bạn tới quầy.</p></li>
+        <li class="fade"><span>04</span><h4>Trạng thái tự đặt</h4><p>Tập trung, đang họp, đi ăn; tắt âm khi cần yên.</p></li>
+        <li class="fade"><span>05</span><h4>Mac chip Intel</h4><p>Bên cạnh Mac chip Apple, Windows và Ubuntu.</p></li>
+        <li class="fade"><span>06</span><h4>Quản trị gọn hơn</h4><p>Hỏi thử Trợ lý, nhật ký câu hỏi, danh sách được tải app.</p></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="final" id="final">
+    <div class="wrap">
+      <p class="label">Văn Phòng AI · bản @@VER@@</p>
+      <h2 class="up">Codex, <span class="tone">nhưng có</span><br>văn phòng.</h2>
+      <div class="actions"><a class="btn light" href="#tai-ve">Tải app</a><a class="link" href="#video">Xem lại video</a></div>
+      <div class="foot"><span class="brands">UNIQ · CRÉNOT · SIMI</span><span>Trang nội bộ SIMIGO</span></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="mail" hidden role="dialog" aria-modal="true" aria-labelledby="mailTitle">
+  <div class="modal-back" data-close></div>
+  <div class="modal-card">
+    <button class="modal-x" type="button" data-close>Đóng</button>
+    <div><p class="label">Tải Văn Phòng AI</p><h3 id="mailTitle">Email công ty</h3><p class="what" id="mailWhat"></p></div>
+    <form id="mailForm" novalidate>
+      <div class="field"><label for="mailInput">Email</label><input id="mailInput" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required></div>
+      <p class="err" id="mailErr" role="alert" aria-live="polite"></p>
+      <div class="actions"><button class="btn" type="submit"><span>Tải về</span></button><button class="link" type="button" data-close>Để sau</button></div>
+    </form>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>window.__VP = @@DATA@@;</script>
+<script>
+const VP = window.__VP || {}; const FILES = VP.files || {};
+const GW = '/install/vanphong/latest/';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => [...document.querySelectorAll(s)];
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+function toast(t) { const n = $('#toast'); n.textContent = t; n.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => n.classList.remove('on'), 3200); }
+
+// ---------- ai đang tải ----------
+function paintWho() { $('#who').hidden = !VP.email; $('#whoMail').textContent = VP.email || ''; }
+$('#logout').addEventListener('click', async () => { try { await fetch('/install/vanphong/logout', { method: 'POST' }); } catch { /* mạng */ } VP.email = ''; paintWho(); toast('Đã thoát'); });
+
+// ---------- bấm tải mới hỏi email ----------
+let pending = null;
+function startDownload(kind, label) {
+  if (VP.email) { toast('Đang tải ' + label + '…'); location.href = GW + kind; return; }
+  pending = { kind, label };
+  $('#mailWhat').textContent = 'Nhập email công ty để tải bản ' + label + '.';
+  $('#mailErr').textContent = '';
+  $('#mail').hidden = false; document.body.style.overflow = 'hidden';
+  setTimeout(() => $('#mailInput').focus(), 80);
+}
+function closeMail() { $('#mail').hidden = true; document.body.style.overflow = ''; pending = null; }
+$('#mail').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeMail(); });
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#mail').hidden) closeMail(); });
+const MSG = { 403: 'Email này chưa được cấp quyền tải. Nhờ quản trị thêm giúp bạn.', 429: 'Bạn thử quá nhiều lần. Đợi 10 phút rồi thử lại.' };
+$('#mailForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = $('#mailInput').value.trim(); const err = $('#mailErr'); const btn = e.target.querySelector('button[type=submit]');
+  if (!email) { err.textContent = 'Nhập email công ty của bạn.'; return; }
+  btn.disabled = true; btn.firstElementChild.textContent = 'Đang kiểm tra…'; err.textContent = '';
+  try {
+    const r = await fetch('/install/vanphong/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
+    if (r.ok) { VP.email = email.toLowerCase(); paintWho(); const p = pending; closeMail(); if (p) startDownload(p.kind, p.label); }
+    else err.textContent = MSG[r.status] || 'Chưa kiểm tra được, thử lại sau ít phút.';
+  } catch { err.textContent = 'Không kết nối được. Kiểm tra mạng rồi thử lại.'; }
+  btn.disabled = false; btn.firstElementChild.textContent = 'Tải về';
+});
+document.addEventListener('click', (e) => { const a = e.target.closest('[data-dl]'); if (!a) return; e.preventDefault(); startDownload(a.dataset.dl, a.dataset.label || ''); });
+
+// ---------- bảng tải ----------
+const OS = {
+  windows: { label: 'Windows', req: 'Windows 10 / 11, 64-bit', main: { kind: 'win-setup' },
+    steps: [
+      { t: 'Bấm đúp file vừa tải', d: 'Làm theo vài bước, cài cho riêng mình là đủ. App có lối tắt ở Desktop và Start Menu.' },
+      { t: 'Gặp cảnh báo màu xanh thì bấm More info → Run anyway', d: 'App chưa có chữ ký số nên Windows cảnh báo lần đầu.' },
+      { t: 'Kết nối SIMI', d: 'Mở app, bấm Kết nối → SIMI Gateway. Máy đã cài SIMI thì app tự nhận.' },
+    ] },
+  mac: { label: 'macOS', req: 'macOS 11 trở lên',
+    chips: { apple: { name: 'Chip Apple', sub: 'M1–M4', label: 'Mac chip Apple', kind: 'mac-arm64' }, intel: { name: 'Chip Intel', sub: 'Core i5 · i7 · i9', label: 'Mac chip Intel', kind: 'mac-x64' } },
+    steps: [
+      { t: 'Giải nén và kéo vào Applications', d: 'Bấm đúp file zip, kéo VanPhongAI.app vào thư mục Applications.' },
+      { t: 'Cho phép app chạy', d: 'Mở Terminal và chạy 2 lệnh dưới đây (app chưa có chữ ký của Apple).', cmd: ['xattr -cr /Applications/VanPhongAI.app', 'codesign --force --deep --sign - /Applications/VanPhongAI.app'] },
+      { t: 'Mở app từ Applications', d: 'Lần sau app tự cập nhật, không cần chạy lại 2 lệnh trên.' },
+    ] },
+  linux: { label: 'Ubuntu', req: 'Ubuntu 22.04 / 24.04, 64-bit', main: { kind: 'linux-deb' }, alt: { kind: 'linux-appimage', label: 'Hoặc tải AppImage, chạy ngay không cần cài' },
+    steps: [
+      { t: 'Cài gói vừa tải', d: 'Mở Terminal ở thư mục chứa file rồi chạy:', cmd: ['sudo apt install ./VanPhongAI-*-linux-amd64.deb'] },
+      { t: 'Mở Văn Phòng AI', d: 'Bấm phím Super, gõ "Văn Phòng". Hoặc gõ vanphong-ai trong Terminal.' },
+      { t: 'Đăng nhập bằng Ubuntu on Xorg', d: 'Chọn ở màn hình đăng nhập để AI điều khiển được chuột, bàn phím.' },
+    ] },
+};
+const fill = (x) => { const f = FILES[x.kind]; if (f && f.name) { x.file = f.name; x.size = f.size ? '≈ ' + Math.max(1, Math.round(f.size / 1048576)) + ' MB' : ''; x.missing = false; } else x.missing = true; };
+fill(OS.windows.main); fill(OS.mac.chips.apple); fill(OS.mac.chips.intel); fill(OS.linux.main);
+const ua = navigator.userAgent || '';
+let cur = /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) && !/Android/i.test(ua) ? 'linux' : 'windows';
+let chip = (() => {
+  if (!/Macintosh|Mac OS X/.test(ua)) return 'apple';
+  try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+    return /Apple M|Apple GPU/i.test(r) ? 'apple' : /Intel|AMD|Radeon|NVIDIA/i.test(r) ? 'intel' : 'apple'; } catch { return 'apple'; }
+})();
+function render() {
+  const o = OS[cur]; const main = o.chips ? o.chips[chip] : o.main; const label = o.chips ? main.label : o.label;
+  $('#seg').innerHTML = Object.entries(OS).map(([k, x]) => `<button class="link" type="button" role="tab" aria-selected="${k === cur}" data-os="${k}">${x.label}</button>`).join('');
+  $('#dlBody').innerHTML =
+    `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` +
+    (o.chips ? `<div class="chips" role="radiogroup" aria-label="Loại chip của máy Mac">${Object.entries(o.chips).map(([k, c]) => `<button class="link" type="button" role="radio" aria-checked="${k === chip}" data-chip="${k}">${esc(c.name)}<small>${esc(c.sub)}</small></button>`).join('')}</div>` : '') +
+    (main.missing ? '' : `<div class="file"><span>${esc(main.file)}</span><span>${esc(main.size)}</span></div>`) +
+    `<div class="actions">${main.missing ? '<span class="btn" aria-disabled="true">Chưa có bản này</span>'
+      : `<a class="btn" href="${GW + main.kind}" data-dl="${main.kind}" data-label="${esc(label)}"><span>Tải bản ${esc(label)}</span></a>`}` +
+    (o.alt && FILES[o.alt.kind] ? `<a class="link" href="${GW + o.alt.kind}" data-dl="${o.alt.kind}" data-label="Ubuntu AppImage">${esc(o.alt.label)}</a>` : '') + `</div>` +
+    (o.chips ? '<p class="hint">Không chắc máy mình chip gì? Menu Apple → Giới thiệu máy Mac này: dòng "Chip" là Apple, dòng "Bộ xử lý" là Intel.</p>' : '');
+  $('#steps').innerHTML = o.steps.map((s) => `<li><div><b>${esc(s.t)}</b><p>${esc(s.d)}</p>${(s.cmd || []).map((c) => `<div class="cmd"><code>${esc(c)}</code><button type="button" data-copy="${esc(c)}">Chép</button></div>`).join('')}</div></li>`).join('');
+  const hd = $('#heroDl');
+  if (main.missing) { hd.removeAttribute('data-dl'); hd.setAttribute('href', '#tai-ve'); } else { hd.dataset.dl = main.kind; hd.dataset.label = label; hd.setAttribute('href', GW + main.kind); }
+  hd.firstElementChild.textContent = 'Tải cho ' + label;
+}
+document.addEventListener('click', async (e) => {
+  const os = e.target.closest('[data-os]'); if (os) { cur = os.dataset.os; render(); return; }
+  const ch = e.target.closest('[data-chip]'); if (ch) { chip = ch.dataset.chip; render(); return; }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent = 'Đã chép'; } catch { const r = document.createRange(); r.selectNodeContents(cp.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); cp.textContent = 'Đã chọn'; } setTimeout(() => (cp.textContent = 'Chép'), 1500); }
+});
+
+// ---------- video + chương ----------
+const CH = [[0, 'Mở đầu'], [5, 'Văn phòng'], [26, 'Khay kết quả'], [42, 'Chat'], [66, 'Sảnh 3D'], [85, 'Trợ lý SIMI'], [102, 'Hướng dẫn'], [117, 'Bida'], [138, 'Trạng thái'], [146, 'Quản trị']];
+const v = $('#film'), chs = $('#chapters');
+chs.innerHTML = CH.map(([t, n]) => `<button type="button" data-t="${t}"><b>${fmt(t)}</b><span>${n}</span></button>`).join('');
+const chBtns = [...chs.children];
+const seek = (t) => { try { v.currentTime = t; } catch { /* chưa tải */ } v.play().catch(() => {}); };
+chs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) seek(+b.dataset.t); });
+$$('.seek').forEach((b) => b.addEventListener('click', () => { $('#video').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); seek(+b.dataset.t); }));
+v.addEventListener('timeupdate', () => {
+  const t = v.currentTime; const end = v.duration || 159;
+  CH.forEach(([s], i) => { const e2 = i + 1 < CH.length ? CH[i + 1][0] : end; const p = t >= e2 ? 1 : t <= s ? 0 : (t - s) / (e2 - s); chBtns[i].style.setProperty('--cp', p.toFixed(3)); chBtns[i].classList.toggle('on', t >= s && t < e2); });
+});
+// tiếng tự bật: video có lời hướng dẫn nên phát kèm tiếng. Trình duyệt chặn phát có tiếng khi người xem chưa bấm gì
+// → phát không tiếng trước, chạm / bấm / gõ phím đầu tiên ở bất cứ đâu trên trang là bật tiếng. Ai tự tắt tiếng thì giữ nguyên.
+const snd = $('#sound');
+let userMuted = false, wantSound = true;
+const paintSnd = () => { snd.classList.toggle('on', !v.muted); snd.querySelector('span').textContent = v.muted ? 'Bật tiếng' : 'Tắt tiếng'; };
+function playWithSound() {
+  if (userMuted) return v.play().catch(() => {});
+  v.muted = false;
+  return v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+}
+const unlock = () => {
+  ['pointerdown', 'keydown', 'touchstart'].forEach((t) => removeEventListener(t, unlock, true));
+  if (userMuted || !wantSound) return;
+  v.muted = false; if (!v.paused || inView) v.play().catch(() => {}); paintSnd();
+};
+['pointerdown', 'keydown', 'touchstart'].forEach((t) => addEventListener(t, unlock, true));
+snd.addEventListener('click', () => { v.muted = !v.muted; userMuted = v.muted; if (!v.muted) v.play().catch(() => {}); paintSnd(); });
+v.addEventListener('volumechange', () => { if (document.activeElement === v) userMuted = v.muted; paintSnd(); });
+let inView = false;
+new IntersectionObserver((es) => es.forEach((e) => { inView = e.isIntersecting; if (inView) { if (!reduce || !v.paused) playWithSound(); } else v.pause(); }), { threshold: .3 }).observe(v);
+paintSnd();
+
+// ---------- chữ sáng dần theo cuộn ----------
+const say = $('#say');
+say.innerHTML = say.textContent.split(/(\s+)/).map((w) => (/^\s+$/.test(w) ? w : `<span class="w">${esc(w)}</span>`)).join('');
+const words = [...say.querySelectorAll('.w')];
+
+// ảnh chưa chép lên máy chủ (không nằm trong git) thì ẩn ô đó thay vì hiện ảnh vỡ
+$$('.tile img').forEach((i) => { const hide = () => { i.closest('.tile').hidden = true; }; if (i.complete && !i.naturalWidth && i.src) hide(); else i.addEventListener('error', hide); });
+
+// ---------- hiện dần khi cuộn tới ----------
+// chữ .up bị clip-path che kín nên IntersectionObserver không thấy nó: quan sát khung cha, tới nơi thì mở chữ bên trong
+const io = new IntersectionObserver((es) => es.forEach((e) => {
+  if (!e.isIntersecting) return;
+  const t = e.target; io.unobserve(t);
+  if (t.matches('.fade, .rise, .chap')) t.classList.add('in');
+  [...t.children].filter((c) => c.classList.contains('up')).forEach((c) => c.classList.add('in'));
+}), { threshold: .12, rootMargin: '0px 0px -8% 0px' });
+new Set([...$$('.fade, .rise, .chap'), ...$$('.up').map((el) => el.parentElement)]).forEach((el) => io.observe(el));
+
+// ---------- cuộn: thanh trên, video mở rộng, ảnh trôi, cảnh con số ghim ----------
+const nav = $('#nav'), filmWrap = $('#filmWrap'), drifts = $$('.drift'), stats = $('#stats');
+const slides = $$('.stat'), statBar = $('.stats-bar i'), statCount = $('.stats-count b');
+const darkSecs = [stats, $('#final')];
+const links = $$('.nav-links a'); const secs = links.map((a) => $(a.getAttribute('href')));
+let lastY = scrollY, ticking = false, shown = 0;
+function frame() {
+  ticking = false;
+  const y = scrollY, H = document.documentElement.scrollHeight - innerHeight;
+  nav.classList.toggle('compact', y > 40);
+  nav.classList.toggle('hide', y > 400 && y > lastY + 4 && $('#mail').hidden);
+  if (y < lastY - 4) nav.classList.remove('hide');
+  lastY = y;
+  nav.style.setProperty('--p', H > 0 ? (y / H).toFixed(4) : 0);
+  const navMid = 44;
+  nav.classList.toggle('dark', darkSecs.some((s) => { const r = s.getBoundingClientRect(); return r.top <= navMid && r.bottom >= navMid; }));
+  let curI = -1; secs.forEach((s, i) => { if (s && s.getBoundingClientRect().top < innerHeight * .4) curI = i; }); links.forEach((a, i) => a.classList.toggle('cur', i === curI));
+  // đoạn chữ sáng dần
+  const sr = say.getBoundingClientRect();
+  const sp = Math.min(1, Math.max(0, (innerHeight * .88 - sr.top) / (innerHeight * .88 - innerHeight * .58 + sr.height)));
+  const n = reduce ? words.length : Math.round(sp * words.length); words.forEach((w, i) => w.classList.toggle('on', i < n));
+  // cảnh con số
+  const st = stats.getBoundingClientRect(); const run = Math.max(1, st.height - innerHeight);
+  const p = Math.min(1, Math.max(0, -st.top / run));
+  statBar.style.transform = `scaleX(${p})`;
+  const idx = Math.min(slides.length - 1, Math.floor(p * slides.length * .999));
+  if (idx !== shown && !reduce) { slides.forEach((s, i) => { s.classList.toggle('on', i === idx); s.classList.toggle('gone', i < idx); }); shown = idx; statCount.textContent = String(idx + 1).padStart(2, '0'); }
+  if (reduce) return;
+  // video mở rộng khi cuộn tới
+  const fr = filmWrap.getBoundingClientRect();
+  const q = Math.min(1, Math.max(0, (innerHeight - fr.top) / (innerHeight * .75)));
+  filmWrap.style.setProperty('--ci', ((1 - q) * 7).toFixed(2) + '%');
+  filmWrap.style.setProperty('--vs', (1 + (1 - q) * .12).toFixed(3));
+  // ảnh trôi chậm hơn trang (2 độ sâu)
+  for (const img of drifts) { const r = img.getBoundingClientRect(); if (r.bottom < -200 || r.top > innerHeight + 200) continue; const c = (r.top + r.height / 2 - innerHeight / 2); img.style.transform = `translateY(${(-c * (+img.dataset.depth || .06)).toFixed(1)}px) scale(1.12)`; }
+}
+addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(frame); } }, { passive: true });
+addEventListener('resize', frame);
+
+paintWho(); render(); frame();
+requestAnimationFrame(() => requestAnimationFrame(() => $('#hero').classList.add('go')));
+</script>
+</body>
+</html>

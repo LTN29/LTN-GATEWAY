@@ -2,6 +2,7 @@
 // Danh tính luôn lấy từ API key đã xác thực (users.json) – không tin tên do client tự gửi.
 // Nội dung hỏi AI không bao giờ đi qua đây; tin nhắn giữa người với người không đưa vào memory.
 import { mkdir, readFile, writeFile, appendFile, rename } from "node:fs/promises";
+import { downloadAccess } from "./download-access.mjs";
 import { join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { sendJson, openAiError, readBody } from "./http.mjs";
@@ -712,7 +713,8 @@ class Lobby {
       perms: s.perms, mutes, kicks, cinemaLocked: !!s.cinemaLocked, pinned: s.pinned, npc: s.npc,
       npcCandidates: await npcCandidates().catch(() => []), npcGuides: this.npcStore.data.guides, npcNotes: this.npcStore.data.notes, npcKeysHint: "LOBBY_NPC_KEYS",
       npcLog: this.npcLog.recent(40).map(({ byId, ...x }) => x),
-      cinema: this.cinemaState(), games: this.games.list()
+      cinema: this.cinemaState(), games: this.games.list(),
+      download: await downloadAccess.init().then(() => downloadAccess.summary())
     };
   }
 
@@ -784,6 +786,22 @@ class Lobby {
       await this.npcStore.save(patch);
       this.broadcast("npc-guides", { updatedAt: this.npcStore.data.updatedAt });
       await this.settings.audit(me, "npc-guides", { guides: patch.guides === undefined ? undefined : patch.guides === null ? "mặc định" : patch.guides.length, notes: patch.notes !== undefined || undefined });
+    } else if (action === "dl-add" || action === "dl-set" || action === "dl-remove") {
+      // danh sách email được vào trang tải app (ai.simi.vn/install/vanphong)
+      await downloadAccess.init();
+      if (action === "dl-add") {
+        const r = await downloadAccess.add(body.emails, me.name);
+        result = { ok: true, ...r };
+        if (r.added || r.again) await this.settings.audit(me, "download-add", { added: r.added, again: r.again });
+      } else if (action === "dl-set") {
+        const r = await downloadAccess.set(body.email, body.on === true, me.name);
+        result = { ok: true, ...r };
+        await this.settings.audit(me, r.on ? "download-on" : "download-off", { email: r.email });
+      } else {
+        const r = await downloadAccess.remove(body.email);
+        result = { ok: true, ...r };
+        await this.settings.audit(me, "download-remove", { email: r.email });
+      }
     } else throw httpError(400, "action không hợp lệ");
     return result;
   }

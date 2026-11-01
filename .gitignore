@@ -43,3 +43,10 @@ data/device-updates*.json
 data/device-updates*.json.*
 data/lobby/
 data/releases/
+
+# Ảnh / video của trang tải app (/install/vanphong): không đưa lên git, chép tay lên máy chủ (docs/VANPHONG_APP.md)
+site/vanphong/*.mp4
+site/vanphong/*.webp
+site/vanphong/*.png
+site/vanphong/*.jpg
+site/vanphong/shots/
