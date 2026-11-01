@@ -11,7 +11,8 @@ import { Cinema } from "./lobby-cinema.mjs";
 import { LobbyFiles } from "./lobby-files.mjs";
 import { LobbySettings, PERMS, isAdmin, hhmm } from "./lobby-admin.mjs";
 import { LobbyCat } from "./lobby-cat.mjs";
-import { NpcStore, npcCandidates, askNpc, cleanGuides, npcConfig } from "./lobby-npc.mjs";
+import { NpcStore, NpcLog, npcCandidates, askNpc, cleanGuides, npcConfig } from "./lobby-npc.mjs";
+import { LobbyGames } from "./lobby-games.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -22,7 +23,7 @@ const MAX_IMAGES = 4;
 const MAX_MENTIONS = 20;
 const EVERYONE_PER_HOUR = 3;
 // tính năng Gateway có – app mới dựa vào đây để hiện nút (Gateway cũ thì ẩn, không lỗi)
-const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc"];
+const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
 const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands"]);
@@ -184,6 +185,14 @@ class Lobby {
     this.cat = new LobbyCat({ broadcast: (ev, data) => this.broadcast(ev, data) });
     this.asks = new Map(); // id -> { id, from, to, kind, style, exp } lời mời đang chờ trả lời
     this.npcStore = new NpcStore(); // hướng dẫn admin sửa thêm cho NPC
+    this.npcLog = new NpcLog();     // câu hỏi gần đây gửi Trợ lý (admin xem để cải thiện)
+    // bida 2 người: Gateway giữ lượt đi, app chạy vật lý
+    this.games = new LobbyGames({
+      sendTo: (id, ev, data) => this.sendTo(id, ev, data),
+      broadcast: (ev, data) => this.broadcast(ev, data),
+      nameOf: (id) => { const t = this.knownIdent(id); return t ? this.profileOf(t).name : "Đồng nghiệp"; },
+      canPlay: (id) => { const m = this.members.get(id); return !!(m && m.conns.size && !this.profileOf(m.ident).hidden); }
+    });
     this.watchRelease();
     this.rosterTimer = setInterval(() => this.sendRoster(), ROSTER_MS());
     this.rosterTimer.unref?.();
@@ -214,6 +223,8 @@ class Lobby {
     await this.files.init(lobbyConfig.dataDir);
     await this.settings.init(lobbyConfig.dataDir);
     await this.npcStore.init(lobbyConfig.dataDir);
+    await this.npcLog.init(lobbyConfig.dataDir);
+    await this.games.init(lobbyConfig.dataDir);
   }
 
   // NPC đang dùng tài khoản nào (tên + nhân vật + đã có key để hỏi AI chưa)
@@ -392,7 +403,7 @@ class Lobby {
     res.connectedAt = Date.now();
     m.conns.add(res);
     const others = [...this.members.keys()].filter((id) => id !== ident.id).map((id) => this.publicMember(id)).filter((x) => x && x.online);
-    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true, devices: this.devices(m) }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinemaState(), cat: this.cat.state, npc: npcInfo, features: FEATURES, ...this.personal(ident) })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true, devices: this.devices(m) }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinemaState(), cat: this.cat.state, npc: npcInfo, games: this.games.list(), features: FEATURES, ...this.personal(ident) })}\n\n`);
     if (!wasOnline) { this.broadcastMember(ident.id); jsonLog("lobby_join", { member: ident.id }); }
     else this.tellDevices(m, devBefore);
     const ping = setInterval(() => res.write(": ping\n\n"), PING_MS);
@@ -405,6 +416,7 @@ class Lobby {
       m.leaveTimer = setTimeout(() => {
         if (m.conns.size) return;
         this.broadcast("leave", { id: ident.id }, (x) => x.id !== ident.id);
+        this.games.memberLeft(ident.id);
         jsonLog("lobby_leave", { member: ident.id });
       }, LEAVE_GRACE_MS);
       m.leaveTimer.unref?.();
@@ -422,7 +434,7 @@ class Lobby {
     if (body.pos && Number.isFinite(body.pos.x) && Number.isFinite(body.pos.z)) {
       // seat: mã chỗ ngồi trong Sảnh (ghế quầy bar, bàn ăn, sofa…) – để người khác thấy mình đang ngồi
       const seat = typeof body.pos.seat === "string" && SEAT.test(body.pos.seat) ? body.pos.seat : null;
-      m.pos = { x: clamp(body.pos.x, -20, 20), z: clamp(body.pos.z, -20, 20), seat };
+      m.pos = { x: clamp(body.pos.x, -30, 30), z: clamp(body.pos.z, -30, 30), seat };
       if (!hidden) this.broadcast("move", { id: ident.id, ...m.pos }, (x) => x.id !== ident.id);
     }
     // nhảy liên tục tới khi tự dừng / đi chỗ khác (null = dừng)
@@ -447,6 +459,7 @@ class Lobby {
     if (body.hidden !== undefined) {
       const was = !!p.hidden; p.hidden = !!body.hidden;
       if (was !== p.hidden) this.broadcast(p.hidden ? "leave" : "member", p.hidden ? { id: ident.id } : this.publicMember(ident.id), (x) => x.id !== ident.id);
+      if (p.hidden) this.games.memberLeft(ident.id);
     }
     p.updatedAt = Date.now();
     await this.store.flush();
@@ -594,9 +607,13 @@ class Lobby {
     // hướng dẫn admin đã sửa thì dùng bản đó; chưa sửa thì dùng bản app gửi kèm (bản có sẵn trong app)
     const custom = this.npcStore.data.guides;
     const guideText = custom ? custom.map((g) => `## ${g.title}\n${g.steps.map((s2, i) => `${i + 1}. ${s2.text}`).join("\n")}`).join("\n\n") : cleanText(body.guide, 24_000);
-    const answer = await askNpc({ npcId: n.id, question, history: body.history, guideText, notes: this.npcStore.data.notes, askerName: this.profileOf(ident).name, selfUrl });
+    const t0 = Date.now(); const by = this.profileOf(ident).name;
+    let answer;
+    try { answer = await askNpc({ npcId: n.id, question, history: body.history, guideText, notes: this.npcStore.data.notes, askerName: by, selfUrl }); }
+    catch (e) { this.npcLog.add({ byId: ident.id, by, q: question.slice(0, 300), ok: false, err: String(e.message || e).slice(0, 240), ms: Date.now() - t0, test: !!body.test || undefined }); throw e; }
+    const entry = this.npcLog.add({ byId: ident.id, by, q: question.slice(0, 300), ok: true, a: answer.slice(0, 300), ms: Date.now() - t0, test: !!body.test || undefined });
     jsonLog("lobby_npc_ask", { member: ident.id, chars: question.length });
-    return { answer };
+    return { answer, id: entry.id };
   }
 
   // { to, kind[, style] } mời / làm ngay · { id, accept } trả lời lời mời
@@ -629,10 +646,31 @@ class Lobby {
     return { ok: true, asked: true, id: ask.id };
   }
 
+  // { action: invite|answer|cancel|shot|resign, ... }
+  async game(ident, body) {
+    const m = this.touch(ident);
+    const action = String(body.action || "");
+    if (action === "invite") {
+      if (!this.allow(m, "msg")) throw httpError(429, "Từ từ thôi 😄", "rate_limit_error");
+      if (this.profileOf(ident).hidden) throw httpError(403, "Đang ẩn thì không mời chơi được – bấm Hiện lại trước nhé", "permission_error");
+      const r = this.games.invite(ident.id, String(body.to || ""), String(body.kind || "pool"));
+      jsonLog("lobby_game_invite", { from: ident.id });
+      return r;
+    }
+    if (action === "answer") return this.games.answer(ident.id, body.id, !!body.accept);
+    if (action === "cancel") return this.games.cancel(ident.id, body.id);
+    if (action === "shot") {
+      if (!this.allow(m, "state")) throw httpError(429, "Gửi quá nhanh", "rate_limit_error");
+      return this.games.shot(ident.id, body);
+    }
+    if (action === "resign") return this.games.resign(ident.id, body.id);
+    throw httpError(400, "action phải là invite | answer | cancel | shot | resign");
+  }
+
   // phát cho cả Sảnh: a đi tới chỗ b rồi cả hai cùng diễn
   goInteract(a, b, kind, style) {
     const ma = this.members.get(a); const mb = this.members.get(b);
-    if (ma && mb && mb.pos) ma.pos = { x: clamp(mb.pos.x + 0.7, -20, 20), z: clamp(mb.pos.z + 0.3, -20, 20), seat: null };
+    if (ma && mb && mb.pos) ma.pos = { x: clamp(mb.pos.x + 0.7, -30, 30), z: clamp(mb.pos.z + 0.3, -30, 30), seat: null };
     if (kind === "dance") { for (const x of [ma, mb]) if (x) x.dance = style; }
     const ev = { state: "go", kind, style, a, b, aName: ma ? this.profileOf(ma.ident).name : "", bName: mb ? this.profileOf(mb.ident).name : "", at: Date.now() };
     this.broadcast("interact", ev);
@@ -656,7 +694,7 @@ class Lobby {
       const devs = new Map();
       for (const r of m.conns) devs.set(r.lobbyDevice, { version: r.appVersion || "", os: r.appOs || "", since: r.connectedAt });
       for (const d of devs.values()) { const v = d.version || "?"; versions[v] = (versions[v] || 0) + 1; }
-      online.push({ id, name: prof.name, teamId: m.ident.teamId, teamName: m.ident.teamName, hidden: prof.hidden, admin: isAdmin(m.ident), shared: m.ident.shared, devices: [...devs.values()], mutedUntil: this.settings.until("mutes", id) || null });
+      online.push({ id, name: prof.name, avatar: prof.avatar, teamId: m.ident.teamId, teamName: m.ident.teamName, hidden: prof.hidden, admin: isAdmin(m.ident), shared: m.ident.shared, devices: [...devs.values()], mutedUntil: this.settings.until("mutes", id) || null });
     }
     const people = new Map();
     for (const [id, p] of Object.entries(this.store.profiles)) if (p.ident) people.set(id, { id, name: p.ident.fixedName || p.nickname || id, teamId: p.ident.teamId, teamName: p.ident.teamName, shared: !!p.ident.shared });
@@ -673,7 +711,8 @@ class Lobby {
       permsDef: Object.fromEntries(Object.entries(PERMS).map(([k, v]) => [k, v])),
       perms: s.perms, mutes, kicks, cinemaLocked: !!s.cinemaLocked, pinned: s.pinned, npc: s.npc,
       npcCandidates: await npcCandidates().catch(() => []), npcGuides: this.npcStore.data.guides, npcNotes: this.npcStore.data.notes, npcKeysHint: "LOBBY_NPC_KEYS",
-      cinema: this.cinemaState()
+      npcLog: this.npcLog.recent(40).map(({ byId, ...x }) => x),
+      cinema: this.cinemaState(), games: this.games.list()
     };
   }
 
@@ -701,6 +740,7 @@ class Lobby {
       await this.settings.save();
       const m = this.members.get(t.id);
       if (m) for (const r of [...m.conns]) { r.write(`event: kicked\ndata: ${JSON.stringify({ until: this.settings.s.kicks[t.id] })}\n\n`); r.end(); }
+      this.games.memberLeft(t.id);
       await this.settings.audit(me, "kick", { target: t.id, targetName: t.name, minutes: min });
     } else if (action === "unkick") {
       const t = target(); delete this.settings.s.kicks[t.id]; await this.settings.save();
@@ -751,10 +791,10 @@ class Lobby {
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, Number(v) || 0));
 
-// mỗi người có chỗ đứng mặc định riêng (ổn định theo id) ở khoảng trống trước quầy SIMI BAR CHILL
+// mỗi người có chỗ đứng mặc định riêng (ổn định theo id) ở sân trước quầy lễ tân Trợ lý SIMI (lối vào Sảnh)
 function spawnPoint(id) {
   const h = createHash("sha1").update(id).digest();
-  return { x: Math.round(((h[0] / 255) * 10 - 7) * 10) / 10, z: Math.round(((h[1] / 255) * 8 - 6.5) * 10) / 10, seat: null };
+  return { x: Math.round(((h[0] / 255) * 8 + 8) * 10) / 10, z: Math.round(((h[1] / 255) * 3.5 + 13) * 10) / 10, seat: null };
 }
 
 let lobby = null;
@@ -762,7 +802,13 @@ export function getLobby() { return lobby || (lobby = new Lobby()); }
 
 export function isLobbyPath(pathname) { return pathname.startsWith("/v1/lobby/"); }
 
+// Sảnh đi qua Cloudflare: lỗi 502 / 504 từ máy chủ bị Cloudflare thay bằng trang HTML của nó → app mất thông báo thật. Đổi sang 503.
 export async function handleLobby(req, res, principal, url) {
+  try { return await routeLobby(req, res, principal, url); }
+  catch (e) { if (e && (e.statusCode === 502 || e.statusCode === 504)) e.statusCode = 503; throw e; }
+}
+
+async function routeLobby(req, res, principal, url) {
   if (!lobbyConfig.enabled) { sendJson(res, 404, openAiError("Sảnh đang tắt", "not_found_error")); return; }
   const L = getLobby();
   await L.init();
@@ -778,7 +824,7 @@ export async function handleLobby(req, res, principal, url) {
     case "GET /v1/lobby/members": {
       L.touch(ident);
       const members = [...L.members.keys()].map((id) => L.publicMember(id)).filter((x) => x && x.online && x.id !== ident.id);
-      return sendJson(res, 200, { me: L.publicMember(ident.id), members, rooms: L.roomsFor(ident), features: FEATURES, cinema: L.cinemaState(), cat: L.cat.state, npc: await L.npcPublic().catch(() => null), ...L.personal(ident) });
+      return sendJson(res, 200, { me: L.publicMember(ident.id), members, rooms: L.roomsFor(ident), features: FEATURES, cinema: L.cinemaState(), cat: L.cat.state, npc: await L.npcPublic().catch(() => null), games: L.games.list(), ...L.personal(ident) });
     }
     case "GET /v1/lobby/messages": return sendJson(res, 200, await L.messages(ident, url));
     case "POST /v1/lobby/messages": return sendJson(res, 201, await L.send(ident, await json()));
@@ -796,7 +842,14 @@ export async function handleLobby(req, res, principal, url) {
     case "GET /v1/lobby/cinema": L.touch(ident); return sendJson(res, 200, L.cinemaState());
     case "POST /v1/lobby/cat": return sendJson(res, 200, await L.catAction(ident, await json()));
     case "POST /v1/lobby/interact": return sendJson(res, 200, await L.interact(ident, await json()));
+    case "GET /v1/lobby/games": L.touch(ident); return sendJson(res, 200, { games: L.games.list(), top: L.games.top(10), me: L.games.statOf(ident.id) });
+    case "POST /v1/lobby/game": return sendJson(res, 200, await L.game(ident, await json()));
     case "GET /v1/lobby/npc": L.touch(ident); return sendJson(res, 200, { npc: await L.npcPublic(), guides: L.npcStore.data.guides, updatedAt: L.npcStore.data.updatedAt });
+    case "POST /v1/lobby/npc/feedback": {
+      const b = await json();
+      if (!L.npcLog.rate(String(b.id || ""), ident.id, !!b.good)) throw httpError(404, "Không tìm thấy câu trả lời này", "not_found_error");
+      return sendJson(res, 200, { ok: true });
+    }
     case "POST /v1/lobby/npc/ask": {
       const local = String(req.socket.localAddress || "127.0.0.1").replace(/^::ffff:/, "");
       const host = local === "::" || local === "0.0.0.0" || local === "::1" ? "127.0.0.1" : local.includes(":") ? `[${local}]` : local;

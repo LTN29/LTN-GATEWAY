@@ -60,14 +60,20 @@ test("Sảnh: NPC Trợ lý – admin chọn tài khoản, hỏi AI bằng key c
   const keys = { ltn: "key-ltn", ngoc: "key-ngoc", bot: "key-bot-secret", other: "key-other-bot" };
   // AI giả: ghi lại yêu cầu, trả lời kèm vài chữ của hướng dẫn để kiểm tra
   const seen = [];
+  let upFail = false;
   const up = http.createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
     const body = raw ? JSON.parse(raw) : {};
     seen.push({ url: req.url, auth: req.headers.authorization, body });
     if (req.url === "/v1/models") { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ object: "list", data: [{ id: "SIMI-GPT", owned_by: "combo" }, { id: "SIMI-FREE", owned_by: "combo" }] })); }
     if (req.url === "/v1/responses") {
-      res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify({ id: "r1", object: "response", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "1. Bấm 🖼️ để gửi ảnh." }] }] }));
+      // giống combo Codex thật: chỉ nhận stream = true, trả SSE
+      if (body.stream !== true) { res.writeHead(400, { "content-type": "application/json" }); return res.end(JSON.stringify({ detail: "Stream must be set to true" })); }
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      if (upFail) return res.end(`event: response.failed\ndata: ${JSON.stringify({ type: "response.failed", response: { error: { message: "Tài khoản đã hết hạn mức hôm nay" } } })}\n\n`);
+      const ev = (o) => `event: ${o.type}\ndata: ${JSON.stringify(o)}\n\n`;
+      return res.end(ev({ type: "response.created", response: { id: "r1" } }) + ev({ type: "response.output_text.delta", delta: "1. Bấm 🖼️ " }) + ev({ type: "response.output_text.delta", delta: "để gửi ảnh." })
+        + ev({ type: "response.completed", response: { id: "r1", status: "completed", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "1. Bấm 🖼️ để gửi ảnh." }] }] } }));
     }
     res.writeHead(404); res.end("{}");
   });
@@ -82,7 +88,7 @@ test("Sảnh: NPC Trợ lý – admin chọn tài khoản, hỏi AI bằng key c
   Object.assign(process.env, {
     TEAMS_FILE: join(root, "teams.json"), LTN_USERS_CONFIG_FILE: join(root, "users.json"), MEMORY_DIR: join(root, "memory"),
     LOBBY_DATA_DIR: join(root, "lobby"), LOBBY_CINEMA_LOOKUP: "false", UPSTREAM_BASE_URL: `http://127.0.0.1:${upPort}`,
-    LOBBY_ADMINS: "it-ltn", LOBBY_NPC_KEYS: keys.bot, LOBBY_NPC_PER_HOUR: "2",
+    LOBBY_ADMINS: "it-ltn", LOBBY_NPC_KEYS: keys.bot, LOBBY_NPC_PER_HOUR: "3",
     CODEX_COMBO_PREMIUM: "SIMI-GPT", CODEX_COMBO_FREE: "SIMI-FREE", CODEX_DEFAULT_POLICY: "limited_daily", CODEX_DEFAULT_PREMIUM_LIMIT: "50",
     CODEX_USAGE_FILE: join(root, "codex-usage.json"), CODEX_USAGE_TIMEZONE: "Asia/Ho_Chi_Minh"
   });
@@ -112,12 +118,22 @@ test("Sảnh: NPC Trợ lý – admin chọn tài khoản, hỏi AI bằng key c
 
     const r1 = await (await post("ngoc", "npc/ask", { question: "Gửi ảnh trong Sảnh sao?", guide: "## Gửi ảnh\n1. Bấm nút 🖼️", history: [{ role: "user", text: "chào" }, { role: "assistant", text: "Chào bạn!" }] })).json();
     assert.equal(r1.answer, "1. Bấm 🖼️ để gửi ảnh.");
+    assert.ok(r1.id, "câu trả lời có mã để chấm 👍 / 👎");
+    assert.equal((await post("ltn", "npc/feedback", { id: r1.id, good: false })).status, 404, "chỉ người hỏi chấm được");
+    assert.equal((await post("ngoc", "npc/feedback", { id: r1.id, good: false })).status, 200);
     const call = seen.find((x) => x.url === "/v1/responses");
     assert.equal(call.auth, `Bearer ${keys.bot}`, "gọi AI bằng key của tài khoản NPC (tính vào hạn mức tài khoản đó)");
     assert.match(call.body.instructions, /Bấm nút 🖼️/, "kèm hướng dẫn app làm nguồn trả lời");
     assert.match(call.body.instructions, /Người đang hỏi: Ngọc/);
     assert.equal(call.body.input.length, 3, "kèm vài câu trước để hiểu ngữ cảnh");
     assert.ok(["SIMI-GPT", "SIMI-FREE"].includes(call.body.model), "đi qua định tuyến Combo của Gateway");
+    assert.equal(call.body.stream, true, "gọi dạng stream như tab Chat (combo Codex chỉ nhận stream)");
+    // AI báo lỗi → app nhận đúng lý do, mã 503 (không phải 502 – Cloudflare sẽ thay 502 bằng trang HTML)
+    upFail = true;
+    const rf = await post("ngoc", "npc/ask", { question: "Lỗi?" });
+    assert.equal(rf.status, 503);
+    assert.match((await rf.json()).error.message, /hết hạn mức hôm nay/);
+    upFail = false;
 
     // admin sửa hướng dẫn + ghi chú
     assert.equal((await post("ltn", "admin", { action: "npc-guides", guides: [{ title: "", steps: [] }] })).status, 400);
@@ -130,6 +146,12 @@ test("Sảnh: NPC Trợ lý – admin chọn tài khoản, hỏi AI bằng key c
     const call2 = seen.filter((x) => x.url === "/v1/responses").at(-1);
     assert.match(call2.body.instructions, /Xin nghỉ phép/); assert.doesNotMatch(call2.body.instructions, /bản trong app/, "đã sửa thì dùng hướng dẫn của admin");
     assert.match(call2.body.instructions, /nhóm Zalo IT/, "kèm ghi chú của admin");
+    const ov2 = await (await fetch(`${base}/admin`, { headers: auth("ltn") })).json();
+    const okItem = ov2.npcLog.find((x) => x.q === "Gửi ảnh trong Sảnh sao?");
+    assert.ok(okItem.ok && okItem.fb === -1 && okItem.by === "Ngọc" && okItem.a.includes("gửi ảnh"), "admin thấy câu hỏi, câu trả lời và bị chấm 👎");
+    const errItem = ov2.npcLog.find((x) => x.q === "Lỗi?");
+    assert.ok(errItem && !errItem.ok && /hết hạn mức/.test(errItem.err), "admin thấy câu hỏi bị lỗi kèm lý do");
+    assert.equal(ov2.npcLog[0].byId, undefined, "không gửi mã tài khoản người hỏi ra ngoài");
     const r3 = await post("ngoc", "npc/ask", { question: "Câu thứ 3" });
     assert.equal(r3.status, 429, "giới hạn số câu hỏi mỗi giờ");
     const audit = (await readFile(join(root, "lobby", "admin-audit.jsonl"), "utf8"));
@@ -139,4 +161,14 @@ test("Sảnh: NPC Trợ lý – admin chọn tài khoản, hỏi AI bằng key c
     streams.forEach((s) => s.close());
     await new Promise((r) => server.close(r)); up.close();
   }
+});
+
+test("đọc câu trả lời AI: SSE, JSON, lỗi, trang HTML", async () => {
+  const { parseResponsesBody } = await import("../src/lobby-npc.mjs");
+  const sseText = 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Xin "}\n\nevent: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"chào"}\n\n';
+  assert.deepEqual(parseResponsesBody(sseText), { text: "Xin chào", error: null });
+  assert.equal(parseResponsesBody(JSON.stringify({ output: [{ type: "message", content: [{ type: "output_text", text: "OK" }] }] })).text, "OK");
+  assert.equal(parseResponsesBody(JSON.stringify({ error: { message: "Sai model" } })).error, "Sai model");
+  assert.match(parseResponsesBody("<!DOCTYPE html><html>").error, /HTML/);
+  assert.equal(parseResponsesBody('data: {"type":"error","message":"quá tải"}\n\n').error, "quá tải");
 });

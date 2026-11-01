@@ -53,6 +53,13 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
     assert.equal((await fetch(base + "/..%2F..%2Fpackage.json")).status, 404);
     assert.equal((await fetch(base + "/VanPhongAI-0.8.0-Setup.exe")).status, 404, "file không có trong latest.json");
     assert.equal((await fetch(base + "/latest.json", { method: "POST" })).status, 405);
+    // link cố định "bản mới nhất" (trang tải dùng) → chuyển tới đúng file đang phát hành
+    const alias = await fetch(base + "/latest/win-setup", { redirect: "manual" });
+    assert.equal(alias.status, 302);
+    assert.equal(alias.headers.get("location"), "/install/vanphong/VanPhongAI-0.9.0-Setup.exe");
+    assert.equal(Buffer.from(await (await fetch(base + "/latest/win-setup")).arrayBuffer()).equals(setup), true);
+    assert.equal((await fetch(base + "/latest/mac-x64", { redirect: "manual" })).status, 404, "chưa có bản cho hệ này");
+    assert.equal((await fetch(base + "/latest/..%2Fx", { redirect: "manual" })).status, 404);
   } finally {
     await new Promise((r) => server.close(r));
     delete process.env.VANPHONG_RELEASE_DIR;

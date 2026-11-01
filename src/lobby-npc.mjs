@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadUsers } from "./config.mjs";
+import { jsonLog } from "./utils.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const httpError = (status, message, type = "invalid_request_error") => Object.assign(new Error(message), { statusCode: status, type });
@@ -14,7 +15,7 @@ const httpError = (status, message, type = "invalid_request_error") => Object.as
 export const npcConfig = {
   get perHour() { return Math.max(1, Number(process.env.LOBBY_NPC_PER_HOUR || 30)); },
   get model() { return process.env.LOBBY_NPC_MODEL || "auto"; },
-  get timeoutMs() { return Math.max(5000, Number(process.env.LOBBY_NPC_TIMEOUT_MS || 90_000)); }
+  get timeoutMs() { return Math.max(5000, Number(process.env.LOBBY_NPC_TIMEOUT_MS || 80_000)); } // dưới 100 giây của Cloudflare
 };
 
 // keyHash → key thật (chỉ trong bộ nhớ, không ghi ra đĩa / log)
@@ -59,6 +60,39 @@ export class NpcStore {
   }
 }
 
+// nhật ký hỏi Trợ lý (60 câu gần nhất): admin xem câu nào trả lời được / lỗi / bị chấm 👎 để bổ sung ghi chú, hướng dẫn.
+// Chỉ lưu câu hỏi + 300 chữ đầu câu trả lời; không lưu key, không lưu lịch sử hội thoại.
+export class NpcLog {
+  constructor() { this.dir = null; this.items = []; this.timer = null; }
+  async init(dir) {
+    if (this.dir === dir) return;
+    this.dir = dir;
+    try { const d = JSON.parse(await readFile(join(dir, "npc-log.json"), "utf8")); this.items = Array.isArray(d.items) ? d.items.slice(-60) : []; } catch (e) { if (e.code !== "ENOENT") throw e; }
+  }
+  add(entry) {
+    const it = { id: createHash("sha1").update(`${Date.now()}:${Math.random()}`).digest("hex").slice(0, 16), ts: Date.now(), ...entry };
+    this.items.push(it); if (this.items.length > 60) this.items.splice(0, this.items.length - 60);
+    this.later();
+    return it;
+  }
+  rate(id, byId, good) {
+    const it = this.items.find((x) => x.id === id && x.byId === byId);
+    if (!it) return false;
+    it.fb = good ? 1 : -1; this.later();
+    return true;
+  }
+  later() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush().catch(() => {}), 1500); this.timer.unref?.();
+  }
+  async flush() {
+    if (!this.dir) return;
+    const p = join(this.dir, "npc-log.json"); const tmp = `${p}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify({ items: this.items })); await rename(tmp, p);
+  }
+  recent(n = 40) { return this.items.slice(-n).reverse(); }
+}
+
 // kiểm tra nội dung hướng dẫn admin gửi lên: [{ id, icon, title, steps: [{ text, target?, view? }] }]
 export function cleanGuides(list) {
   if (list === null) return null;
@@ -68,12 +102,33 @@ export function cleanGuides(list) {
     const steps = (Array.isArray(g.steps) ? g.steps : []).slice(0, 30).map((s) => ({
       text: t(typeof s === "string" ? s : s.text, 600),
       ...(s && s.target && /^[#.\w\-\[\]="' :>()]{1,120}$/.test(String(s.target)) ? { target: String(s.target) } : {}),
-      ...(s && ["office", "chat", "lobby", "admin"].includes(s.view) ? { view: s.view } : {})
+      ...(s && ["office", "chat", "lobby", "admin"].includes(s.view) ? { view: s.view } : {}),
+      ...(s && ["npc", "bar", "dance", "cinema", "game", "garden"].includes(s.place) ? { place: s.place } : {})
     })).filter((s) => s.text);
     if (!t(g.title, 80) || !steps.length) throw httpError(400, `Hướng dẫn số ${i + 1} cần tiêu đề và ít nhất 1 bước`);
     return { id: t(g.id, 40).replace(/[^\w-]/g, "") || `g${i + 1}`, icon: t(g.icon, 4) || "📘", title: t(g.title, 80), steps };
   });
 }
+
+// LOBBY_NPC_MODEL=auto: hỏi Gateway tài khoản NPC được dùng model nào (/v1/models – chế độ "combo_members" chỉ nhận
+// đúng model trong Combo, gửi "auto" sẽ bị từ chối) rồi chọn model nhanh / rẻ trước. Nhớ 10 phút.
+const modelCache = new Map(); // key → { list: [model ưu tiên trước], at }
+async function modelList(selfUrl, key, clientId, fresh) {
+  if (npcConfig.model !== "auto") return [npcConfig.model];
+  const c = modelCache.get(key);
+  if (c && !fresh && Date.now() - c.at < 600_000) return c.list;
+  let ids = [];
+  try {
+    const r = await fetch(`${selfUrl}/v1/models`, { headers: { authorization: `Bearer ${key}`, "x-ltn-client-id": clientId }, signal: AbortSignal.timeout(15_000) });
+    ids = r.ok ? ((await r.json()).data || []).map((m) => m && m.id).filter((x) => typeof x === "string") : [];
+  } catch { /* để "auto": Gateway tự chọn Combo nếu không bật chọn model */ }
+  const fast = (id) => (/mini|flash|haiku|nano|lite|fast/i.test(id) ? 0 : 1);
+  const list = ids.length ? ids.map((id, i) => [id, i]).sort((a, b) => fast(a[0]) - fast(b[0]) || a[1] - b[1]).map((x) => x[0]) : ["auto"];
+  modelCache.set(key, { list, at: Date.now() });
+  return list;
+}
+// model vừa trả lời được thì lần sau thử trước
+function rememberModel(key, model) { const c = modelCache.get(key); if (c && c.list[0] !== model) c.list = [model, ...c.list.filter((m) => m !== model)]; }
 
 // hỏi AI: đi vòng qua chính Gateway (/v1/responses) bằng key của tài khoản NPC
 export async function askNpc({ npcId, question, history, guideText, notes, askerName, selfUrl }) {
@@ -98,20 +153,65 @@ export async function askNpc({ npcId, question, history, guideText, notes, asker
   input.push({ role: "user", content: [{ type: "input_text", text: question }] });
   const cid = sha(`npc:${npcId}`); // mã máy cố định cho NPC (định tuyến / hạn mức theo máy)
   const clientId = `${cid.slice(0, 8)}-${cid.slice(8, 12)}-4${cid.slice(13, 16)}-8${cid.slice(17, 20)}-${cid.slice(20, 32)}`;
+  // Gọi dạng stream (giống tab Chat của app): các combo Codex phía sau chỉ nhận stream = true.
+  // Lỗi trả về mã 503 (không dùng 502/504: Cloudflare thay trang lỗi đó bằng trang HTML của nó, app mất thông báo thật).
   const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), npcConfig.timeoutMs);
-  let res;
-  try {
+  let res, raw = "";
+  const call = async (model) => {
     res = await fetch(`${selfUrl}/v1/responses`, {
       method: "POST", signal: ac.signal,
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-ltn-client-id": clientId },
-      body: JSON.stringify({ model: npcConfig.model, instructions, input, stream: false, store: false })
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "text/event-stream", "x-ltn-client-id": clientId },
+      body: JSON.stringify({ model, instructions, input, stream: true, store: false })
     });
+    raw = await res.text();
+  };
+  try {
+    // combo_members: tài khoản chỉ được dùng model trong Combo đang tới lượt → model nào bị từ chối (403) thì thử model kế tiếp
+    let list = await modelList(selfUrl, key, clientId);
+    for (let i = 0, refreshed = false; i < Math.min(list.length, 4); i++) {
+      await call(list[i]);
+      if (res.status !== 403 || npcConfig.model !== "auto") { if (res.ok) rememberModel(key, list[i]); break; }
+      if (i === Math.min(list.length, 4) - 1 && !refreshed) { refreshed = true; list = await modelList(selfUrl, key, clientId, true); i = -1; }
+    }
   } catch (e) {
-    throw httpError(504, e.name === "AbortError" ? "Trợ lý suy nghĩ lâu quá – hỏi lại ngắn hơn nhé" : "Không gọi được AI cho Trợ lý", "server_error");
+    jsonLog("lobby_npc_error", { npc: npcId, stage: "fetch", error: e.name === "AbortError" ? "timeout" : String(e.message || e).slice(0, 200) });
+    throw httpError(503, e.name === "AbortError" ? "Trợ lý suy nghĩ lâu quá – hỏi lại ngắn hơn nhé" : "Không gọi được AI cho Trợ lý – báo admin kiểm tra Gateway", "server_error");
   } finally { clearTimeout(timer); }
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw httpError(res.status === 429 ? 429 : 502, `Trợ lý chưa trả lời được: ${(data && data.error && data.error.message) || res.status}`, res.status === 429 ? "rate_limit_error" : "server_error");
-  const text = (data && data.output_text) || (data && Array.isArray(data.output) ? data.output.flatMap((o) => (o.type === "message" ? o.content || [] : [])).filter((c) => c.type === "output_text").map((c) => c.text).join("\n") : "");
-  if (!text.trim()) throw httpError(502, "Trợ lý chưa trả lời được – thử lại nhé", "server_error");
+  const { text, error } = parseResponsesBody(raw);
+  if (!res.ok || error) {
+    const detail = error || `mã ${res.status}`;
+    jsonLog("lobby_npc_error", { npc: npcId, stage: "upstream", status: res.status, error: String(detail).slice(0, 300) });
+    throw httpError(res.status === 429 ? 429 : 503, `Trợ lý chưa trả lời được: ${String(detail).slice(0, 300)}`, res.status === 429 ? "rate_limit_error" : "server_error");
+  }
+  if (!text.trim()) {
+    jsonLog("lobby_npc_error", { npc: npcId, stage: "empty", status: res.status, sample: raw.slice(0, 200) });
+    throw httpError(503, "Trợ lý chưa trả lời được – thử lại nhé", "server_error");
+  }
   return text.trim().slice(0, 8000);
+}
+
+// đọc câu trả lời /v1/responses: SSE (response.output_text.delta / response.completed / error) hoặc JSON thường
+export function parseResponsesBody(raw) {
+  const body = String(raw || "");
+  const fromJson = (d) => {
+    if (!d || typeof d !== "object") return { text: "", error: null };
+    if (d.error) return { text: "", error: d.error.message || (typeof d.error === "string" ? d.error : JSON.stringify(d.error)) };
+    const r = d.response || d;
+    const text = r.output_text || (Array.isArray(r.output) ? r.output.flatMap((o) => (o.type === "message" ? o.content || [] : [])).filter((c) => c.type === "output_text").map((c) => c.text).join("\n") : "");
+    return { text: text || "", error: null };
+  };
+  const t = body.trimStart();
+  if (t.startsWith("{")) { try { return fromJson(JSON.parse(t)); } catch { /* không phải JSON */ } }
+  if (/^\s*</.test(t)) return { text: "", error: "máy chủ AI trả về trang HTML thay vì câu trả lời" };
+  let deltas = "", done = "", error = null;
+  for (const block of body.split(/\r?\n\r?\n/)) {
+    const data = block.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
+    if (!data || data === "[DONE]") continue;
+    let ev; try { ev = JSON.parse(data); } catch { continue; }
+    if (ev.type === "response.output_text.delta" && typeof ev.delta === "string") deltas += ev.delta;
+    else if (ev.type === "response.output_text.done" && typeof ev.text === "string") done += (done ? "\n" : "") + ev.text;
+    else if (ev.type === "response.completed") { const r = fromJson(ev); if (r.text) done = r.text; }
+    else if (ev.type === "response.failed" || ev.type === "error") error = (ev.response && ev.response.error && ev.response.error.message) || (ev.error && ev.error.message) || ev.message || "AI báo lỗi";
+  }
+  return { text: done || deltas, error: done || deltas ? null : error };
 }

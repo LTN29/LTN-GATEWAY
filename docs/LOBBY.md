@@ -18,6 +18,9 @@ App tự kết nối bằng chính key đã cài qua bộ cài SIMI, không cầ
 | `GET /v1/lobby/file?id=…[&thumb=1]` | Tải ảnh – chỉ người xem được phòng chứa ảnh. |
 | `POST /v1/lobby/cat` | `{ action: pet \| feed \| play \| call }` – chơi với mèo của quán; phát sự kiện `cat` (mọi máy thấy cùng một con mèo). |
 | `POST /v1/lobby/interact` | `{ to, kind: highfive \| cheers \| coffee \| hug \| dance[, style] }`; `hug` / `dance` gửi lời mời (`interact` state `ask`) – người nhận trả lời `{ id, accept }`. Diễn: `interact` state `go` cho cả Sảnh. |
+| `POST /v1/lobby/game` | Bida 2 người: `{ action: "invite", to }` · `{ action: "answer", id, accept }` · `{ action: "cancel", id }` · `{ action: "shot", id, seq, shot, result }` · `{ action: "resign", id }`. Sự kiện `game` (type `invite` / `declined` / `expired` / `cancelled` / `start` / `shot` / `over`). |
+| `GET /v1/lobby/games` | Các ván đang chơi `{ games: [{ id, table, players, names, turn, seq, state, turnAt, turnMs }], top, me }` – `top` là bảng xếp hạng (10 người), `me` thành tích của mình. |
+| `POST /v1/lobby/npc/feedback` | `{ id, good }` – người hỏi chấm 👍 / 👎 câu trả lời của Trợ lý (admin thấy trong tab Quản trị). |
 | `GET /v1/lobby/admin` · `POST /v1/lobby/admin` | Chỉ admin (`LOBBY_ADMINS`): tổng quan + `{ action: mute \| kick \| unkick \| perms \| cinema \| announce \| unpin \| npc }`. |
 | `POST /v1/lobby/state` | `{ status: { activity, text, model }, pos: { x, z }, emote }` – trạng thái, vị trí nhân vật, biểu cảm. |
 | `POST /v1/lobby/profile` | `{ avatar, hidden, nickname }` – nhân vật, ẩn trạng thái; `nickname` chỉ dùng cho key chung của team. |
@@ -70,8 +73,26 @@ Phòng: `all` (cả công ty), `dm:<a>~<b>` (nhắn riêng, chỉ 2 người). P
   (định tuyến Combo, hạn mức, log như mọi tài khoản) – người hỏi không tốn lượt. Giới hạn `LOBBY_NPC_PER_HOUR` câu / người / giờ.
 - Admin: `POST /v1/lobby/admin { action: "npc", id }` chọn tài khoản; `{ action: "npc-guides", guides?, notes? }` sửa hướng dẫn / ghi chú cho AI
   (lưu `LOBBY_DATA_DIR/npc.json`, phát `npc-guides` để mọi máy tải lại).
+- Gateway gọi `/v1/responses` dạng **stream** (combo Codex chỉ nhận stream). `LOBBY_NPC_MODEL=auto` (mặc định): hỏi `/v1/models` bằng key NPC
+  rồi chọn model nhanh (mini / flash / haiku…) trong Combo được cấp; model nào bị từ chối (403, chế độ `combo_members`) thì thử model kế tiếp.
+  Quá `LOBBY_NPC_TIMEOUT_MS` (mặc định 80 giây – dưới 100 giây của Cloudflare) thì báo hỏi lại ngắn hơn.
+- Lỗi của Sảnh trả mã **503** thay vì 502 / 504: Cloudflare thay trang lỗi 502 / 504 của máy chủ bằng trang HTML của nó nên app không đọc được lý do.
+  Chi tiết lỗi Trợ lý ghi log sự kiện `lobby_npc_error` (không có key).
+- Nhật ký 60 câu hỏi gần nhất (`LOBBY_DATA_DIR/npc-log.json`: người hỏi, câu hỏi, 300 chữ đầu câu trả lời, lỗi, thời gian, 👍 / 👎) – admin xem trong
+  tab Quản trị → Trợ lý (NPC), kèm nút **🧪 Hỏi thử** để kiểm tra ngay sau khi cấu hình.
 - **Key**: `users.json` chỉ có mã băm, nên đặt key thật của tài khoản NPC trong `.env`: `LOBBY_NPC_KEYS=<key>` (nhiều key cách nhau dấu phẩy).
   Gateway tự đối chiếu key thuộc tài khoản nào; tab Quản trị hiện ✅ sẵn sàng / ⚠️ chưa có key. Key không bao giờ gửi về app hay ghi log.
+
+## Bản đồ 40 x 28 m, bida (app 0.9.14)
+
+- Sảnh rộng gấp đôi: trong nhà (quầy bar, sàn nhảy, màn chiếu), **khu Game** (2 bàn bida chơi được, máy game, bi lắc, bóng bàn, góc console),
+  **sân vườn** (cổng vào, bàn dù, đài phun nước). Quầy lễ tân của Trợ lý SIMI ở ngay cổng vào; người mới vào đứng ở sân trước quầy
+  (`spawnPoint`). Toạ độ nhận vào được nới tới ±30 m.
+- Bida: Gateway chỉ làm **trọng tài lượt đi** – mời (hết hạn 30 giây) → đồng ý → giao bàn trống (tối đa 2 ván cùng lúc) → bốc thăm người giao bóng.
+  Vật lý bi chạy trong app; người tới lượt gửi `shot` kèm `seq` đang thấy và kết quả (vị trí 16 bi, lượt sau, thắng thua). Gateway kiểm tra
+  đúng người, đúng lượt, đúng `seq`, số liệu hợp lệ rồi phát cho cả Sảnh (máy khác chạy lại cú đánh để xem rồi khớp kết quả).
+- Mỗi lượt có `LOBBY_GAME_TURN_MS` (mặc định 90 giây); hết giờ, bỏ cuộc, rời Sảnh, bị mời ra hoặc bật ẩn → người kia thắng. Ván đang chơi không lưu xuống đĩa.
+- Bảng xếp hạng: ván có ít nhất 2 cú đánh (hoặc thắng bằng bi 8) mới tính; lưu `LOBBY_DATA_DIR/games-stats.json`. Sự kiện `over` kèm `stats` của 2 người.
 
 ## Ai thấy ai
 
@@ -108,6 +129,7 @@ LOBBY_IMAGE_MAX_MB=5             # mỗi ảnh
 LOBBY_FILE_RETENTION_DAYS=30     # số ngày giữ ảnh
 LOBBY_FILES_MAX_MB=4096          # tổng dung lượng ảnh trên máy chủ
 LOBBY_IMAGES_PER_DAY=200         # số ảnh mỗi người mỗi ngày
+LOBBY_GAME_TURN_MS=90000         # thời gian mỗi lượt bida
 ```
 
 Không có biến bắt buộc; không cấu hình gì thì Sảnh bật với giá trị mặc định ở trên.

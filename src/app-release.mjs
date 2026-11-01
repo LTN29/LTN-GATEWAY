@@ -80,6 +80,19 @@ export async function handleRelease(req, res, pathname) {
     res.end(req.method === "HEAD" ? undefined : body);
     return;
   }
+  // link cố định "bản mới nhất" cho trang tải: /install/vanphong/latest/win-setup → chuyển tới file của bản đang phát hành
+  const alias = /^latest\/([a-z0-9-]{1,30})$/.exec(sub);
+  if (alias) {
+    const f = m && m.files[alias[1]];
+    if (!f || !FILE_NAME.test(f.name || "")) {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Chưa có bản cho hệ điều hành này");
+      return;
+    }
+    res.writeHead(302, { location: `${RELEASE_PREFIX}/${encodeURIComponent(f.name)}`, "cache-control": "no-cache" });
+    res.end();
+    return;
+  }
   let name = "";
   try { name = decodeURIComponent(sub); } catch { /* sai mã hóa */ }
   const listed = m && Object.values(m.files).some((f) => f && f.name === name);

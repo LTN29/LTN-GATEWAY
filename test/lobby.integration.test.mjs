@@ -110,7 +110,7 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
     // trạng thái + di chuyển + biểu cảm
     await post("bao", "state", { status: { activity: "image", text: "Đang tạo ảnh", model: "muse-image" }, pos: { x: 99, z: 1.5 }, emote: "🎉" });
     assert.equal((await ngoc.next("member", (d) => d.id === "u:it-bao" && d.status?.activity === "image")).status.text, "Đang tạo ảnh");
-    assert.deepEqual(await ngoc.next("move", (d) => d.id === "u:it-bao"), { id: "u:it-bao", x: 20, z: 1.5, seat: null });
+    assert.deepEqual(await ngoc.next("move", (d) => d.id === "u:it-bao"), { id: "u:it-bao", x: 30, z: 1.5, seat: null });
     assert.equal((await ngoc.next("emote")).emote, "🎉");
     // ngồi ghế: mã ghế hợp lệ được phát kèm, mã lạ bị bỏ
     await post("bao", "state", { pos: { x: 1, z: -7.2, seat: "b3" } });
