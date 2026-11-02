@@ -38,9 +38,9 @@ img, video { display: block; max-width: 100% }
 .wrap { width: 100%; max-width: var(--max); margin-inline: auto; padding-left: max(var(--gutter), env(safe-area-inset-left, 0px)); padding-right: max(var(--gutter), env(safe-area-inset-right, 0px)) }
 .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px }
 .label { margin: 0; font: 500 11px/1.4 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3) }
-.display { margin: 0; font-weight: 300; font-size: clamp(48px, 6.4vw, 112px); line-height: .96; letter-spacing: -.06em }
+.display { margin: 0; font-weight: 300; font-size: clamp(36px, 4.4vw, 72px); line-height: .96; letter-spacing: -.06em }
 .tone { color: var(--ink-3) }
-.deck { margin: 0; max-width: 380px; font-size: 17px; line-height: 1.6; color: var(--ink-2) }
+.deck { margin: 0; max-width: 380px; font-size: 16px; line-height: 1.6; color: var(--ink-2) }
 .btn { display: inline-flex; align-items: center; gap: 12px; height: 52px; padding: 0 30px; border: 0; border-radius: 999px; background: var(--ink); color: #fff; font: 500 14px/1 var(--sans); letter-spacing: -.005em; cursor: pointer; white-space: nowrap; transition: background .4s ease, transform .6s var(--ease) }
 .btn:hover { background: var(--blue); transform: translateY(-2px) }
 .btn.light { background: var(--paper); color: var(--ink) }
@@ -86,18 +86,18 @@ img, video { display: block; max-width: 100% }
 .hero { padding: calc(88px + clamp(56px, 9vh, 120px)) 0 clamp(64px, 8vw, 110px) }
 .hero .grid { align-items: end }
 .hero .label { grid-column: 1 / -1; margin-bottom: clamp(28px, 4vw, 48px) }
-.hero h1 { grid-column: 1 / span 8; margin: 0; font-weight: 300; font-size: clamp(64px, 10.4vw, 188px); line-height: .9; letter-spacing: -.07em }
+.hero h1 { grid-column: 1 / span 8; margin: 0; font-weight: 300; font-size: clamp(48px, 7vw, 120px); line-height: .9; letter-spacing: -.07em }
 .mask { display: block; overflow: hidden; padding-bottom: .12em; margin-bottom: -.12em }
 .mask > span { display: block; will-change: transform }
 .hero .mask > span { transform: translateY(105%); opacity: 0; transition: transform 1.3s var(--ease), opacity 1s ease }
 .hero.go .mask > span { transform: none; opacity: 1 }
 .hero.go .mask:nth-child(2) > span { transition-delay: .1s } .hero.go .mask:nth-child(3) > span { transition-delay: .2s }
 .hero-aside { grid-column: 9 / -1; padding-bottom: .6vw }
-.hero-aside p { margin: 0 0 32px; max-width: 380px; font-size: 17px; line-height: 1.6; color: var(--ink-2) }
+.hero-aside p { margin: 0 0 32px; max-width: 380px; font-size: 16px; line-height: 1.6; color: var(--ink-2) }
 .facts { margin: clamp(56px, 6vw, 96px) 0 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-strong) }
 .facts div { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 10px; padding: 22px 24px 0 0 }
 .facts div + div { padding-left: 24px; border-left: 1px solid var(--line) }
-.facts dd { margin: 0; font-weight: 300; font-size: clamp(40px, 4vw, 64px); line-height: 1; letter-spacing: -.05em; font-variant-numeric: tabular-nums }
+.facts dd { margin: 0; font-weight: 300; font-size: clamp(32px, 3vw, 48px); line-height: 1; letter-spacing: -.05em; font-variant-numeric: tabular-nums }
 .facts dt { font-size: 13px; color: var(--ink-3) }
 
 /* ---------- video ---------- */
@@ -122,7 +122,7 @@ img, video { display: block; max-width: 100% }
 .say { padding-bottom: clamp(96px, 12vw, 180px) }
 .say .grid { row-gap: 32px }
 .say .label { grid-column: 1 / -1 }
-.say p:not(.label) { grid-column: 1 / span 10; margin: 0; font-weight: 300; font-size: clamp(32px, 4.4vw, 74px); line-height: 1.08; letter-spacing: -.05em }
+.say p:not(.label) { grid-column: 1 / span 10; margin: 0; font-weight: 300; font-size: clamp(24px, 3vw, 48px); line-height: 1.08; letter-spacing: -.05em }
 .say .w { opacity: .14; transition: opacity .25s linear }
 .say .w.on { opacity: 1 }
 
@@ -135,7 +135,7 @@ img, video { display: block; max-width: 100% }
 .chap .grid { row-gap: 32px }
 .chap-idx { grid-column: 1 / span 2; margin: 10px 0 0; font: 500 11px/1.4 var(--sans); letter-spacing: .18em; color: var(--ink-3) }
 .chap-idx span { display: block; margin-top: 6px; text-transform: uppercase; color: var(--ink) }
-.chap h3 { grid-column: 3 / span 5; margin: 0; font-weight: 300; font-size: clamp(32px, 3.2vw, 54px); line-height: 1.02; letter-spacing: -.05em }
+.chap h3 { grid-column: 3 / span 5; margin: 0; font-weight: 300; font-size: clamp(26px, 2.4vw, 40px); line-height: 1.02; letter-spacing: -.05em }
 .chap-body { grid-column: 9 / -1; display: grid; gap: 18px; align-content: start }
 .chap-body > p { margin: 0; font-size: 16px; line-height: 1.7; color: var(--ink-2) }
 .lines { list-style: none; margin: 4px 0 0; padding: 0 }
@@ -149,7 +149,7 @@ img, video { display: block; max-width: 100% }
 .media.two .tile:last-child img { aspect-ratio: 4 / 3 }
 .tile figcaption { display: grid; gap: 4px; padding: 16px 0 0; background: var(--paper) }
 .tile figcaption small { font: 500 10.5px/1.6 var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3) }
-.tile figcaption b { font-weight: 400; font-size: 17px; letter-spacing: -.02em }
+.tile figcaption b { font-weight: 400; font-size: 16px; letter-spacing: -.02em }
 .rise { clip-path: inset(16% 0 0 0); transform: translateY(8%); opacity: 0; transition: clip-path 1.2s var(--ease), transform 1.2s var(--ease), opacity .8s ease }
 .rise.in { clip-path: inset(0 0 0 0); transform: none; opacity: 1 }
 .drift { will-change: transform }
@@ -165,16 +165,16 @@ img, video { display: block; max-width: 100% }
 .stat.on .mask > span { transform: none }
 .stat.gone .mask > span { transform: translateY(-120%) }
 .stat.on .stat-text .mask:nth-child(2) > span { transition-delay: .06s }
-.stat-value { font-weight: 200; font-size: clamp(120px, 19vw, 340px); line-height: .82; letter-spacing: -.07em }
+.stat-value { font-weight: 200; font-size: clamp(96px, 13vw, 220px); line-height: .82; letter-spacing: -.07em }
 .stat-text { display: grid; gap: 14px; padding-bottom: 1.2vw }
-.stat-title { font-weight: 300; font-size: clamp(34px, 4.4vw, 76px); line-height: 1; letter-spacing: -.05em }
+.stat-title { font-weight: 300; font-size: clamp(28px, 3vw, 52px); line-height: 1; letter-spacing: -.05em }
 .stat-note { font-size: 13px; font-weight: 500; letter-spacing: .18em; text-transform: uppercase; color: rgba(255, 255, 255, .5) }
 .stats-foot { display: flex; align-items: center; gap: 24px }
 .stats-count { font-size: 14px; color: rgba(255, 255, 255, .5); font-variant-numeric: tabular-nums }
 .stats-count b { font-weight: 400; color: #fff }
 .stats-bar { flex: 1; height: 1px; background: rgba(255, 255, 255, .14) }
 .stats-bar i { display: block; height: 100%; background: #fff; transform: scaleX(0); transform-origin: left }
-@media (max-width: 720px) { .stat { grid-template-columns: 1fr; row-gap: 12px } .stat-value { font-size: 34vw } }
+@media (max-width: 720px) { .stat { grid-template-columns: 1fr; row-gap: 12px } .stat-value { font-size: 26vw } }
 
 /* ---------- so sánh ---------- */
 .vs { padding: clamp(96px, 12vw, 180px) 0 }
@@ -184,7 +184,7 @@ img, video { display: block; max-width: 100% }
 .vs-row.head { padding: 16px 0 }
 .vs-row .k { font: 500 11px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3) }
 .vs-row .old { font-size: 16px; color: var(--ink-3) }
-.vs-row .new { font-weight: 300; font-size: clamp(20px, 1.8vw, 28px); line-height: 1.25; letter-spacing: -.03em }
+.vs-row .new { font-weight: 300; font-size: clamp(18px, 1.5vw, 22px); line-height: 1.25; letter-spacing: -.03em }
 .vs-row.head .old, .vs-row.head .new { font: 500 11px/1.4 var(--sans); letter-spacing: .18em; text-transform: uppercase; color: var(--ink) }
 @media (max-width: 800px) { .vs-row { grid-template-columns: 1fr; row-gap: 6px } .vs-row.head { display: none } .vs-row .old::before { content: "Codex gốc: " } }
 
@@ -192,11 +192,11 @@ img, video { display: block; max-width: 100% }
 .dl { padding: clamp(96px, 12vw, 160px) 0; background: var(--paper-2) }
 .dl .section-head { padding-bottom: clamp(36px, 4vw, 56px) }
 .os-tabs { grid-column: 1 / -1; display: flex; gap: clamp(22px, 3vw, 48px); margin-top: 8px }
-.os-tabs .link { font-size: clamp(18px, 1.6vw, 22px); font-weight: 400; color: var(--ink-3) }
+.os-tabs .link { font-size: clamp(16px, 1.3vw, 19px); font-weight: 400; color: var(--ink-3) }
 .os-tabs .link[aria-selected="true"] { color: var(--ink) }
 .dl-body { border-top: 1px solid var(--line-strong); padding-top: clamp(32px, 4vw, 56px); row-gap: 40px }
 .dl-main { grid-column: 1 / span 6; display: grid; gap: 24px; align-content: start; min-width: 0 }
-.dl-main h3 { margin: 0; font-weight: 300; font-size: clamp(56px, 7vw, 120px); line-height: .9; letter-spacing: -.065em }
+.dl-main h3 { margin: 0; font-weight: 300; font-size: clamp(44px, 5vw, 80px); line-height: .9; letter-spacing: -.065em }
 .dl-main .req { margin: 0; font-size: 14px; color: var(--ink-3) }
 .chips { display: flex; gap: 28px; flex-wrap: wrap }
 .chips .link { font-size: 15px; color: var(--ink-3) }
@@ -221,13 +221,13 @@ img, video { display: block; max-width: 100% }
 .values li { display: grid; grid-template-rows: auto auto 1fr; gap: 14px; min-height: 240px; padding: 28px 28px 36px 0; border-bottom: 1px solid var(--line) }
 .values li:not(:nth-child(3n + 1)) { padding-left: 28px; border-left: 1px solid var(--line) }
 .values span { font-size: 12px; color: var(--ink-3) }
-.values h4 { margin: 0; font-weight: 300; font-size: clamp(28px, 2.6vw, 42px); line-height: 1; letter-spacing: -.05em }
+.values h4 { margin: 0; font-weight: 300; font-size: clamp(24px, 2vw, 32px); line-height: 1; letter-spacing: -.05em }
 .values p { margin: 0; align-self: end; max-width: 340px; font-size: 15px; line-height: 1.6; color: var(--ink-2) }
 
 /* ---------- kết ---------- */
 .final { background: var(--night); color: #fff; padding: clamp(110px, 14vw, 200px) 0 calc(36px + env(safe-area-inset-bottom, 0px)) }
 .final .label { color: rgba(255, 255, 255, .5) }
-.final h2 { margin: 28px 0 0; font-weight: 300; font-size: clamp(64px, 12vw, 220px); line-height: .88; letter-spacing: -.075em }
+.final h2 { margin: 28px 0 0; font-weight: 300; font-size: clamp(48px, 8vw, 140px); line-height: .88; letter-spacing: -.075em }
 .final h2 .tone { color: rgba(255, 255, 255, .38) }
 .final .actions { margin-top: clamp(40px, 5vw, 64px) }
 .final .link { color: rgba(255, 255, 255, .86) }
@@ -241,7 +241,7 @@ img, video { display: block; max-width: 100% }
 .modal-card { position: relative; width: min(480px, 100%); padding: clamp(28px, 4vw, 44px); background: var(--paper); display: grid; gap: 28px; animation: up .7s var(--ease) }
 @keyframes fade { from { opacity: 0 } }
 @keyframes up { from { opacity: 0; transform: translateY(28px) } }
-.modal-card h3 { margin: 12px 0 0; font-weight: 300; font-size: clamp(34px, 4vw, 48px); line-height: 1; letter-spacing: -.055em }
+.modal-card h3 { margin: 12px 0 0; font-weight: 300; font-size: clamp(28px, 3vw, 38px); line-height: 1; letter-spacing: -.055em }
 .modal-card .what { margin: 10px 0 0; font-size: 15px; color: var(--ink-2) }
 .modal-card form { display: grid; gap: 22px }
 .field { display: grid; gap: 6px; border-bottom: 1px solid var(--line-strong) }
@@ -259,7 +259,7 @@ img, video { display: block; max-width: 100% }
 .after-steps { list-style: none; margin: -8px 0 0; padding: 0; counter-reset: s }
 .after-steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); padding: 14px 0; border-top: 1px solid var(--line) }
 .after-steps li::before { content: counter(s, decimal-leading-zero); font-size: 12px; color: var(--ink-3); padding-top: 3px }
-.after-steps b { display: block; font-weight: 400; font-size: 17px; letter-spacing: -.02em; margin-bottom: 4px }
+.after-steps b { display: block; font-weight: 400; font-size: 16px; letter-spacing: -.02em; margin-bottom: 4px }
 .after-steps p { margin: 0; font-size: 14.5px; color: var(--ink-2) }
 .by-mini { margin: -8px 0 0; font-size: 11px; letter-spacing: .02em; color: var(--ink-3) }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 95; translate: -50% 0; padding: 14px 24px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 14px; opacity: 0; transform: translateY(16px); transition: opacity .4s, transform .6s var(--ease); pointer-events: none; max-width: calc(100% - 32px) }
@@ -274,7 +274,7 @@ img, video { display: block; max-width: 100% }
 @media (max-width: 900px) {
   .grid { grid-template-columns: 1fr; row-gap: 28px }
   .grid > * { grid-column: 1 / -1 !important }
-  .hero h1 { font-size: clamp(56px, 17vw, 120px) }
+  .hero h1 { font-size: clamp(44px, 13vw, 80px) }
   .facts { grid-template-columns: 1fr 1fr }
   .facts div:nth-child(3) { padding-left: 0; border-left: 0 }
   .facts div { padding-bottom: 18px }
