@@ -110,7 +110,7 @@ img, video { display: block; max-width: 100% }
 .sound { display: inline-flex; align-items: center; gap: 10px }
 .sound i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); transition: background .3s }
 .sound.on i { background: var(--aqua) }
-.chapters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 28px; border-top: 1px solid var(--line-strong) }
+.chapters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 28px; border-top: 1px solid var(--line-strong) }
 .chapters button { position: relative; display: grid; gap: 6px; text-align: left; padding: 16px 16px 18px 0; border: 0; border-bottom: 1px solid var(--line); background: none; cursor: pointer; color: var(--ink-3); transition: color .3s }
 .chapters button::before { content: ""; position: absolute; left: 0; right: 0; top: -1px; height: 2px; background: var(--ink); transform: scaleX(var(--cp, 0)); transform-origin: left }
 .chapters button b { font: 400 12px/1 var(--mono); letter-spacing: .04em }
@@ -301,7 +301,7 @@ img, video { display: block; max-width: 100% }
         <h1 aria-label="Codex, nhưng có văn phòng."><span class="mask"><span>Codex,</span></span><span class="mask"><span class="tone">nhưng có</span></span><span class="mask"><span>văn phòng.</span></span></h1>
         <div class="hero-aside">
           <p>Giao việc cho đội AI, chat với mọi model trong SIMI Gateway, gặp đồng nghiệp trong Sảnh 3D. Vẫn là Codex bên dưới, chỉ không còn màn hình dòng lệnh.</p>
-          <div class="actions"><a class="btn" href="#tai-ve" id="heroDl"><span>Tải cho máy này</span></a><a class="link" href="#video">Xem video<span class="t">2:39</span></a></div>
+          <div class="actions"><a class="btn" href="#tai-ve" id="heroDl"><span>Tải cho máy này</span></a><a class="link" href="#video">Xem video<span class="t">3:19</span></a></div>
         </div>
       </div>
       <dl class="facts">
@@ -319,7 +319,7 @@ img, video { display: block; max-width: 100% }
         <div class="film"><video id="film" src="/install/vanphong/site/demo.mp4" poster="/install/vanphong/site/poster.webp" playsinline loop preload="metadata" controls></video></div>
       </div>
       <div class="film-meta">
-        <p class="label">Quay từ app thật · <b>2 phút 39 giây</b> · có lời hướng dẫn · dữ liệu mẫu</p>
+        <p class="label">Quay từ app thật · <b>3 phút 19 giây</b> · có lời hướng dẫn · dữ liệu mẫu</p>
         <button class="link sound" type="button" id="sound"><i></i><span>Bật tiếng</span></button>
       </div>
       <div class="chapters" id="chapters"></div>
@@ -348,7 +348,7 @@ img, video { display: block; max-width: 100% }
             <div class="chap-body fade">
               <p>Gõ việc cần làm, chọn người nhận rồi bấm Giao ngay. Trưởng phòng chia việc cho cả đội, có người soát lại trước khi nộp. Xong việc, kết quả nằm sẵn trong Khay kết quả.</p>
               <ul class="lines"><li>Mẫu việc sẵn: email, báo cáo, tóm tắt, kế hoạch, dịch</li><li>Thấy từng người đang làm gì trong văn phòng 3D</li><li>Khay kết quả: mở xem, sao chép, mở file ngay</li></ul>
-              <button class="link seek" type="button" data-t="5">Xem trong video<span class="t">0:05</span></button>
+              <button class="link seek" type="button" data-t="6">Xem trong video<span class="t">0:06</span></button>
             </div>
             <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/office.webp" alt="Văn phòng AI đang làm kế hoạch khuyến mãi" loading="lazy"></div><figcaption><small>Văn phòng</small><b>Kế hoạch khuyến mãi 11.11, cả phòng cùng làm</b></figcaption></figure></div>
           </div>
@@ -359,10 +359,10 @@ img, video { display: block; max-width: 100% }
             <h3 class="up">Chat với mọi model, <span class="tone">gọi kỹ năng bằng phím /</span></h3>
             <div class="chap-body fade">
               <p>Dùng Combo của công ty: tạo ảnh, tạo video, đọc PDF, tìm web, soạn Word, Excel, PowerPoint chỉ bằng một dấu gạch chéo.</p>
-              <ul class="lines"><li>Dán ảnh bằng Ctrl + V, kéo thả file vào ô chat</li><li>Bảng, danh sách hiện rõ, có nút chép câu trả lời</li><li>Chọn model và mức suy nghĩ ngay dưới ô nhập</li></ul>
+              <ul class="lines"><li>Dán ảnh bằng Ctrl + V, kéo thả file vào ô chat</li><li>Tự tìm web, chạy công cụ, xuất ảnh và file Excel – từng bước hiện rõ</li><li>Chọn model và mức suy nghĩ ngay dưới ô nhập</li></ul>
               <button class="link seek" type="button" data-t="42">Xem trong video<span class="t">0:42</span></button>
             </div>
-            <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/chat.webp" alt="Chat tóm tắt báo cáo doanh thu" loading="lazy"></div><figcaption><small>Chat</small><b>Tóm tắt báo cáo doanh thu tháng 10</b></figcaption></figure></div>
+            <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/chat.webp" alt="AI tìm web rồi xuất file Excel ngay trong chat" loading="lazy"></div><figcaption><small>Dùng công cụ</small><b>Tìm web, chạy công cụ, xuất file Excel</b></figcaption></figure></div>
           </div>
         </article>
         <article class="chap">
@@ -372,7 +372,7 @@ img, video { display: block; max-width: 100% }
             <div class="chap-body fade">
               <p>Mỗi người online là một nhân vật tự chọn. Thấy ai đang chat với AI, ai đang họp, ai rảnh để rủ cà phê.</p>
               <ul class="lines"><li>Chat cả công ty và nhắn riêng, gọi tên bằng @</li><li>Màn chiếu xem chung, sàn nhảy, quầy bar, sân vườn</li><li>Thu gọn khung chat để Sảnh rộng hết màn hình</li></ul>
-              <button class="link seek" type="button" data-t="66">Xem trong video<span class="t">1:06</span></button>
+              <button class="link seek" type="button" data-t="106">Xem trong video<span class="t">1:46</span></button>
             </div>
             <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/lobby.webp" alt="Toàn cảnh Sảnh 3D" loading="lazy"></div><figcaption><small>Toàn cảnh</small><b>Sảnh 40 × 28 m, 11 người online</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/dance.webp" alt="Sàn nhảy trong Sảnh" loading="lazy"></div><figcaption><small>Giải lao</small><b>Sàn nhảy</b></figcaption></figure></div>
           </div>
@@ -384,7 +384,7 @@ img, video { display: block; max-width: 100% }
             <div class="chap-body fade">
               <p>Bấm nút vàng Trợ lý ở bất cứ tab nào, hoặc phím F1: nhân vật tự đi tới quầy lễ tân. Hỏi gì cũng trả lời; bài hướng dẫn đọc to từng bước và chỉ sáng đúng nút cần bấm.</p>
               <ul class="lines"><li>10 bài có giọng đọc: Chat, giao việc, Sảnh, bida, cập nhật…</li><li>Lạc trong Sảnh? Mép màn hình có mũi tên chỉ đường tới quầy</li><li>Hỏi bằng tài khoản Trợ lý, người hỏi không tốn lượt</li></ul>
-              <button class="link seek" type="button" data-t="85">Xem trong video<span class="t">1:25</span></button>
+              <button class="link seek" type="button" data-t="125">Xem trong video<span class="t">2:05</span></button>
             </div>
             <div class="media"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.06" src="/install/vanphong/site/shots/coach.webp" alt="Hướng dẫn từng bước" loading="lazy"></div><figcaption><small>Hướng dẫn từng bước</small><b>Chỉ sáng đúng nút cần bấm</b></figcaption></figure></div>
           </div>
@@ -396,7 +396,7 @@ img, video { display: block; max-width: 100% }
             <div class="chap-body fade">
               <p>Mời một đồng nghiệp, người kia đồng ý là cả hai ra bàn và bàn bida hiện lên. Ngắm, kéo lực, thả tay.</p>
               <ul class="lines"><li>Luật 8 bi, có đường ngắm</li><li>Ai đi ngang cũng xem được ván trên bàn 3D</li><li>Bảng xếp hạng thắng thua cả công ty</li></ul>
-              <button class="link seek" type="button" data-t="117">Xem trong video<span class="t">1:57</span></button>
+              <button class="link seek" type="button" data-t="157">Xem trong video<span class="t">2:37</span></button>
             </div>
             <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/pool.webp" alt="Bàn bida nhìn từ trên" loading="lazy"></div><figcaption><small>Bida 8 bi</small><b>Nhìn từ trên, kéo ngược để lấy lực</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/pool3d.webp" alt="Bàn bida trong Sảnh 3D" loading="lazy"></div><figcaption><small>Trong Sảnh</small><b>Bàn 3D lăn theo</b></figcaption></figure></div>
           </div>
@@ -408,7 +408,7 @@ img, video { display: block; max-width: 100% }
             <div class="chap-body fade">
               <p>Bận thì đặt Không làm phiền: tắt chuông, đồng nghiệp thấy ngay. Trưởng nhóm xem ai online, máy nào, đã lên bản mới chưa.</p>
               <ul class="lines"><li>Tập trung, đang họp, đi ăn, có hẹn giờ</li><li>Phân quyền theo team, khoá chat, thông báo ghim</li><li>Phát hành bản mới là máy nhân viên hiện nút Cập nhật</li></ul>
-              <button class="link seek" type="button" data-t="138">Xem trong video<span class="t">2:18</span></button>
+              <button class="link seek" type="button" data-t="178">Xem trong video<span class="t">2:58</span></button>
             </div>
             <div class="media two"><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.05" src="/install/vanphong/site/shots/admin.webp" alt="Trang quản trị" loading="lazy"></div><figcaption><small>Quản trị</small><b>Ai online, máy nào, bản nào</b></figcaption></figure><figure class="tile rise"><div class="ph"><img class="drift" data-depth="0.1" src="/install/vanphong/site/shots/status.webp" alt="Menu trạng thái" loading="lazy"></div><figcaption><small>Trạng thái</small><b>Không làm phiền</b></figcaption></figure></div>
           </div>
@@ -608,7 +608,7 @@ document.addEventListener('click', async (e) => {
 });
 
 // ---------- video + chương ----------
-const CH = [[0, 'Mở đầu'], [5, 'Văn phòng'], [26, 'Khay kết quả'], [42, 'Chat'], [66, 'Sảnh 3D'], [85, 'Trợ lý SIMI'], [102, 'Hướng dẫn'], [117, 'Bida'], [138, 'Trạng thái'], [146, 'Quản trị']];
+const CH = [[0, 'Mở đầu'], [6, 'Văn phòng'], [26, 'Khay kết quả'], [42, 'Chat'], [61, 'Tạo ảnh'], [72, 'Dùng công cụ'], [106, 'Sảnh 3D'], [125, 'Trợ lý SIMI'], [142, 'Hướng dẫn'], [157, 'Bida'], [178, 'Trạng thái'], [186, 'Quản trị']];
 const v = $('#film'), chs = $('#chapters');
 chs.innerHTML = CH.map(([t, n]) => `<button type="button" data-t="${t}"><b>${fmt(t)}</b><span>${n}</span></button>`).join('');
 const chBtns = [...chs.children];
@@ -616,7 +616,7 @@ const seek = (t) => { try { v.currentTime = t; } catch { /* chưa tải */ } v.p
 chs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) seek(+b.dataset.t); });
 $$('.seek').forEach((b) => b.addEventListener('click', () => { $('#video').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); seek(+b.dataset.t); }));
 v.addEventListener('timeupdate', () => {
-  const t = v.currentTime; const end = v.duration || 159;
+  const t = v.currentTime; const end = v.duration || 199;
   CH.forEach(([s], i) => { const e2 = i + 1 < CH.length ? CH[i + 1][0] : end; const p = t >= e2 ? 1 : t <= s ? 0 : (t - s) / (e2 - s); chBtns[i].style.setProperty('--cp', p.toFixed(3)); chBtns[i].classList.toggle('on', t >= s && t < e2); });
 });
 // tiếng tự bật: video có lời hướng dẫn nên phát kèm tiếng. Trình duyệt chặn phát có tiếng khi người xem chưa bấm gì
