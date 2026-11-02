@@ -251,6 +251,16 @@ img, video { display: block; max-width: 100% }
 .err { min-height: 20px; margin: -10px 0 0; font-size: 14px; color: #b3261e }
 .modal-x { position: absolute; right: 18px; top: 18px; border: 0; background: none; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-3) }
 .modal-x:hover { color: var(--ink) }
+.quick { display: grid; gap: 12px; padding: 20px 0; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line) }
+.quick p:not(.label) { margin: 0; font-size: 15px; color: var(--ink-2) }
+.quick .cmd { margin-top: 0 }
+.label.or { margin-top: 8px }
+.modal-card.wide { width: min(640px, 100%); max-height: calc(100vh - 40px); overflow: auto }
+.after-steps { list-style: none; margin: -8px 0 0; padding: 0; counter-reset: s }
+.after-steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); padding: 14px 0; border-top: 1px solid var(--line) }
+.after-steps li::before { content: counter(s, decimal-leading-zero); font-size: 12px; color: var(--ink-3); padding-top: 3px }
+.after-steps b { display: block; font-weight: 400; font-size: 17px; letter-spacing: -.02em; margin-bottom: 4px }
+.after-steps p { margin: 0; font-size: 14.5px; color: var(--ink-2) }
 .by-mini { margin: -8px 0 0; font-size: 11px; letter-spacing: .02em; color: var(--ink-3) }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 95; translate: -50% 0; padding: 14px 24px; border-radius: 999px; background: var(--ink); color: #fff; font-size: 14px; opacity: 0; transform: translateY(16px); transition: opacity .4s, transform .6s var(--ease); pointer-events: none; max-width: calc(100% - 32px) }
 .toast.on { opacity: 1; transform: none }
@@ -508,6 +518,17 @@ img, video { display: block; max-width: 100% }
     <p class="by-mini">Văn Phòng AI · Tạo bởi LTN</p>
   </div>
 </div>
+<div class="modal" id="after" hidden role="dialog" aria-modal="true" aria-labelledby="afterTitle">
+  <div class="modal-back" data-close></div>
+  <div class="modal-card wide">
+    <button class="modal-x" type="button" data-close>Đóng</button>
+    <div><p class="label">Bước tiếp theo</p><h3 id="afterTitle">Đang tải</h3><p class="what">File tải xong nằm ở thư mục Tải về (Downloads). Làm tiếp:</p></div>
+    <ol class="after-steps" id="afterSteps"></ol>
+    <div class="quick" id="afterQuick"></div>
+    <div class="actions"><button class="btn" type="button" data-close><span>Đã hiểu</span></button><a class="link" href="/install/vanphong/site/huong-dan-cai-dat.pdf" target="_blank" rel="noopener">Hướng dẫn cài đặt (PDF)</a></div>
+    <p class="by-mini">Văn Phòng AI · Tạo bởi LTN</p>
+  </div>
+</div>
 <div class="toast" id="toast" role="status"></div>
 
 <script>window.__VP = @@DATA@@;</script>
@@ -528,16 +549,27 @@ $('#logout').addEventListener('click', async () => { try { await fetch('/install
 // ---------- bấm tải mới hỏi email ----------
 let pending = null;
 function startDownload(kind, label) {
-  if (VP.email) { toast('Đang tải ' + label + '…'); location.href = GW + kind; return; }
+  if (kind === 'reveal') { if (!needMail()) { render(); return; } }
+  else if (!needMail()) { location.href = GW + kind; showAfter(label); return; }
   pending = { kind, label };
-  $('#mailWhat').textContent = 'Nhập email công ty để tải bản ' + label + '.';
+  $('#mailWhat').textContent = kind === 'reveal' ? 'Nhập email công ty để lấy lệnh cài.' : 'Nhập email công ty để tải bản ' + label + '.';
   $('#mailErr').textContent = '';
   $('#mail').hidden = false; document.body.style.overflow = 'hidden';
   setTimeout(() => $('#mailInput').focus(), 80);
 }
+// đang tải: hiện ngay việc cần làm tiếp (gặp cảnh báo thì bấm gì), kèm lệnh cài nhanh và hướng dẫn PDF
+function showAfter(label) {
+  const o = OS[cur];
+  $('#afterTitle').textContent = 'Đang tải ' + label;
+  $('#afterSteps').innerHTML = stepsHtml(o);
+  $('#afterQuick').innerHTML = `<p class="label">${o.fileFirst ? 'Quen dùng Terminal? Hoặc cài bằng 1 lệnh' : 'Tải không được hoặc bị chặn? Cài bằng 1 lệnh'}</p><p>${esc(o.quick.open)}</p>${cmdBox(o.quick.cmd)}`;
+  $('#after').hidden = false; document.body.style.overflow = 'hidden';
+}
+$('#after').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) { $('#after').hidden = true; document.body.style.overflow = ''; } });
+document.addEventListener('click', (e) => { if (e.target.closest('[data-reveal]')) { e.preventDefault(); startDownload('reveal', ''); } });
 function closeMail() { $('#mail').hidden = true; document.body.style.overflow = ''; pending = null; }
 $('#mail').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeMail(); });
-addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#mail').hidden) closeMail(); });
+addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (!$('#mail').hidden) closeMail(); else if (!$('#after').hidden) { $('#after').hidden = true; document.body.style.overflow = ''; } });
 const MSG = { 403: 'Email này chưa được cấp quyền tải. Nhờ quản trị thêm giúp bạn.', 429: 'Bạn thử quá nhiều lần. Đợi 10 phút rồi thử lại.' };
 $('#mailForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -546,7 +578,7 @@ $('#mailForm').addEventListener('submit', async (e) => {
   btn.disabled = true; btn.firstElementChild.textContent = 'Đang kiểm tra…'; err.textContent = '';
   try {
     const r = await fetch('/install/vanphong/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) });
-    if (r.ok) { VP.email = email.toLowerCase(); paintWho(); const p = pending; closeMail(); if (p) startDownload(p.kind, p.label); }
+    if (r.ok) { VP.email = email.toLowerCase(); paintWho(); render(); const p = pending; closeMail(); if (p) startDownload(p.kind, p.label); }
     else err.textContent = MSG[r.status] || 'Chưa kiểm tra được, thử lại sau ít phút.';
   } catch { err.textContent = 'Không kết nối được. Kiểm tra mạng rồi thử lại.'; }
   btn.disabled = false; btn.firstElementChild.textContent = 'Tải về';
@@ -554,28 +586,48 @@ $('#mailForm').addEventListener('submit', async (e) => {
 document.addEventListener('click', (e) => { const a = e.target.closest('[data-dl]'); if (!a) return; e.preventDefault(); startDownload(a.dataset.dl, a.dataset.label || ''); });
 
 // ---------- bảng tải ----------
+// cài bằng 1 lệnh: tải bằng PowerShell / Terminal nên không bị trình duyệt, SmartScreen, Gatekeeper chặn
+const BASE = location.pathname.startsWith('/install/vanphong') ? location.origin + '/install/vanphong' : 'https://ai.simi.vn/install/vanphong';
+const GUIDE = '/install/vanphong/site/huong-dan-cai-dat.pdf';
 const OS = {
   windows: { label: 'Windows', req: 'Windows 10 / 11, 64-bit', main: { kind: 'win-setup' },
+    quick: { open: 'Bấm Start, gõ PowerShell rồi Enter. Dán lệnh dưới đây, Enter – app tự tải, tự cài và tự mở.', cmd: `irm ${BASE}/install.ps1 | iex` },
     steps: [
-      { t: 'Bấm đúp file vừa tải', d: 'Làm theo vài bước, cài cho riêng mình là đủ. App có lối tắt ở Desktop và Start Menu.' },
-      { t: 'Gặp cảnh báo màu xanh thì bấm More info → Run anyway', d: 'App chưa có chữ ký số nên Windows cảnh báo lần đầu.' },
+      { t: 'Trình duyệt báo file "không an toàn"? Chọn Giữ lại', d: 'Chrome: bấm ⋮ cạnh file → Giữ lại (Keep). Edge: bấm … → Giữ lại → Hiện thêm → Vẫn giữ lại (Keep anyway). File do công ty phát hành, chỉ là chưa có chữ ký số.' },
+      { t: 'Bấm đúp file. Gặp "Windows đã bảo vệ PC của bạn"', d: 'Bấm Thông tin bổ sung (More info) → Vẫn chạy (Run anyway). Làm theo vài bước, cài cho riêng mình là đủ. App có lối tắt ở Desktop và Start Menu.' },
       { t: 'Kết nối SIMI', d: 'Mở app, bấm Kết nối → SIMI Gateway. Máy đã cài SIMI thì app tự nhận.' },
     ] },
-  mac: { label: 'macOS', req: 'macOS 11 trở lên',
-    chips: { apple: { name: 'Chip Apple', sub: 'M1–M4', label: 'Mac chip Apple', kind: 'mac-arm64' }, intel: { name: 'Chip Intel', sub: 'Core i5 · i7 · i9', label: 'Mac chip Intel', kind: 'mac-x64' } },
+  mac: { label: 'macOS', req: 'macOS 11 trở lên', fileFirst: true,
+    chips: { apple: { name: 'Chip Apple', sub: 'M1–M4', label: 'Mac chip Apple', kind: 'mac-arm64-dmg', zip: 'mac-arm64' }, intel: { name: 'Chip Intel', sub: 'Core i5 · i7 · i9', label: 'Mac chip Intel', kind: 'mac-x64-dmg', zip: 'mac-x64' } },
+    quick: { title: 'Quen dùng Terminal? Cài bằng 1 lệnh', open: 'Mở Terminal (Cmd + Space, gõ Terminal, Enter). Dán lệnh dưới đây, Enter – tự nhận chip Apple / Intel, tự cài vào Applications và mở app.', cmd: `curl -fsSL ${BASE}/install.sh | sh` },
     steps: [
-      { t: 'Giải nén và kéo vào Applications', d: 'Bấm đúp file zip, kéo VanPhongAI.app vào thư mục Applications.' },
-      { t: 'Cho phép app chạy', d: 'Mở Terminal và chạy 2 lệnh dưới đây (app chưa có chữ ký của Apple).', cmd: ['xattr -cr /Applications/VanPhongAI.app', 'codesign --force --deep --sign - /Applications/VanPhongAI.app'] },
+      { t: 'Mở file .dmg, kéo Văn Phòng AI vào Applications', d: 'Bấm đúp file vừa tải (thư mục Tải về), cửa sổ hiện ra thì kéo biểu tượng app sang thư mục Applications bên cạnh.' },
+      { t: 'Mở app, Mac báo "không thể xác minh" → bấm Xong', d: 'Vào Applications, bấm đúp Văn Phòng AI. Lần đầu Mac chặn vì app chưa đăng ký với Apple – bấm Xong (Done), đừng bấm "Chuyển vào Thùng rác".' },
+      { t: 'Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Vẫn mở', d: 'Menu Apple → Cài đặt hệ thống → Quyền riêng tư & Bảo mật, kéo xuống dưới cùng, bấm Vẫn mở (Open Anyway), nhập mật khẩu máy rồi bấm Mở. Chỉ làm 1 lần – sau đó app tự cập nhật.', link: { href: 'x-apple.systempreferences:com.apple.preference.security?General', text: 'Mở Quyền riêng tư & Bảo mật' } },
+    ],
+    // bản cũ (chỉ có .zip, chưa ký ad-hoc): Mac báo "bị hỏng" → cần 2 lệnh Terminal
+    stepsZip: [
+      { t: 'Giải nén và kéo vào Applications', d: 'Bấm đúp file zip (Safari thường tự giải nén), kéo VanPhongAI.app vào thư mục Applications.' },
+      { t: 'Mac báo "bị hỏng" / "không thể mở"? Chạy 2 lệnh này', d: 'Mở Terminal, chạy lần lượt 2 lệnh (bản này chưa ký nên macOS chặn lần đầu):', cmd: ['xattr -cr /Applications/VanPhongAI.app', 'codesign --force --deep --sign - /Applications/VanPhongAI.app'] },
       { t: 'Mở app từ Applications', d: 'Lần sau app tự cập nhật, không cần chạy lại 2 lệnh trên.' },
     ] },
   linux: { label: 'Ubuntu', req: 'Ubuntu 22.04 / 24.04, 64-bit', main: { kind: 'linux-deb' }, alt: { kind: 'linux-appimage', label: 'Hoặc tải AppImage, chạy ngay không cần cài' },
+    quick: { open: 'Mở Terminal (Ctrl + Alt + T). Dán lệnh dưới đây, Enter, nhập mật khẩu máy khi được hỏi.', cmd: `curl -fsSL ${BASE}/install.sh | sh` },
     steps: [
       { t: 'Cài gói vừa tải', d: 'Mở Terminal ở thư mục chứa file rồi chạy:', cmd: ['sudo apt install ./VanPhongAI-*-linux-amd64.deb'] },
       { t: 'Mở Văn Phòng AI', d: 'Bấm phím Super, gõ "Văn Phòng". Hoặc gõ vanphong-ai trong Terminal.' },
       { t: 'Đăng nhập bằng Ubuntu on Xorg', d: 'Chọn ở màn hình đăng nhập để AI điều khiển được chuột, bàn phím.' },
     ] },
 };
+const needMail = () => VP.gate !== false && !VP.email;
+const cmdBox = (c) => `<div class="cmd"><code>${esc(c)}</code><button type="button" data-copy="${esc(c)}">Chép</button></div>`;
+const stepsOf = (o) => (o.chips && !String(o.chips[chip].kind).endsWith('-dmg') ? o.stepsZip : o.steps);
+const stepsHtml = (o) => stepsOf(o).map((x) => `<li><div><b>${esc(x.t)}</b><p>${esc(x.d)}</p>${(x.cmd || []).map(cmdBox).join('')}${x.link && /Macintosh|Mac OS X/.test(navigator.userAgent) ? `<p><a class="link" href="${esc(x.link.href)}">${esc(x.link.text)}</a></p>` : ''}</div></li>`).join('');
+const quickHtml = (o) => `<div class="quick"><p class="label">${esc(o.quick.title || 'Cách nhanh nhất · cài bằng 1 lệnh, không bị cảnh báo')}</p>` +
+  (needMail() ? `<p>Nhập email công ty để lấy lệnh cài cho ${esc(o.label)}.</p><div class="actions"><button class="btn" type="button" data-reveal="1"><span>Lấy lệnh cài</span></button></div>`
+    : `<p>${esc(o.quick.open)}</p>${cmdBox(o.quick.cmd)}`) + `</div>`;
 const fill = (x) => { const f = FILES[x.kind]; if (f && f.name) { x.file = f.name; x.size = f.size ? '≈ ' + Math.max(1, Math.round(f.size / 1048576)) + ' MB' : ''; x.missing = false; } else x.missing = true; };
+for (const c of Object.values(OS.mac.chips)) if (!FILES[c.kind]) c.kind = c.zip; // bản cũ chưa có .dmg
 fill(OS.windows.main); fill(OS.mac.chips.apple); fill(OS.mac.chips.intel); fill(OS.linux.main);
 const ua = navigator.userAgent || '';
 let cur = /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) && !/Android/i.test(ua) ? 'linux' : 'windows';
@@ -588,14 +640,16 @@ function render() {
   const o = OS[cur]; const main = o.chips ? o.chips[chip] : o.main; const label = o.chips ? main.label : o.label;
   $('#seg').innerHTML = Object.entries(OS).map(([k, x]) => `<button class="link" type="button" role="tab" aria-selected="${k === cur}" data-os="${k}">${x.label}</button>`).join('');
   $('#dlBody').innerHTML =
-    `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` +
+    `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` + (o.fileFirst ? '' : quickHtml(o) + `<p class="label or">Hoặc tải file cài</p>`) +
     (o.chips ? `<div class="chips" role="radiogroup" aria-label="Loại chip của máy Mac">${Object.entries(o.chips).map(([k, c]) => `<button class="link" type="button" role="radio" aria-checked="${k === chip}" data-chip="${k}">${esc(c.name)}<small>${esc(c.sub)}</small></button>`).join('')}</div>` : '') +
     (main.missing ? '' : `<div class="file"><span>${esc(main.file)}</span><span>${esc(main.size)}</span></div>`) +
     `<div class="actions">${main.missing ? '<span class="btn" aria-disabled="true">Chưa có bản này</span>'
       : `<a class="btn" href="${GW + main.kind}" data-dl="${main.kind}" data-label="${esc(label)}"><span>Tải bản ${esc(label)}</span></a>`}` +
     (o.alt && FILES[o.alt.kind] ? `<a class="link" href="${GW + o.alt.kind}" data-dl="${o.alt.kind}" data-label="Ubuntu AppImage">${esc(o.alt.label)}</a>` : '') + `</div>` +
-    (o.chips ? '<p class="hint">Không chắc máy mình chip gì? Menu Apple → Giới thiệu máy Mac này: dòng "Chip" là Apple, dòng "Bộ xử lý" là Intel.</p>' : '');
-  $('#steps').innerHTML = o.steps.map((s) => `<li><div><b>${esc(s.t)}</b><p>${esc(s.d)}</p>${(s.cmd || []).map((c) => `<div class="cmd"><code>${esc(c)}</code><button type="button" data-copy="${esc(c)}">Chép</button></div>`).join('')}</div></li>`).join('');
+    (o.chips ? '<p class="hint">Không chắc máy mình chip gì? Menu Apple → Giới thiệu máy Mac này: dòng "Chip" là Apple, dòng "Bộ xử lý" là Intel.</p>' : '') +
+    (o.fileFirst ? quickHtml(o) : '') +
+    `<p class="hint"><a class="link" href="${GUIDE}" target="_blank" rel="noopener">Hướng dẫn cài đặt (PDF)<span class="t">Windows · macOS · Ubuntu</span></a></p>`;
+  $('#steps').innerHTML = stepsHtml(o);
   const hd = $('#heroDl');
   if (main.missing) { hd.removeAttribute('data-dl'); hd.setAttribute('href', '#tai-ve'); } else { hd.dataset.dl = main.kind; hd.dataset.label = label; hd.setAttribute('href', GW + main.kind); }
   hd.firstElementChild.textContent = 'Tải cho ' + label;

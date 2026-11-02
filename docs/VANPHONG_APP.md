@@ -84,6 +84,10 @@ không cần sửa tay khi có bản mới.
 Ảnh và video của trang (`icon.png`, `poster.webp`, `demo.mp4`, `shots/*.webp`, ~12 MB) nằm luôn trong repo: máy chủ chỉ cần
 `git pull` là có, không phải chép tay. Thiếu file nào thì trang vẫn chạy, ô ảnh đó tự ẩn.
 
+- **Cài bằng 1 lệnh** (không qua trình duyệt nên không bị Chrome/Edge, SmartScreen, Gatekeeper cảnh báo):
+  Windows `irm https://ai.simi.vn/install/vanphong/install.ps1 | iex` · macOS / Ubuntu `curl -fsSL https://ai.simi.vn/install/vanphong/install.sh | sh`.
+  Gateway viết sẵn tên file + SHA-256 của bản đang phát hành vào script; script tải file công khai, kiểm tra mã, cài và mở app.
+  Trang chỉ hiện lệnh sau khi nhập email được bật. Hướng dẫn in được: `site/vanphong/huong-dan-cai-dat.pdf`.
 - Ai cũng xem được trang, ảnh và video. Bấm **Tải** mới hiện hộp nhập email: Gateway chỉ cho tải khi email có trong danh sách
   **và đang bật**, rồi đặt cookie HttpOnly ký HMAC (mặc định 30 ngày) để lần sau bấm là tải luôn. Mỗi lần bấm tải đều kiểm tra
   lại danh sách: tắt email là chặn ngay.

@@ -51,6 +51,13 @@ test("Trang tải Văn Phòng AI: ai cũng xem được, bấm tải mới hỏi
     assert.equal(al.status, 302); assert.equal(al.headers.get("location"), "/install/vanphong#tai-ve");
     // app tự cập nhật (không có cookie) vẫn đọc latest.json và tải file
     assert.equal((await fetch(base + "/latest.json")).status, 200);
+    // cài bằng 1 lệnh (không qua trình duyệt → không bị cảnh báo): script viết sẵn tên file + mã SHA-256 của bản đang phát hành
+    const ps1 = await fetch(base + "/install.ps1", { headers: { "x-forwarded-proto": "https", "x-forwarded-host": "ai.simi.vn" } });
+    assert.match(ps1.headers.get("content-type"), /text\/plain; charset=utf-8/);
+    const ps1t = await ps1.text();
+    assert.match(ps1t, /irm https:\/\/ai\.simi\.vn\/install\/vanphong\/install\.ps1 \| iex/); assert.ok(ps1t.includes("VanPhongAI-0.9.14-Setup.exe") && ps1t.includes(hash(setup)));
+    assert.match(await (await fetch(base + "/install.sh")).text(), /Chưa có bản Văn Phòng AI cho máy này|curl -fsSL/);
+    assert.equal((await fetch(base + "/site/huong-dan-cai-dat.pdf")).headers.get("content-type"), "application/pdf");
     assert.equal(Buffer.from(await (await fetch(base + "/VanPhongAI-0.9.14-Setup.exe")).arrayBuffer()).equals(setup), true);
 
     // danh sách trống: ai cũng bị từ chối

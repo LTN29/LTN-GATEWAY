@@ -7,6 +7,7 @@
 //   VanPhongAI-<ver>-Setup.exe            → win-setup      (Windows, bản cài – tự cập nhật êm nhất)
 //   VanPhongAI-<ver>-portable.exe         → win-portable   (Windows, bản chạy ngay)
 //   VanPhongAI-<ver>-mac-arm64.zip        → mac-arm64
+//   VanPhongAI-<ver>-mac-arm64.dmg        → mac-arm64-dmg  (cài lần đầu bằng giao diện; tương tự mac-x64-dmg)
 //   VanPhongAI-<ver>-linux-amd64.deb      → linux-deb
 //   VanPhongAI-<ver>-linux-x86_64.AppImage → linux-appimage
 // Thường không cần chạy tay: đặt VANPHONG_GITHUB_REPO + VANPHONG_GITHUB_TOKEN thì Gateway tự lấy bản mới từ GitHub Release.

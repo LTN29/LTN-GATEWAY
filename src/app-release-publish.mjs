@@ -10,6 +10,9 @@ export const PATTERNS = [
   ["win-portable", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-portable\.exe$/],
   ["mac-arm64", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-arm64\.zip$/],
   ["mac-x64", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-x64\.zip$/],
+  // .dmg: chỉ để người dùng cài lần đầu bằng giao diện (kéo vào Applications); app tự cập nhật vẫn dùng .zip
+  ["mac-arm64-dmg", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-arm64\.dmg$/],
+  ["mac-x64-dmg", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-x64\.dmg$/],
   ["linux-deb", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-linux-amd64\.deb$/],
   ["linux-appimage", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-linux-x86_64\.AppImage$/]
 ];
