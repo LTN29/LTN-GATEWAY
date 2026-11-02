@@ -58,7 +58,8 @@ export function lobbyIdentity(principal, headers) {
     return { id: `u:${principal.userId}`, fixedName: principal.displayName, role: principal.role || "", shared: false, ...team };
   }
   // key chung của cả team (chế độ cũ): phân biệt từng máy bằng X-LTN-Client-ID
-  const cid = String(headers["x-ltn-client-id"] || "").trim().toLowerCase();
+  // điện thoại đã ghép bằng QR: dùng mã máy tính lúc ghép → cùng 1 người trong Sảnh (header là mã riêng của điện thoại)
+  const cid = String((principal.mobile && principal.mobile.clientId) || headers["x-ltn-client-id"] || "").trim().toLowerCase();
   if (!UUID.test(cid)) throw httpError(400, "Key chung của team cần header X-LTN-Client-ID (UUID) để vào Sảnh");
   return { id: `t:${principal.teamId}:${cid.slice(0, 8)}`, fixedName: null, role: "", shared: true, ...team };
 }

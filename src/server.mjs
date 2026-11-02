@@ -44,6 +44,7 @@ import {
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import { handleLobby, isLobbyPath } from "./lobby.mjs";
 import { handleRelease, isReleasePath } from "./app-release.mjs";
+import { mobileSessions, isMobileToken, isMobileApiPath, isMobileSitePath, handleMobileClaim, handleMobileApi, serveMobileSite } from "./mobile.mjs";
 import { startReleaseSync } from "./app-release-sync.mjs";
 import {
   sendJson,
@@ -967,6 +968,18 @@ export function createGatewayServer() {
     return;
   }
 
+  // Sảnh trên điện thoại (PWA): trang tĩnh /m + đổi mã QR lấy phiên (không cần key)
+  if ((req.method === "GET" || req.method === "HEAD") && isMobileSitePath(pathname)) {
+    await serveMobileSite(req, res, pathname);
+    return;
+  }
+  if (req.method === "POST" && pathname === "/v1/mobile/claim") {
+    try { await handleMobileClaim(req, res); } catch (error) {
+      if (!res.headersSent) sendJson(res, error?.statusCode || 500, openAiError(error?.message || "Không đăng nhập được", error?.type || "gateway_error"));
+    }
+    return;
+  }
+
   // bản phát hành app Văn Phòng AI (trang tải + latest.json cho tự cập nhật)
   if (isReleasePath(pathname)) {
     try {
@@ -1219,6 +1232,7 @@ export function createGatewayServer() {
     (req.method === "POST" && pathname === "/v1/browser/page") ||
     (req.method === "POST" && pathname === "/v1/simi/update-report") ||
     ((req.method === "GET" || req.method === "POST") && isLobbyPath(pathname)) ||
+    ((req.method === "GET" || req.method === "POST") && isMobileApiPath(pathname)) ||
     (req.method === "POST" && capabilityPostPaths.has(pathname));
 
   if (!supported) {
@@ -1238,7 +1252,8 @@ export function createGatewayServer() {
       return;
     }
 
-    const principal = await authenticatePrincipal(rawKey);
+    // token phiên điện thoại (vpm_…) → đúng người đã ghép từ máy tính; chỉ dùng cho Sảnh
+    const principal = isMobileToken(rawKey) ? await mobileSessions().authenticate(rawKey) : await authenticatePrincipal(rawKey);
 
     if (!principal) {
       sendJson(
@@ -1267,6 +1282,15 @@ export function createGatewayServer() {
         403,
         openAiError("Team đã bị vô hiệu hóa", "permission_error")
       );
+      return;
+    }
+
+    if (principal.mobile && !isLobbyPath(pathname) && pathname !== "/v1/mobile/logout") {
+      sendJson(res, 403, openAiError("Phiên điện thoại chỉ dùng cho Sảnh", "permission_error"));
+      return;
+    }
+    if (isMobileApiPath(pathname)) {
+      await handleMobileApi(req, res, principal, pathname, rawKey);
       return;
     }
 

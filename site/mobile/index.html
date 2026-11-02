@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Sảnh Văn Phòng AI</title>
+<meta name="description" content="Sảnh Văn Phòng AI trên điện thoại: ai đang online, nhắn tin với đồng nghiệp.">
+<meta name="author" content="LTN">
+<meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11141b" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sảnh AI">
+<link rel="manifest" href="/m/manifest.webmanifest">
+<link rel="icon" href="/m/icon-192.png">
+<link rel="apple-touch-icon" href="/m/apple-touch-icon.png">
+<style>
+:root {
+  --bg: #f4f6fb; --card: #ffffff; --ink: #141824; --sub: #5b6476; --line: #e3e7ef; --soft: #eef2f9;
+  --brand: #2563eb; --brand-ink: #ffffff; --mine: #2563eb; --mine-ink: #ffffff; --theirs: #ffffff;
+  --ok: #16a34a; --warn: #d97706; --bad: #dc2626; --mention: #fff4d6; --shadow: 0 1px 2px rgba(20,24,36,.06), 0 4px 16px rgba(20,24,36,.06);
+  --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #11141b; --card: #1a1f2a; --ink: #eef1f7; --sub: #9aa4b6; --line: #2a3140; --soft: #212838;
+    --brand: #5b8cff; --brand-ink: #0b1020; --mine: #3b6ff5; --mine-ink: #ffffff; --theirs: #1f2533; --mention: #3a3220; --shadow: none; color-scheme: dark; }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; overscroll-behavior: none; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+[hidden] { display: none !important; }
+.app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+/* ---------- đăng nhập ---------- */
+.login { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center;
+  padding: calc(24px + var(--safe-t)) max(24px, env(safe-area-inset-right)) calc(24px + var(--safe-b)) max(24px, env(safe-area-inset-left)); }
+.login img { width: 84px; height: 84px; border-radius: 22px; box-shadow: var(--shadow); }
+.login h1 { margin: 0; font-size: 24px; letter-spacing: -.01em; text-wrap: balance; }
+.login p { margin: 0; color: var(--sub); max-width: 34ch; }
+.steps { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 10px; width: min(100%, 360px); text-align: left; }
+.steps li { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.steps b { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--soft); color: var(--brand); display: grid; place-items: center; font-size: 13px; }
+.login .err { color: var(--bad); font-weight: 600; }
+.credit { font-size: 12px; color: var(--sub); opacity: .8; }
+
+/* ---------- khung chính ---------- */
+.top { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(10px + var(--safe-t)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
+  background: var(--card); border-bottom: 1px solid var(--line); min-height: 56px; }
+.top h2 { margin: 0; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top small { display: block; font-size: 12px; color: var(--sub); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iconbtn { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.iconbtn:active { background: var(--soft); }
+.iconbtn svg { width: 22px; height: 22px; }
+.net { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); flex: none; }
+.net.on { background: var(--ok); }
+.banner { flex: none; padding: 8px 14px; font-size: 13px; background: var(--mention); color: var(--ink); text-align: center; }
+.scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
+.tabs { flex: none; display: flex; background: var(--card); border-top: 1px solid var(--line); padding-bottom: var(--safe-b); }
+.tabs button { flex: 1; padding: 8px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--sub); position: relative; }
+.tabs button svg { width: 24px; height: 24px; }
+.tabs button.on { color: var(--brand); font-weight: 600; }
+.tabs .dot { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--bad); color: #fff; font-size: 11px; line-height: 18px; font-weight: 700; }
+
+/* danh sách */
+.list { padding: 8px max(10px, env(safe-area-inset-right)) 16px max(10px, env(safe-area-inset-left)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 14px; text-align: left; width: 100%; min-width: 0; }
+.row:active { background: var(--soft); }
+.row .grow { flex: 1; min-width: 0; }
+.row b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sub { display: block; font-size: 13px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 12px; color: var(--sub); flex: none; }
+.badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--brand); color: var(--brand-ink); font-size: 12px; line-height: 20px; font-weight: 700; text-align: center; }
+.badge.at { background: var(--bad); color: #fff; }
+.unread b { font-weight: 800; }
+.head { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--sub); padding: 14px 10px 6px; }
+.empty { color: var(--sub); text-align: center; padding: 40px 20px; }
+.av { width: 44px; height: 44px; border-radius: 50%; flex: none; display: grid; place-items: center; font-weight: 700; color: #fff; position: relative; font-size: 16px; }
+.av.sm { width: 32px; height: 32px; font-size: 13px; }
+.av .on { position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--ok); border: 2px solid var(--card); }
+.av.all { background: linear-gradient(135deg, #2563eb, #7c3aed); }
+.search { margin: 10px max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left)); display: flex; }
+.search input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 16px; }
+
+/* đoạn chat */
+.msgs { padding: 10px max(10px, env(safe-area-inset-right)) 12px max(10px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 2px; }
+.more { align-self: center; margin: 4px 0 10px; font-size: 13px; color: var(--brand); padding: 6px 12px; border-radius: 16px; background: var(--soft); }
+.day { align-self: center; font-size: 12px; color: var(--sub); margin: 12px 0 6px; }
+.m { display: flex; gap: 8px; align-items: flex-end; max-width: 100%; }
+.m.mine { flex-direction: row-reverse; }
+.m .av { visibility: hidden; }
+.m.first .av { visibility: visible; }
+.m.first { margin-top: 8px; }
+.bub { max-width: min(78%, 520px); min-width: 0; background: var(--theirs); border: 1px solid var(--line); border-radius: 18px; padding: 7px 12px; box-shadow: var(--shadow); text-align: left; }
+.mine .bub { background: var(--mine); color: var(--mine-ink); border-color: transparent; }
+.bub .who { font-size: 12px; font-weight: 700; color: var(--brand); margin-bottom: 1px; }
+.mine .bub .who { display: none; }
+.bub .txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bub .txt a { color: inherit; text-decoration: underline; }
+.bub .tm { font-size: 11px; opacity: .65; text-align: right; margin-top: 2px; }
+.bub.hit { background: var(--mention); }
+.mine .bub.hit { background: var(--mine); }
+.at { font-weight: 700; color: var(--brand); }
+.mine .at { color: inherit; text-decoration: underline; }
+.quote { font-size: 13px; border-left: 3px solid currentColor; opacity: .75; padding: 2px 8px; margin: 2px 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imgs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 4px 0 2px; }
+.imgs.one { grid-template-columns: minmax(0, 1fr); }
+.imgs button { border-radius: 12px; overflow: hidden; background: var(--soft); aspect-ratio: 4 / 3; max-width: 100%; }
+.imgs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ô nhập */
+.compose { flex: none; background: var(--card); border-top: 1px solid var(--line); padding: 8px max(10px, env(safe-area-inset-right)) calc(8px + var(--safe-b)) max(10px, env(safe-area-inset-left)); }
+.compose .reply { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sub); padding: 0 4px 6px; }
+.compose .reply span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose .bar { display: flex; align-items: flex-end; gap: 6px; }
+.compose textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 20px; padding: 9px 14px; font: inherit; font-size: 16px; max-height: 130px; line-height: 1.35; }
+.send { width: 40px; height: 40px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; flex: none; }
+.send:disabled { opacity: .45; }
+.send svg, .pick svg { width: 20px; height: 20px; }
+.pick { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--sub); flex: none; }
+.pending { display: flex; gap: 6px; padding: 0 2px 8px; overflow-x: auto; }
+.pending div { position: relative; flex: none; }
+.pending img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; display: block; }
+.pending button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--bg); font-size: 13px; line-height: 22px; }
+.sugg { display: flex; gap: 6px; overflow-x: auto; padding: 0 2px 8px; }
+.sugg button { flex: none; padding: 6px 12px; border-radius: 16px; background: var(--soft); font-size: 14px; }
+.note { font-size: 13px; color: var(--sub); text-align: center; padding: 4px 8px; text-wrap: balance; }
+
+/* bảng thao tác + xem ảnh */
+.sheet { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; z-index: 20; }
+.sheet .box { width: 100%; background: var(--card); border-radius: 18px 18px 0 0; padding: 8px max(10px, env(safe-area-inset-right)) calc(10px + var(--safe-b)) max(10px, env(safe-area-inset-left)); display: grid; gap: 2px; }
+.sheet .box button { padding: 14px; border-radius: 12px; text-align: left; font-size: 16px; }
+.sheet .box button:active { background: var(--soft); }
+.sheet .box .bad { color: var(--bad); }
+.viewer { position: fixed; inset: 0; background: #000; z-index: 30; display: grid; place-items: center; }
+.viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.viewer button { position: absolute; top: calc(10px + var(--safe-t)); right: 12px; color: #fff; width: 44px; height: 44px; font-size: 26px; }
+/* ---------- Sảnh 3D ---------- */
+.stage { flex: 1; min-height: 0; position: relative; overflow: hidden; background: linear-gradient(180deg, #cfe3f7, #eef3fa); touch-action: none; -webkit-user-select: none; user-select: none; }
+@media (prefers-color-scheme: dark) { .stage { background: linear-gradient(180deg, #1c2638, #121722); } }
+.stage .scene { position: absolute; inset: 0; }
+.stage .msg3d { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--sub); }
+.ov { position: absolute; z-index: 6; display: flex; gap: 8px; }
+.ov.tl { top: 10px; left: max(10px, env(safe-area-inset-left)); flex-direction: column; align-items: flex-start; max-width: 60%; }
+.ov.tr { top: 10px; right: max(10px, env(safe-area-inset-right)); flex-direction: column; }
+.fab { width: 46px; height: 46px; border-radius: 50%; background: var(--card); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(20,24,36,.14); display: grid; place-items: center; font-size: 20px; position: relative; flex: none; }
+.fab:active, .pill:active { transform: scale(.94); }
+.fab.on { background: var(--brand); color: var(--brand-ink); border-color: transparent; }
+.fab .live { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--bad); border: 2px solid var(--card); }
+.pill { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 14px 4px 4px; border-radius: 22px; background: var(--card); border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(20,24,36,.14); max-width: 100%; }
+.pill .av { width: 32px; height: 32px; font-size: 12px; }
+.pill span { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill.st { padding: 4px 14px; font-size: 13px; }
+.joy { position: absolute; z-index: 6; left: max(18px, calc(env(safe-area-inset-left) + 10px)); bottom: 18px; width: 132px; height: 132px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.18), rgba(255,255,255,.42)); border: 2px solid rgba(255,255,255,.8); box-shadow: 0 4px 18px rgba(20,24,36,.18); touch-action: none; }
+.joy i { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: #fff; box-shadow: 0 3px 10px rgba(20,24,36,.3); transition: transform .12s; }
+.joy.drag i { transition: none; background: #eaf1ff; }
+.joy b { position: absolute; left: 0; right: 0; bottom: 7px; text-align: center; font-size: 9.5px; color: rgba(20,24,36,.55); font-weight: 700; pointer-events: none; letter-spacing: .04em; }
+.joy.drag b { display: none; }
+.acts { position: absolute; z-index: 6; right: max(14px, calc(env(safe-area-inset-right) + 8px)); bottom: 18px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.acts .fab { width: 54px; height: 54px; font-size: 24px; }
+.emobar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 6px; box-shadow: 0 2px 12px rgba(20,24,36,.18); max-width: min(300px, calc(100vw - 180px)); }
+.emobar button { width: 42px; height: 42px; border-radius: 12px; font-size: 22px; }
+.emobar button:active { background: var(--soft); }
+.emobar button.on { background: var(--soft); outline: 2px solid var(--brand); }
+.invite { position: absolute; z-index: 8; left: 50%; transform: translateX(-50%); top: 64px; width: min(340px, calc(100% - 24px)); background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; box-shadow: 0 6px 24px rgba(20,24,36,.25); display: grid; gap: 10px; }
+.invite .btns { display: flex; gap: 8px; justify-content: flex-end; }
+.btn { padding: 9px 16px; border-radius: 12px; background: var(--soft); font-weight: 600; }
+.btn.pri { background: var(--brand); color: var(--brand-ink); }
+.sheet .box h3 { margin: 6px 6px 4px; font-size: 17px; }
+.sheet .box .hint { margin: 0 6px 6px; font-size: 13px; color: var(--sub); }
+.sheet .box.tall { max-height: 86vh; overflow-y: auto; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 4px 2px; }
+.grid2 button, .grid3 button { padding: 12px 8px !important; border-radius: 12px !important; background: var(--soft); text-align: center !important; font-size: 15px !important; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 4px 2px; }
+.grid2 button.on, .grid3 button.on { outline: 2px solid var(--brand); }
+.sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 6px 8px; }
+.sw button { width: 34px !important; height: 34px; padding: 0 !important; border-radius: 50% !important; border: 2px solid var(--line); }
+.sw button.on { outline: 3px solid var(--brand); outline-offset: 2px; }
+.lab { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--sub); padding: 8px 6px 2px; }
+.preview { height: 200px; border-radius: 16px; background: var(--soft); position: relative; overflow: hidden; }
+.preview canvas { width: 100% !important; height: 100% !important; display: block; }
+.row2 { display: flex; gap: 8px; padding: 6px 2px 2px; }
+.row2 > * { flex: 1; }
+.cine-now { display: flex; gap: 10px; align-items: center; padding: 4px 6px; }
+.cine-now img { width: 112px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; flex: none; background: var(--soft); }
+.cine-now div { min-width: 0; }
+.cine-now b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; }
+.cine-now small { color: var(--sub); font-size: 12px; }
+.player { aspect-ratio: 16 / 9; width: 100%; border-radius: 12px; overflow: hidden; background: #000; }
+.player iframe { width: 100%; height: 100%; border: 0; display: block; }
+.field { display: flex; gap: 6px; padding: 6px 2px; }
+.field input, .field textarea { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 16px; }
+.qa { display: grid; gap: 8px; padding: 4px 6px; }
+.qa .q { justify-self: end; background: var(--mine); color: var(--mine-ink); border-radius: 14px; padding: 7px 11px; max-width: 85%; white-space: pre-wrap; }
+.qa .a { justify-self: start; background: var(--soft); border-radius: 14px; padding: 8px 12px; max-width: 92%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.guide { background: var(--soft); border-radius: 12px; padding: 10px 12px; margin: 0 2px; font-size: 14px; }
+.guide ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.devs { display: grid; gap: 6px; padding: 2px; }
+.devs div { display: flex; align-items: center; gap: 10px; background: var(--soft); border-radius: 12px; padding: 10px 12px; }
+.devs div span { flex: 1; min-width: 0; font-size: 14px; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + var(--safe-b)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: calc(100% - 32px); text-align: center; }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+'use strict';
+(() => {
+  const API = '/v1/lobby';
+  const $app = document.getElementById('app');
+  const LS = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* chế độ riêng tư */ } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* bỏ qua */ } },
+  };
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15); return (c === 'x' ? r : (r & 3) | 8).toString(16); }));
+  const S = {
+    token: LS.get('vpm.token', ''), name: LS.get('vpm.name', ''), device: LS.get('vpm.device', '') || (() => { const d = uuid(); LS.set('vpm.device', d); return d; })(),
+    me: null, members: new Map(), names: new Map(), rooms: [], msgs: new Map(), more: new Map(), perms: {}, mutedUntil: null,
+    view: 'rooms', room: null, online: false, reply: null, pending: [], lastRead: LS.get('vpm.read', {}), at: LS.get('vpm.at', {}), filter: '',
+  };
+  const os = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'mobile-ios' : /Android/i.test(navigator.userAgent) ? 'mobile-android' : 'mobile-web';
+  const headers = (extra) => ({ authorization: 'Bearer ' + S.token, 'x-ltn-client-id': S.device, 'x-vanphong-os': os, 'x-vanphong-version': 'web', ...extra });
+
+  // ---------- tiện ích giao diện ----------
+  function el(tag, attrs, ...kids) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v;
+      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
+    }
+    for (const k of kids.flat(Infinity)) if (k !== null && k !== undefined && k !== false) n.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return n;
+  }
+  const svg = (d) => { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round'); s.innerHTML = d; return s; };
+  const IC = {
+    chat: '<path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.2A8 8 0 1 1 21 12z"/>',
+    lobby: '<path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/><path d="M9 10h.01M15 10h.01"/>',
+    people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 4.8"/>',
+    back: '<path d="M15 18l-6-6 6-6"/>', send: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+    out: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>',
+  };
+  function toast(t) {
+    document.querySelectorAll('.toast').forEach((n) => n.remove());
+    const n = el('div', { class: 'toast', role: 'status', text: t }); document.body.append(n);
+    setTimeout(() => n.remove(), 3200);
+  }
+  const COLORS = ['#2563eb', '#7c3aed', '#db2777', '#ea580c', '#059669', '#0891b2', '#4f46e5', '#b45309'];
+  const colorOf = (id) => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; };
+  const initials = (n) => String(n || '?').trim().split(/\s+/).slice(-2).map((w) => w[0]).join('').toUpperCase() || '?';
+  function avatar(id, name, { small, online } = {}) {
+    if (id === 'all') return el('div', { class: 'av all' + (small ? ' sm' : '') }, '🏢');
+    return el('div', { class: 'av' + (small ? ' sm' : ''), style: `background:${colorOf(id)}` }, initials(name), online ? el('i', { class: 'on' }) : null);
+  }
+  const hhmm = (ts) => new Date(ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  function when(ts) {
+    const d = new Date(ts); const now = new Date();
+    if (d.toDateString() === now.toDateString()) return hhmm(ts);
+    const y = new Date(now); y.setDate(now.getDate() - 1);
+    if (d.toDateString() === y.toDateString()) return 'Hôm qua';
+    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+  }
+  const dayOf = (ts) => { const d = new Date(ts); const n = new Date(); if (d.toDateString() === n.toDateString()) return 'Hôm nay'; return d.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' }); };
+  const nameOf = (id) => (S.members.get(id) || {}).name || S.names.get(id) || 'Đồng nghiệp';
+  const dmRoom = (a, b) => 'dm:' + [a, b].sort().join('~');
+
+  // ---------- gọi Gateway ----------
+  async function api(path, opts = {}) {
+    const res = await fetch(path, { ...opts, headers: headers(opts.headers) });
+    if (res.status === 401) { logout(true); throw new Error('Phiên đăng nhập đã hết – quét lại mã QR trên máy tính nhé'); }
+    let j = null; try { j = await res.json(); } catch { /* không phải JSON */ }
+    if (!res.ok) throw new Error((j && j.error && j.error.message) || `Lỗi ${res.status}`);
+    return j;
+  }
+
+  // ---------- đăng nhập bằng mã QR ----------
+  async function claim(code) {
+    renderLogin('Đang đăng nhập…');
+    try {
+      const device = os === 'mobile-ios' ? 'iPhone' : os === 'mobile-android' ? 'Android' : 'Trình duyệt';
+      const res = await fetch('/v1/mobile/claim', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, device }) });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((j && j.error && j.error.message) || `Lỗi ${res.status}`);
+      S.token = j.token; S.name = j.name || '';
+      LS.set('vpm.token', S.token); LS.set('vpm.name', S.name);
+      start();
+    } catch (e) { renderLogin('', e.message); }
+  }
+  async function logout(expired) {
+    if (!expired && S.token) { try { await fetch('/v1/mobile/logout', { method: 'POST', headers: headers() }); } catch { /* vẫn đăng xuất trên máy */ } }
+    if (S.ac) S.ac.abort();
+    S.token = ''; LS.del('vpm.token'); LS.del('vpm.name');
+    S.me = null; S.members.clear(); S.msgs.clear(); S.rooms = [];
+    renderLogin('', expired ? 'Phiên đăng nhập đã hết – quét lại mã QR trên máy tính nhé' : '');
+  }
+  function renderLogin(busy, err) {
+    $app.replaceChildren(el('div', { class: 'login' },
+      el('img', { src: '/m/icon-192.png', alt: '' }),
+      el('h1', { text: 'Sảnh Văn Phòng AI' }),
+      el('p', { text: busy || 'Xem ai đang online và nhắn tin với đồng nghiệp ngay trên điện thoại.' }),
+      err ? el('p', { class: 'err', text: err }) : null,
+      busy ? null : el('ol', { class: 'steps' },
+        el('li', {}, el('b', { text: '1' }), el('span', {}, 'Mở app ', el('strong', { text: 'Văn Phòng AI' }), ' trên máy tính, vào tab ', el('strong', { text: 'Sảnh' }), '.')),
+        el('li', {}, el('b', { text: '2' }), el('span', {}, 'Bấm nút ', el('strong', { text: '📱 Điện thoại' }), ' – máy tính hiện mã QR.')),
+        el('li', {}, el('b', { text: '3' }), el('span', { text: 'Mở Camera trên điện thoại, quét mã và bấm vào đường link hiện ra.' }))),
+      el('div', { class: 'credit', text: 'Văn Phòng AI · Tạo bởi LTN' })));
+  }
+
+  // ---------- luồng sự kiện Sảnh (SSE qua fetch để gửi được header) ----------
+  async function connect() {
+    if (S.ac) S.ac.abort();
+    const ac = new AbortController(); S.ac = ac;
+    try {
+      const res = await fetch(API + '/stream', { headers: headers({ accept: 'text/event-stream' }), signal: ac.signal, cache: 'no-store' });
+      if (res.status === 401) { logout(true); return; }
+      if (!res.ok || !res.body) { let m = `Lỗi ${res.status}`; try { m = (await res.json()).error.message; } catch { /* bỏ qua */ } throw new Error(m); }
+      S.retry = 0;
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          let ev = 'message'; const data = [];
+          for (const line of chunk.split('\n')) { if (line.startsWith('event:')) ev = line.slice(6).trim(); else if (line.startsWith('data:')) data.push(line.slice(5).trimStart()); }
+          if (data.length) { try { onEvent(ev, JSON.parse(data.join('\n'))); } catch { /* sự kiện lạ */ } }
+        }
+      }
+      throw new Error('Mất kết nối');
+    } catch (e) {
+      if (ac.signal.aborted) return;
+      setOnline(false, e.message);
+      S.retry = Math.min((S.retry || 0) + 1, 6);
+      clearTimeout(S.retryTimer);
+      S.retryTimer = setTimeout(() => { if (document.visibilityState === 'visible') connect(); }, 800 * 2 ** S.retry);
+    }
+  }
+  function setOnline(on, why) { S.online = on; S.netErr = on ? '' : why || ''; const n = document.querySelector('.net'); if (n) { n.classList.toggle('on', on); n.title = on ? 'Đã kết nối' : 'Đang kết nối lại…'; } }
+
+  function onEvent(ev, d) {
+    switch (ev) {
+      case 'hello':
+        S.me = d.me; S.perms = d.perms || {}; S.mutedUntil = d.mutedUntil || null; S.rooms = d.rooms || [];
+        S.members.clear(); for (const m of d.members || []) S.members.set(m.id, m);
+        if (S.me) S.names.set(S.me.id, S.me.name);
+        for (const r of S.rooms) if (r.with) S.names.set(r.with, r.name);
+        L3.cinema = d.cinema || null; if (d.cinema && d.cinema.now) L3.skew = d.cinema.now - Date.now();
+        L3.cat = d.cat || null; L3.npc = d.npc || null;
+        setOnline(true); render();
+        if (S.room) loadMsgs(S.room, true); // vừa nối lại → lấy tin bị lỡ
+        sync3D();
+        break;
+      case 'member': S.members.set(d.id, d); S.names.set(d.id, d.name); refreshLists(); sync3D(); break;
+      case 'leave': S.members.delete(d.id); refreshLists(); sync3D(); break;
+      case 'roster': for (const id of [...S.members.keys()]) if (!(d.ids || []).includes(id)) S.members.delete(id); refreshLists(); sync3D(); break;
+      case 'move': { const m = S.members.get(d.id); if (m) m.pos = { x: d.x, z: d.z, seat: d.seat || null }; if (L3.scene) L3.scene.moveMember(d.id, d.x, d.z, d.seat || null); break; }
+      case 'emote': if (L3.scene) L3.scene.emote(d.id, d.emote); break;
+      case 'dance': { const m = S.members.get(d.id); if (m) m.dance = d.style || null; if (L3.scene) L3.scene.setDance(d.id, d.style || null); break; }
+      case 'interact': onInteract(d); break;
+      case 'cinema': L3.cinema = d; if (d.now) L3.skew = d.now - Date.now(); drawOverlay(); if (L3.cineOpen) openCinema(true); break;
+      case 'cat': L3.cat = d; if (L3.scene) L3.scene.setCat(d); break;
+      case 'npc': L3.npc = d.npc || null; if (L3.scene) L3.scene.setNpc(L3.npc); break;
+      case 'personal': S.perms = d.perms || S.perms; S.mutedUntil = d.mutedUntil || null; if (S.view === 'room') renderCompose(); break;
+      case 'me': break;
+      case 'message': addMsg(d); if (L3.scene && d.room === 'all' && d.text) L3.scene.say(d.from, d.text); break;
+      case 'message-delete': {
+        const list = S.msgs.get(d.room);
+        if (list) { const i = list.findIndex((x) => x.id === d.id); if (i >= 0) list.splice(i, 1); }
+        if (S.view === 'room' && S.room === d.room) renderMsgs(false);
+        break;
+      }
+      default: break;
+    }
+  }
+
+  function addMsg(m) {
+    S.names.set(m.from, m.name);
+    let r = S.rooms.find((x) => x.id === m.room);
+    if (!r && m.room.startsWith('dm:')) { const other = m.room.slice(3).split('~').find((x) => x !== S.me.id) || S.me.id; r = { id: m.room, kind: 'dm', with: other, name: nameOf(other) }; S.rooms.push(r); }
+    if (r) r.last = { ts: m.ts, from: m.from, name: m.name, preview: m.text || (m.images ? '📷 Ảnh' : '') };
+    const list = S.msgs.get(m.room);
+    if (list && !list.some((x) => x.id === m.id)) list.push(m);
+    const mine = m.from === (S.me && S.me.id);
+    const here = S.view === 'room' && S.room === m.room && document.visibilityState === 'visible';
+    if (here || mine) markRead(m.room, m.ts);
+    else if (m.mentions && (m.mentions.includes(S.me.id) || m.mentions.includes('all'))) { S.at[m.room] = true; LS.set('vpm.at', S.at); if (navigator.vibrate) navigator.vibrate(60); }
+    else if (m.room.startsWith('dm:') && navigator.vibrate) navigator.vibrate(40);
+    if (S.view === 'room' && S.room === m.room) renderMsgs(true); else refreshLists();
+    badge();
+  }
+
+  // ---------- chưa đọc ----------
+  function markRead(room, ts) {
+    if ((S.lastRead[room] || 0) >= ts) return;
+    S.lastRead[room] = ts; LS.set('vpm.read', S.lastRead);
+    if (S.at[room]) { delete S.at[room]; LS.set('vpm.at', S.at); }
+  }
+  const unread = (r) => !!(r.last && r.last.ts > (S.lastRead[r.id] || 0) && r.last.from !== (S.me && S.me.id));
+  function badge() {
+    const n = S.rooms.filter(unread).length;
+    document.title = (n ? `(${n}) ` : '') + 'Sảnh Văn Phòng AI';
+    try { if (navigator.setAppBadge) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {}); } catch { /* không hỗ trợ */ }
+    const dot = document.querySelector('.tabs .dot'); if (dot) { dot.hidden = !n; dot.textContent = String(n); }
+  }
+
+  // ---------- màn hình ----------
+  function render() {
+    if (!S.token) return renderLogin();
+    if (!S.me) { $app.replaceChildren(el('div', { class: 'login' }, el('img', { src: '/m/icon-192.png', alt: '' }), el('p', { text: S.netErr || 'Đang vào Sảnh…' }), S.netErr ? el('button', { class: 'more', onclick: () => logout(false), text: 'Đăng xuất' }) : null)); return; }
+    if (S.view === 'room' && S.room) { pause3D(true); return renderRoom(); }
+    if (S.view === 'lobby') return renderLobby();
+    pause3D(true);
+    renderHome();
+  }
+
+  function renderHome() {
+    const top = el('div', { class: 'top' },
+      avatar(S.me.id, S.me.name, { small: true }),
+      el('h2', {}, S.view === 'people' ? 'Đang online' : 'Tin nhắn', el('small', { text: `${S.me.name} · ${S.me.teamName || ''}` })),
+      el('i', { class: 'net' + (S.online ? ' on' : ''), title: S.online ? 'Đã kết nối' : 'Đang kết nối lại…' }),
+      el('button', { class: 'iconbtn', 'aria-label': 'Đăng xuất', title: 'Đăng xuất', onclick: askLogout }, svg(IC.out)));
+    const body = el('div', { class: 'scroll', id: 'main' });
+    const tabs = tabBar();
+    const parts = [top];
+    if (S.mutedUntil && S.mutedUntil > Date.now()) parts.push(el('div', { class: 'banner', text: `Admin đang tạm khoá chat của bạn tới ${hhmm(S.mutedUntil)}` }));
+    parts.push(body, tabs);
+    $app.replaceChildren(...parts);
+    fillHome(); badge();
+  }
+  function tabBar() {
+    const go = (v) => () => { S.view = v; S.lastTab = v; LS.set('vpm.tab', v); render(); };
+    return el('nav', { class: 'tabs' },
+      el('button', { class: S.view === 'lobby' ? 'on' : '', onclick: go('lobby') }, svg(IC.lobby), 'Sảnh'),
+      el('button', { class: S.view === 'rooms' ? 'on' : '', onclick: go('rooms') }, svg(IC.chat), 'Tin nhắn', el('span', { class: 'dot', hidden: true })),
+      el('button', { class: S.view === 'people' ? 'on' : '', onclick: go('people') }, svg(IC.people), el('span', { class: 'cnt', text: `Online (${S.members.size + 1})` })));
+  }
+  function refreshLists() {
+    if (S.view === 'room') { if (S.room) renderHead(); return; }
+    const c = document.querySelector('.tabs .cnt'); if (c) c.textContent = `Online (${S.members.size + 1})`;
+    if (document.getElementById('main')) fillHome();
+    badge();
+  }
+
+  function fillHome() {
+    const main = document.getElementById('main'); if (!main) return;
+    const keep = main.scrollTop;
+    if (S.view === 'people') {
+      const q = S.filter.trim().toLowerCase();
+      const people = [...S.members.values()].filter((m) => !q || `${m.name} ${m.teamName}`.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      const byTeam = new Map(); for (const p of people) { const k = p.teamName || 'Khác'; if (!byTeam.has(k)) byTeam.set(k, []); byTeam.get(k).push(p); }
+      const input = el('input', { type: 'search', placeholder: 'Tìm đồng nghiệp…', value: S.filter, 'aria-label': 'Tìm đồng nghiệp', oninput: (e) => { S.filter = e.target.value; fillHome(); const n = document.querySelector('.search input'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } } });
+      main.replaceChildren(el('div', { class: 'search' }, input), el('div', { class: 'list' },
+        people.length ? [...byTeam.entries()].sort((a, b) => a[0].localeCompare(b[0], 'vi')).map(([team, list]) => [el('div', { class: 'head', text: `${team} · ${list.length}` }),
+          list.map((p) => el('button', { class: 'row', onclick: () => openDm(p.id) }, avatar(p.id, p.name, { online: true }),
+            el('div', { class: 'grow' }, el('b', { text: p.name }), el('span', { class: 'sub', text: statusText(p) }))))])
+          : el('div', { class: 'empty', text: q ? 'Không tìm thấy ai' : 'Chưa có đồng nghiệp nào online' })));
+    } else {
+      const rooms = [...S.rooms].sort((a, b) => (a.id === 'all' ? -1 : b.id === 'all' ? 1 : ((b.last && b.last.ts) || 0) - ((a.last && a.last.ts) || 0)));
+      main.replaceChildren(el('div', { class: 'list' }, rooms.map((r) => {
+        const u = unread(r); const at = S.at[r.id];
+        const name = r.kind === 'all' ? 'Cả công ty' : nameOf(r.with);
+        const pv = r.last ? `${r.last.from === S.me.id ? 'Bạn' : r.kind === 'all' ? r.last.name : ''}${r.last.from === S.me.id || r.kind === 'all' ? ': ' : ''}${r.last.preview || ''}` : (r.kind === 'all' ? 'Phòng chung của cả công ty' : 'Chưa có tin nhắn');
+        return el('button', { class: 'row' + (u ? ' unread' : ''), onclick: () => openRoom(r.id) },
+          avatar(r.kind === 'all' ? 'all' : r.with, name, { online: r.kind === 'dm' && S.members.has(r.with) }),
+          el('div', { class: 'grow' }, el('b', { text: name }), el('span', { class: 'sub', text: pv })),
+          el('div', { class: 'meta' }, r.last ? el('span', { text: when(r.last.ts) }) : null, at ? el('span', { class: 'badge at', text: '@' }) : u ? el('span', { class: 'badge', text: '•' }) : null));
+      }), el('div', { class: 'note', text: 'Bấm vào người trong tab Online để nhắn riêng' })));
+    }
+    main.scrollTop = keep;
+  }
+  const ACT = { chat: '💬 Đang chat với AI', work: '🛠️ Đang làm việc', image: '🎨 Đang tạo ảnh', video: '🎬 Đang tạo video', web: '🌐 Đang đọc web', doc: '📄 Đang soạn tài liệu', away: '🌙 Vắng mặt', idle: '🟢 Đang rảnh' };
+  const statusText = (p) => (p.status && (p.status.text || ACT[p.status.activity])) || p.teamName || 'Đang online';
+
+  function askLogout() {
+    sheet([{ text: 'Đăng xuất khỏi điện thoại này', bad: true, run: () => logout(false) }]);
+  }
+  function sheet(items) {
+    const close = () => n.remove();
+    const n = el('div', { class: 'sheet', onclick: (e) => { if (e.target === n) close(); } },
+      el('div', { class: 'box', role: 'menu' }, items.map((it) => el('button', { class: it.bad ? 'bad' : '', role: 'menuitem', onclick: () => { close(); it.run(); } }, it.text)), el('button', { onclick: close, text: 'Đóng' })));
+    document.body.append(n);
+  }
+
+  // ---------- đoạn chat ----------
+  function openDm(id) {
+    if (!S.perms.dm && !(S.members.get(id) || {}).admin) { toast('Bạn chưa được bật quyền nhắn riêng'); return; }
+    const room = dmRoom(S.me.id, id);
+    if (!S.rooms.some((r) => r.id === room)) S.rooms.push({ id: room, kind: 'dm', with: id, name: nameOf(id), last: null, draft: true });
+    openRoom(room);
+  }
+  function openRoom(id) {
+    S.view = 'room'; S.room = id; S.reply = null; S.pending = [];
+    history.pushState({ room: id }, '', '#' + encodeURIComponent(id));
+    renderRoom();
+    loadMsgs(id, !S.msgs.has(id));
+  }
+  function closeRoom() {
+    const r = S.rooms.find((x) => x.id === S.room);
+    S.view = r && r.kind === 'dm' && !r.last ? 'people' : (S.lastTab || 'rooms');
+    if (r && r.draft && !r.last) S.rooms = S.rooms.filter((x) => x !== r);
+    S.room = null; render();
+  }
+  window.addEventListener('popstate', () => { if (S.view === 'room') closeRoom(); });
+
+  function renderHead() {
+    const r = S.rooms.find((x) => x.id === S.room); if (!r) return;
+    const head = document.getElementById('roomhead'); if (!head) return;
+    const on = r.kind === 'dm' && S.members.get(r.with);
+    head.replaceChildren(
+      el('button', { class: 'iconbtn', 'aria-label': 'Quay lại', onclick: () => history.back() }, svg(IC.back)),
+      avatar(r.kind === 'all' ? 'all' : r.with, r.kind === 'all' ? 'Cả công ty' : nameOf(r.with), { small: true, online: !!on }),
+      el('h2', {}, r.kind === 'all' ? 'Cả công ty' : nameOf(r.with), el('small', { text: r.kind === 'all' ? `${S.members.size + 1} người đang online` : on ? statusText(on) : 'Không online – vẫn nhận được tin khi mở app' })),
+      el('i', { class: 'net' + (S.online ? ' on' : '') }));
+  }
+  function renderRoom() {
+    $app.replaceChildren(el('div', { class: 'top', id: 'roomhead' }), el('div', { class: 'scroll', id: 'msgs' }, el('div', { class: 'msgs', id: 'mlist' })), el('div', { class: 'compose', id: 'compose' }));
+    renderHead(); renderMsgs(true); renderCompose();
+  }
+
+  async function loadMsgs(room, scroll, before) {
+    try {
+      const qs = new URLSearchParams({ room, limit: '50' }); if (before) qs.set('before', String(before));
+      const j = await api(`${API}/messages?${qs}`);
+      const got = j.data || [];
+      const cur = before ? S.msgs.get(room) || [] : [];
+      const seen = new Set(cur.map((m) => m.id));
+      const merged = before ? [...got.filter((m) => !seen.has(m.id)), ...cur] : got;
+      for (const m of got) S.names.set(m.from, m.name);
+      S.msgs.set(room, merged); S.more.set(room, got.length >= 50);
+      if (S.room === room) {
+        const box = document.getElementById('msgs'); const h0 = box ? box.scrollHeight - box.scrollTop : 0;
+        renderMsgs(!before && scroll);
+        if (before && box) box.scrollTop = box.scrollHeight - h0;
+        const last = merged[merged.length - 1]; if (last) { markRead(room, last.ts); badge(); }
+      }
+    } catch (e) { if (S.room === room) toast(e.message); }
+  }
+
+  const URLS = /(https?:\/\/[^\s<>"']+)/g;
+  function richText(m) {
+    const frag = document.createDocumentFragment();
+    const names = Object.entries(m.mentionNames || {}).map(([id, n]) => ({ id, tag: '@' + n })).sort((a, b) => b.tag.length - a.tag.length);
+    const pushText = (t) => {
+      let rest = t;
+      while (rest) {
+        let hit = null; let at = -1;
+        for (const n of names) { const i = rest.indexOf(n.tag); if (i >= 0 && (at < 0 || i < at)) { at = i; hit = n; } }
+        const urlM = rest.match(URLS); const ui = urlM ? rest.indexOf(urlM[0]) : -1;
+        if (ui >= 0 && (at < 0 || ui < at)) {
+          frag.append(rest.slice(0, ui)); frag.append(el('a', { href: urlM[0], target: '_blank', rel: 'noopener noreferrer', text: urlM[0] })); rest = rest.slice(ui + urlM[0].length); continue;
+        }
+        if (at < 0) { frag.append(rest); break; }
+        frag.append(rest.slice(0, at)); frag.append(el('span', { class: 'at', text: hit.tag })); rest = rest.slice(at + hit.tag.length);
+      }
+    };
+    pushText(m.text || '');
+    return frag;
+  }
+
+  const blobs = new Map();
+  async function imgUrl(id, thumb) {
+    const k = id + (thumb ? ':t' : '');
+    if (!blobs.has(k)) blobs.set(k, (async () => {
+      const res = await fetch(`${API}/file?id=${encodeURIComponent(id)}${thumb ? '&thumb=1' : ''}`, { headers: headers() });
+      if (!res.ok) throw new Error('Ảnh không còn');
+      return URL.createObjectURL(await res.blob());
+    })().catch((e) => { blobs.delete(k); throw e; }));
+    return blobs.get(k);
+  }
+  function imgEl(img) {
+    const i = el('img', { alt: 'Ảnh', loading: 'lazy' });
+    imgUrl(img.id, img.thumb).then((u) => { i.src = u; }).catch(() => { i.alt = 'Ảnh không còn'; });
+    return el('button', { 'aria-label': 'Xem ảnh', onclick: (e) => { e.stopPropagation(); view(img.id); } }, i);
+  }
+  function view(id) {
+    const i = el('img', { alt: 'Ảnh' });
+    const n = el('div', { class: 'viewer', onclick: () => n.remove() }, i, el('button', { 'aria-label': 'Đóng', text: '✕' }));
+    document.body.append(n);
+    imgUrl(id, false).then((u) => { i.src = u; }).catch(() => { n.remove(); toast('Ảnh không còn'); });
+  }
+
+  function renderMsgs(toBottom) {
+    const box = document.getElementById('msgs'); const list = document.getElementById('mlist'); if (!box || !list) return;
+    const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    const msgs = S.msgs.get(S.room);
+    const kids = [];
+    if (!msgs) kids.push(el('div', { class: 'empty', text: 'Đang tải…' }));
+    else {
+      if (S.more.get(S.room)) kids.push(el('button', { class: 'more', onclick: () => loadMsgs(S.room, false, msgs[0] && msgs[0].ts), text: 'Xem tin cũ hơn' }));
+      if (!msgs.length) kids.push(el('div', { class: 'empty', text: S.room === 'all' ? 'Chưa có tin nào – chào cả công ty một câu nhé 👋' : 'Gửi lời chào để bắt đầu trò chuyện 👋' }));
+      let prev = null; let lastDay = '';
+      for (const m of msgs) {
+        const day = dayOf(m.ts); if (day !== lastDay) { kids.push(el('div', { class: 'day', text: day })); lastDay = day; prev = null; }
+        const mine = m.from === S.me.id;
+        const first = !prev || prev.from !== m.from || m.ts - prev.ts > 5 * 60_000;
+        const hit = !mine && m.mentions && (m.mentions.includes(S.me.id) || m.mentions.includes('all'));
+        const imgs = m.images && m.images.length ? el('div', { class: 'imgs' + (m.images.length === 1 ? ' one' : '') }, m.images.map(imgEl)) : null;
+        kids.push(el('div', { class: 'm' + (mine ? ' mine' : '') + (first ? ' first' : '') },
+          avatar(m.from, m.name, { small: true }),
+          el('div', { class: 'bub' + (hit ? ' hit' : ''), role: 'button', tabindex: '0', onclick: () => msgMenu(m) },
+            first && S.room === 'all' ? el('div', { class: 'who', text: m.name }) : null,
+            m.reply ? el('div', { class: 'quote', text: `${m.reply.name}: ${m.reply.text || (m.reply.image ? '📷 Ảnh' : '')}` }) : null,
+            imgs, m.text ? el('div', { class: 'txt' }, richText(m)) : null,
+            el('div', { class: 'tm', text: hhmm(m.ts) }))));
+        prev = m;
+      }
+    }
+    list.replaceChildren(...kids);
+    if (toBottom || near) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
+
+  function msgMenu(m) {
+    const items = [{ text: '↩ Trả lời', run: () => { S.reply = m; renderCompose(); const t = document.querySelector('textarea'); if (t) t.focus(); } }];
+    if (m.text) items.push({ text: '📋 Sao chép', run: () => { (navigator.clipboard ? navigator.clipboard.writeText(m.text) : Promise.reject()).then(() => toast('Đã sao chép'), () => toast('Không sao chép được')); } });
+    if (m.from === S.me.id) items.push({ text: '🗑 Thu hồi tin nhắn', bad: true, run: async () => { try { await api(`${API}/messages/delete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ room: m.room, id: m.id }) }); } catch (e) { toast(e.message); } } });
+    sheet(items);
+  }
+
+  // ---------- gõ & gửi ----------
+  function renderCompose() {
+    const c = document.getElementById('compose'); if (!c) return;
+    if (S.mutedUntil && S.mutedUntil > Date.now()) { c.replaceChildren(el('div', { class: 'note', text: `Admin đang tạm khoá chat của bạn tới ${hhmm(S.mutedUntil)}` })); return; }
+    const old = c.querySelector('textarea'); const draft = old ? old.value : (LS.get('vpm.draft', {})[S.room] || '');
+    const ta = el('textarea', { rows: '1', placeholder: S.room === 'all' ? 'Nhắn cho cả công ty… (@ để gọi tên)' : 'Nhắn tin…', 'aria-label': 'Nội dung tin nhắn', enterkeyhint: 'send' });
+    ta.value = draft;
+    const sendBtn = el('button', { class: 'send', 'aria-label': 'Gửi', onclick: send }, svg(IC.send));
+    const sugg = el('div', { class: 'sugg', hidden: true });
+    const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 130) + 'px'; sendBtn.disabled = !ta.value.trim() && !S.pending.length; };
+    ta.addEventListener('input', () => { grow(); suggest(ta, sugg); const d = LS.get('vpm.draft', {}); d[S.room] = ta.value; LS.set('vpm.draft', d); });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(hover: hover)').matches) { e.preventDefault(); send(); } });
+    const file = el('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: (e) => { addImages([...e.target.files]); e.target.value = ''; } });
+    const pick = S.perms.image !== false ? el('button', { class: 'pick', 'aria-label': 'Gửi ảnh', onclick: () => file.click() }, svg(IC.image)) : null;
+    c.replaceChildren(...[
+      S.reply ? el('div', { class: 'reply' }, el('span', { text: `↩ Trả lời ${S.reply.name}: ${S.reply.text || '📷 Ảnh'}` }), el('button', { class: 'iconbtn', 'aria-label': 'Bỏ trả lời', onclick: () => { S.reply = null; renderCompose(); }, text: '✕' })) : null,
+      S.pending.length ? el('div', { class: 'pending' }, S.pending.map((p, i) => el('div', {}, el('img', { src: p.url, alt: '' }), el('button', { 'aria-label': 'Bỏ ảnh', onclick: () => { URL.revokeObjectURL(p.url); S.pending.splice(i, 1); renderCompose(); }, text: '✕' })))) : null,
+      sugg, el('div', { class: 'bar' }, pick, file, ta, sendBtn)].filter(Boolean));
+    grow();
+  }
+
+  // @tên: gợi ý người online + người đã nhắn trong phòng
+  function suggest(ta, box) {
+    const m = ta.value.slice(0, ta.selectionStart).match(/(^|\s)@([^\s@]{0,20})$/);
+    if (!m) { box.hidden = true; return; }
+    const q = m[2].toLowerCase();
+    const pool = new Map();
+    if (S.room === 'all') { for (const p of S.members.values()) pool.set(p.id, p.name); for (const x of S.msgs.get('all') || []) if (x.from !== S.me.id) pool.set(x.from, x.name); }
+    else { const r = S.rooms.find((x) => x.id === S.room); if (r) pool.set(r.with, nameOf(r.with)); }
+    const hits = [...pool.entries()].filter(([, n]) => n.toLowerCase().includes(q)).slice(0, 8);
+    if (S.room === 'all' && S.perms.everyone && 'mọi người'.includes(q)) hits.unshift(['all', 'mọi người']);
+    if (!hits.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.replaceChildren(...hits.map(([id, n]) => el('button', { onclick: () => {
+      const pos = ta.selectionStart; const before = ta.value.slice(0, pos).replace(/@([^\s@]{0,20})$/, '@' + n + ' ');
+      ta.value = before + ta.value.slice(pos); ta.focus(); ta.setSelectionRange(before.length, before.length);
+      S.tags = S.tags || new Map(); S.tags.set(id, n); box.hidden = true; ta.dispatchEvent(new Event('input'));
+    } }, '@' + n)));
+  }
+
+  async function addImages(files) {
+    for (const f of files.slice(0, 4 - S.pending.length)) {
+      if (!/^image\//.test(f.type)) continue;
+      S.pending.push({ file: f, url: URL.createObjectURL(f) });
+    }
+    if (files.length > 4) toast('Mỗi tin gửi tối đa 4 ảnh');
+    renderCompose();
+  }
+  // nén ảnh trên điện thoại: ảnh đầy đủ ≤ 1600px + ảnh thu nhỏ ≤ 360px (giống app máy tính)
+  async function encode(file) {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => null);
+    const src = bmp || await new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = URL.createObjectURL(file); });
+    const w0 = src.width; const h0 = src.height;
+    const draw = async (max, q) => {
+      const k = Math.min(1, max / Math.max(w0, h0)); const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w0 * k)); c.height = Math.max(1, Math.round(h0 * k));
+      const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height); // ảnh PNG trong suốt → nền trắng (JPEG không có nền trong)
+      g.drawImage(src, 0, 0, c.width, c.height);
+      return { blob: await new Promise((ok) => c.toBlob(ok, 'image/jpeg', q)), w: c.width, h: c.height };
+    };
+    const full = await draw(1600, 0.85); const thumb = await draw(360, 0.72);
+    return { full, thumb };
+  }
+
+  async function send() {
+    const ta = document.querySelector('#compose textarea'); if (!ta) return;
+    const text = ta.value.trim();
+    if (!text && !S.pending.length) return;
+    const btn = document.querySelector('.send'); if (btn) btn.disabled = true;
+    const r = S.rooms.find((x) => x.id === S.room);
+    const target = r && r.kind === 'dm' && !r.last ? { to: r.with } : { room: S.room };
+    try {
+      const images = [];
+      for (const p of S.pending) {
+        const { full, thumb } = await encode(p.file);
+        const qs = new URLSearchParams({ thumbBytes: String(thumb.blob.size), w: String(full.w), h: String(full.h), ...(target.to ? { to: target.to } : { room: target.room }) });
+        const j = await api(`${API}/upload?${qs}`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: new Blob([thumb.blob, full.blob]) });
+        images.push(j.id);
+      }
+      const mentions = [...(S.tags || new Map()).entries()].filter(([, n]) => text.includes('@' + n)).map(([id]) => id);
+      const body = { ...target, text, images, mentions, ...(S.reply ? { replyTo: S.reply.id } : {}) };
+      const j = await api(`${API}/messages`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      ta.value = ''; const d = LS.get('vpm.draft', {}); delete d[S.room]; LS.set('vpm.draft', d);
+      for (const p of S.pending) URL.revokeObjectURL(p.url);
+      S.pending = []; S.reply = null; S.tags = new Map();
+      if (j && j.message) { if (r) r.draft = false; if (!S.msgs.has(j.message.room)) S.msgs.set(j.message.room, []); addMsg(j.message); }
+      renderCompose();
+      const t2 = document.querySelector('#compose textarea'); if (t2) t2.focus();
+    } catch (e) { toast(e.message); if (btn) btn.disabled = false; }
+  }
+
+  // =====================================================================
+  // Sảnh 3D trên điện thoại: joystick di chuyển, nút to dễ bấm, tiết kiệm pin
+  // =====================================================================
+  const L3 = { scene: null, root: null, loading: null, failed: '', paused: true, cinema: null, skew: 0, cat: null, npc: null, myDance: null, emo: false, cineOpen: false, qa: [] };
+  const EMOTES = ['👋', '❤️', '😂', '🎉', '☕', '👍', '🙌'];
+  const DANCES = [['groove', '🕺', 'Lắc lư'], ['disco', '🪩', 'Disco'], ['robot', '🤖', 'Robot'], ['shuffle', '👟', 'Shuffle'], ['spin', '🌀', 'Xoay vòng'], ['hands', '🙌', 'Giơ tay']];
+  const MY_STATUS = [['', '🟢', 'Sẵn sàng'], ['focus', '🎯', 'Đang tập trung'], ['meeting', '📞', 'Đang họp'], ['busy', '⛔', 'Bận, nhắn sau'], ['lunch', '🍜', 'Đi ăn'], ['break', '☕', 'Nghỉ giải lao'], ['remote', '🏠', 'Làm việc từ xa'], ['out', '🚗', 'Ra ngoài']];
+  const KIND = { highfive: ['✋', 'Đập tay'], cheers: ['🥂', 'Cụng ly'], coffee: ['☕', 'Mời cà phê'], hug: ['🤗', 'Ôm'], dance: ['💃', 'Mời nhảy'] };
+  const HAIR = [['short', 'Ngắn'], ['long', 'Dài'], ['spiky', 'Dựng'], ['bun', 'Búi'], ['bob', 'Bob'], ['curly', 'Xoăn'], ['ponytail', 'Đuôi ngựa'], ['buzz', 'Húi cua']];
+  const ACC = [['none', 'Không'], ['glasses', '👓 Kính'], ['cap', '🧢 Mũ'], ['headphones', '🎧 Tai nghe'], ['bow', '🎀 Nơ'], ['tie', '👔 Cà vạt'], ['crown', '👑 Vương miện']];
+  const PALETTE = {
+    hair: ['#1a1a1a', '#2b1d14', '#5a3a1e', '#8a5a2e', '#c99a5b', '#e8d29a', '#7a2e2e', '#d65a8a', '#4a6fd6', '#7b4fa0', '#2fc1a5', '#cfd6e0'],
+    skin: ['#f6d7bd', '#f1c9a5', '#ebbf98', '#e2ae84', '#d9a074', '#c98e62', '#a8714a', '#7d5236'],
+    shirt: ['#0a78f0', '#142c5a', '#e1262d', '#f5c518', '#4a3592', '#2fc1a5', '#ff8a3d', '#ffffff', '#2b2b33', '#ff9ec4', '#7cc8b2', '#9b6b43'],
+    pants: ['#2f3342', '#142c5a', '#5b6475', '#1a1a1a', '#6b4f3a', '#c9b48a', '#0a78f0', '#ffffff'],
+    shoes: ['#1d1d24', '#ffffff', '#e1262d', '#0a78f0', '#8a5a2e', '#f5c518'],
+    accent: ['#e1262d', '#0a78f0', '#f5c518', '#2fc1a5', '#4a3592', '#ffffff', '#1a1a1a', '#ff8a3d'],
+  };
+  const post = (path, body) => api(`${API}/${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const loadJs = (src) => new Promise((ok, fail) => { const t = document.createElement('script'); t.src = src; t.onload = ok; t.onerror = () => fail(new Error('Không tải được ' + src)); document.head.append(t); });
+  const loadCss = (href) => new Promise((ok) => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; l.onload = ok; l.onerror = ok; document.head.append(l); });
+
+  function webgl() { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } }
+
+  async function ensure3D() {
+    if (L3.scene || L3.failed) return;
+    if (!L3.loading) L3.loading = (async () => {
+      if (!webgl()) throw new Error('Điện thoại này không chạy được Sảnh 3D (thiếu WebGL)');
+      window.VP_ASSET_BASE = '/m/sanh3d/';
+      await Promise.all([loadCss('/m/sanh3d/sanh3d.css'), loadJs('/m/sanh3d/sanh3d.js')]);
+      if (!window.Lobby3D) throw new Error('Không tải được Sảnh 3D');
+      L3.root = el('div', { class: 'scene sanh3d' });
+      const stage = document.getElementById('stage'); if (stage) stage.prepend(L3.root);
+      L3.scene = new window.Lobby3D(L3.root, {
+        mobile: true,
+        onMove: (pos) => { if (S.online) post('state', { pos }).catch(() => {}); },
+        onPersonClick: (id) => personMenu(id),
+        onSelfClick: () => openWardrobe(),
+        onNpcClick: () => openNpc(),
+        onCatClick: () => catMenu(),
+        onTableClick: () => toast('🎱 Bida đang chơi được trên máy tính – bản điện thoại sắp có'),
+        onDance: (style, byMove) => { L3.myDance = style; if (!byMove && S.online) post('state', { dance: style }).catch(() => {}); drawOverlay(); },
+        onFloor: (on) => { if (on && !L3.myDance && !L3.floorTold) { L3.floorTold = true; toast('🪩 Bạn đang ở sàn nhảy – bấm 😊 rồi chọn điệu nhảy'); } },
+        onSlow: () => {},
+        onToast: (t) => toast(t),
+        npcGreeting: () => `Chào ${S.me ? S.me.name : 'bạn'}! Cần giúp gì cứ bấm vào mình nhé 👋`,
+      });
+      L3.scene.setSkew(L3.skew || 0);
+      if (L3.cat) L3.scene.setCat(L3.cat);
+      L3.scene.setNpc(L3.npc || null);
+      window.__sanh = L3.scene;
+      sync3D();
+    })().catch((e) => { L3.failed = e.message || String(e); });
+    await L3.loading;
+  }
+
+  function sync3D() {
+    if (!L3.scene || !S.me) return;
+    const list = [...S.members.values()].map((m) => ({ ...m }));
+    list.unshift({ ...S.me, me: true });
+    L3.scene.setMembers(list);
+  }
+  function pause3D(on) { L3.paused = on; if (L3.scene) { L3.scene.paused = on; if (on) L3.scene.setStick(0, 0); } }
+
+  function renderLobby() {
+    const top = el('div', { class: 'top' },
+      avatar(S.me.id, S.me.name, { small: true }),
+      el('h2', {}, 'Sảnh', el('small', { text: `${S.members.size + 1} người đang online` })),
+      el('i', { class: 'net' + (S.online ? ' on' : ''), title: S.online ? 'Đã kết nối' : 'Đang kết nối lại…' }),
+      el('button', { class: 'iconbtn', 'aria-label': 'Đăng xuất', title: 'Đăng xuất', onclick: askLogout }, svg(IC.out)));
+    const stage = el('div', { class: 'stage', id: 'stage' },
+      el('div', { class: 'ov tl', id: 'ovl' }), el('div', { class: 'ov tr', id: 'ovr' }), el('div', { class: 'acts', id: 'acts' }), joystick());
+    $app.replaceChildren(top, stage, tabBar());
+    badge();
+    if (L3.root) stage.prepend(L3.root);
+    drawOverlay();
+    if (L3.failed) { stage.prepend(el('div', { class: 'msg3d' }, el('div', {}, el('p', { text: '⚠️ ' + L3.failed }), el('p', { text: 'Vẫn nhắn tin được ở tab Tin nhắn và Online.' })))); return; }
+    if (!L3.scene) {
+      const wait = el('div', { class: 'msg3d', text: 'Đang mở Sảnh 3D…' }); stage.prepend(wait);
+      ensure3D().then(() => { wait.remove(); if (S.view === 'lobby') { if (L3.failed) renderLobby(); else { pause3D(false); drawOverlay(); } } });
+    } else pause3D(document.visibilityState !== 'visible');
+  }
+
+  // cần điều khiển: kéo ra xa tâm = đi nhanh, thả tay = dừng
+  function joystick() {
+    const knob = el('i'); const pad = el('div', { class: 'joy', role: 'application', 'aria-label': 'Cần điều khiển: kéo để đi lại' }, el('b', { text: 'KÉO ĐỂ ĐI' }), knob);
+    let id = null; let cx = 0; let cy = 0;
+    const R = 50;
+    const move = (e) => {
+      let dx = e.clientX - cx, dy = e.clientY - cy;
+      const d = Math.hypot(dx, dy); if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      if (L3.scene) L3.scene.setStick(dx / R, dy / R);
+    };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); id = e.pointerId; pad.setPointerCapture(id); pad.classList.add('drag');
+      const r = pad.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e);
+      if (L3.scene) L3.scene.focusSelf();
+    });
+    pad.addEventListener('pointermove', (e) => { if (e.pointerId === id) move(e); });
+    const end = (e) => { if (e.pointerId !== id) return; id = null; pad.classList.remove('drag'); knob.style.transform = ''; if (L3.scene) L3.scene.setStick(0, 0); };
+    pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
+    return pad;
+  }
+
+  function myStatusText() { const s = S.me && S.me.status; return (s && s.text) || '🟢 Sẵn sàng'; }
+  function drawOverlay() {
+    const L = document.getElementById('ovl'); const R = document.getElementById('ovr'); const A = document.getElementById('acts');
+    if (!L || !R || !A || !S.me) return;
+    L.replaceChildren(
+      el('button', { class: 'pill', 'aria-label': 'Tủ đồ: đổi nhân vật', onclick: openWardrobe }, avatar(S.me.id, S.me.name, { small: true }), el('span', { text: '👕 Tủ đồ' })),
+      el('button', { class: 'pill st', onclick: openStatus }, el('span', { text: myStatusText() })));
+    const cur = L3.cinema && L3.cinema.current;
+    R.replaceChildren(
+      el('button', { class: 'fab', 'aria-label': 'Trợ lý SIMI', title: 'Trợ lý SIMI', onclick: () => { if (L3.scene) L3.scene.goNpc(); openNpc(); } }, '❓'),
+      el('button', { class: 'fab', 'aria-label': 'Màn chiếu', title: 'Màn chiếu', onclick: () => openCinema() }, '🎬', cur ? el('i', { class: 'live' }) : null),
+      el('button', { class: 'fab', 'aria-label': 'Toàn cảnh', title: 'Toàn cảnh', onclick: () => L3.scene && L3.scene.overview() }, '🗺'),
+      el('button', { class: 'fab', 'aria-label': 'Về chỗ mình', title: 'Về chỗ mình', onclick: () => L3.scene && L3.scene.focusSelf() }, '🎯'));
+    A.replaceChildren(...[
+      L3.emo ? el('div', { class: 'emobar', role: 'menu' },
+        EMOTES.map((e) => el('button', { 'aria-label': 'Biểu cảm ' + e, onclick: () => emote(e) }, e)),
+        DANCES.map(([k, ic, t]) => el('button', { class: L3.myDance === k ? 'on' : '', 'aria-label': 'Nhảy ' + t, title: t, onclick: () => { if (L3.scene) L3.scene.danceSelf(L3.myDance === k ? null : k); L3.emo = false; drawOverlay(); } }, ic)),
+        L3.myDance ? el('button', { 'aria-label': 'Dừng nhảy', title: 'Dừng nhảy', onclick: () => { if (L3.scene) L3.scene.danceSelf(null); L3.emo = false; drawOverlay(); } }, '⏹') : null) : null,
+      el('button', { class: 'fab' + (L3.emo ? ' on' : ''), 'aria-label': 'Biểu cảm và nhảy', onclick: () => { L3.emo = !L3.emo; drawOverlay(); } }, '😊'),
+      el('button', { class: 'fab', 'aria-label': 'Nói với cả Sảnh', onclick: quickSay }, '💬')].filter(Boolean));
+  }
+
+  function emote(e) {
+    L3.emo = false; drawOverlay();
+    if (L3.scene) L3.scene.emote(S.me.id, e);
+    if (navigator.vibrate) navigator.vibrate(20);
+    if (S.online) post('state', { emote: e }).catch(() => {});
+  }
+
+  function bigSheet(title, hint, body, opts = {}) {
+    const close = () => { n.remove(); if (opts.onClose) opts.onClose(); };
+    const n = el('div', { class: 'sheet', onclick: (e) => { if (e.target === n) close(); } },
+      el('div', { class: 'box tall', role: 'dialog', 'aria-label': title }, el('h3', { text: title }), hint ? el('p', { class: 'hint', text: hint }) : null, body, el('button', { onclick: close, text: 'Đóng' })));
+    document.body.append(n);
+    return { n, close };
+  }
+
+  function quickSay() {
+    const input = el('input', { type: 'text', placeholder: 'Nói gì đó với cả Sảnh…', maxlength: '300', enterkeyhint: 'send' });
+    const send = async () => { const t = input.value.trim(); if (!t) return; try { await post('messages', { room: 'all', text: t }); sh.close(); } catch (e) { toast(e.message); } };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
+    const sh = bigSheet('💬 Nói với cả Sảnh', 'Lời nói hiện thành bong bóng trên đầu nhân vật và vào phòng chat Cả công ty.', el('div', { class: 'field' }, input, el('button', { class: 'btn pri', onclick: send, text: 'Gửi' })));
+    setTimeout(() => input.focus(), 50);
+  }
+
+  async function openStatus() {
+    const cur = (S.me.status && S.me.status.text) || '';
+    const set = async (k) => {
+      const d = MY_STATUS.find((x) => x[0] === k);
+      const status = k ? { activity: 'away', text: `${d[1]} ${d[2]}`, model: '' } : { activity: 'idle', text: '☕ Đang rảnh', model: '' };
+      S.me.status = status; sync3D(); drawOverlay(); sh.close();
+      try { await post('state', { status }); toast(k ? `${d[1]} ${d[2]}` : '🟢 Đã về trạng thái Sẵn sàng'); } catch (e) { toast(e.message); }
+    };
+    const sh = bigSheet('Trạng thái của bạn', 'Đồng nghiệp thấy trên bảng tên và danh sách online.', el('div', { class: 'grid2' },
+      MY_STATUS.map(([k, ic, name]) => el('button', { class: (k ? cur.includes(name) : !MY_STATUS.some((x) => x[0] && cur.includes(x[2]))) ? 'on' : '', onclick: () => set(k) }, `${ic} ${name}`))));
+  }
+
+  function openWardrobe() {
+    const look = window.avatarToLook ? window.avatarToLook({ id: S.me.id, avatar: S.me.avatar }) : {};
+    let draft = { hairStyle: 'short', accessory: 'none', ...look, ...(S.me.avatar || {}) };
+    delete draft.id; delete draft.name;
+    const pv = el('div', { class: 'preview' }); let preview = null;
+    const body = el('div', {});
+    const paint = () => {
+      if (preview) preview.update({ id: S.me.id, avatar: draft });
+      const chips = (key, list) => el('div', { class: 'grid3' }, list.map(([v, t]) => el('button', { class: draft[key] === v ? 'on' : '', onclick: () => { draft[key] = v; paint(); } }, t)));
+      const sw = (key) => el('div', { class: 'sw' }, PALETTE[key].map((c) => el('button', { class: draft[key] === c ? 'on' : '', style: `background:${c}`, 'aria-label': c, onclick: () => { draft[key] = c; paint(); } })));
+      body.replaceChildren(
+        el('div', { class: 'lab', text: 'Kiểu tóc' }), chips('hairStyle', HAIR), el('div', { class: 'lab', text: 'Màu tóc' }), sw('hair'),
+        el('div', { class: 'lab', text: 'Màu da' }), sw('skin'), el('div', { class: 'lab', text: 'Áo' }), sw('shirt'),
+        el('div', { class: 'lab', text: 'Quần' }), sw('pants'), el('div', { class: 'lab', text: 'Giày' }), sw('shoes'),
+        el('div', { class: 'lab', text: 'Phụ kiện' }), chips('accessory', ACC), el('div', { class: 'lab', text: 'Màu điểm nhấn' }), sw('accent'));
+    };
+    const rnd = (a) => a[Math.floor(Math.random() * a.length)];
+    const save = async () => {
+      try { const r = await post('profile', { avatar: draft }); S.me = { ...S.me, ...(r.me || {}), avatar: draft }; sync3D(); drawOverlay(); sh.close(); toast('👕 Đã lưu nhân vật – mọi người trong Sảnh đều thấy'); }
+      catch (e) { toast(e.message); }
+    };
+    const sh = bigSheet('👕 Tủ đồ', 'Bấm vào nhân vật của mình trong Sảnh cũng mở được Tủ đồ.', el('div', {}, pv,
+      el('div', { class: 'row2' }, el('button', { class: 'btn', onclick: () => { draft = { hairStyle: rnd(HAIR)[0], hair: rnd(PALETTE.hair), skin: rnd(PALETTE.skin), shirt: rnd(PALETTE.shirt), pants: rnd(PALETTE.pants), shoes: rnd(PALETTE.shoes), accessory: rnd(ACC)[0], accent: rnd(PALETTE.accent) }; paint(); } }, '🎲 Ngẫu nhiên'), el('button', { class: 'btn pri', onclick: save }, 'Lưu')),
+      body), { onClose: () => { if (preview) preview.destroy(); pause3D(S.view !== 'lobby'); } });
+    pause3D(true); // đang thử đồ: dừng vẽ Sảnh cho đỡ nóng máy
+    if (window.AvatarPreview) { try { preview = new window.AvatarPreview(pv); } catch { preview = null; } }
+    paint();
+  }
+
+  function personMenu(id) {
+    const m = S.members.get(id); if (!m) return;
+    const act = (kind) => async () => {
+      try {
+        const r = await post('interact', { to: id, kind, style: kind === 'dance' ? (L3.myDance || 'groove') : undefined });
+        toast(r && r.asked ? `💌 Đã mời ${m.name} ${KIND[kind][1].toLowerCase()} – chờ trả lời…` : `${KIND[kind][0]} ${KIND[kind][1]} với ${m.name}`);
+      } catch (e) { toast(e.message); }
+    };
+    sheet([
+      { text: `💬 Nhắn riêng cho ${m.name}`, run: () => { S.lastTab = 'lobby'; openDm(id); } },
+      { text: '🚶 Đi tới chỗ ' + m.name, run: () => { if (L3.scene && m.pos) L3.scene.walkSelf(m.pos.x + 0.8, m.pos.z + 0.4, true); } },
+      ...Object.keys(KIND).map((k) => ({ text: `${KIND[k][0]} ${KIND[k][1]}`, run: act(k) })),
+    ]);
+  }
+
+  function onInteract(d) {
+    if (d.state === 'ask') return showInvite(d);
+    if (d.state === 'declined') { toast(`${d.byName} để dịp khác nhé 😅`); return; }
+    if (d.state !== 'go') return;
+    if (L3.scene) L3.scene.interact(d);
+    if (d.b === S.me.id) toast(`${(KIND[d.kind] || ['✨'])[0]} ${d.aName} ${(KIND[d.kind] || ['', ''])[1].toLowerCase()} với bạn`);
+    if (d.kind === 'dance' && (d.a === S.me.id || d.b === S.me.id)) { L3.myDance = d.style; drawOverlay(); }
+  }
+  function showInvite(d) {
+    document.querySelectorAll('.invite').forEach((n) => n.remove());
+    const answer = (accept) => { box.remove(); post('interact', { id: d.id, accept }).catch((e) => toast(e.message)); };
+    const box = el('div', { class: 'invite', role: 'alertdialog' },
+      el('div', {}, el('b', { text: `${d.fromName} mời bạn ${d.kind === 'dance' ? 'nhảy cùng 💃' : 'ôm một cái 🤗'}` })),
+      el('div', { class: 'btns' }, el('button', { class: 'btn', onclick: () => answer(false) }, 'Để sau'), el('button', { class: 'btn pri', onclick: () => answer(true) }, d.kind === 'dance' ? '💃 Nhảy!' : '🤗 Đồng ý')));
+    (document.getElementById('stage') || document.body).append(box);
+    if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+    setTimeout(() => box.remove(), Math.max(3000, (d.exp || Date.now() + 25000) - Date.now()));
+  }
+
+  function catMenu() {
+    const go = (action) => post('cat', { action }).catch((e) => toast(e.message));
+    sheet([{ text: '🤚 Vuốt ve Mít', run: () => go('pet') }, { text: '🍖 Cho Mít ăn', run: () => go('feed') }, { text: '🧶 Chơi len với Mít', run: () => go('play') }, { text: '🐾 Gọi Mít đi theo', run: () => go('call') }]);
+  }
+
+  // ---------- màn chiếu: xem cùng cả Sảnh (đúng đoạn đang chiếu) ----------
+  const ytThumb = (id) => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+  function openCinema(refresh) {
+    if (refresh) { document.querySelectorAll('.sheet.cine').forEach((n) => n.remove()); }
+    L3.cineOpen = true;
+    const st = L3.cinema || {}; const cur = st.current;
+    const player = el('div', {});
+    const watch = () => {
+      if (!cur) return;
+      const pos = Math.max(0, Math.floor((Date.now() + (L3.skew || 0) - cur.startedAt) / 1000));
+      const q = new URLSearchParams({ autoplay: '1', start: String(pos), playsinline: '1', rel: '0', modestbranding: '1' });
+      player.replaceChildren(el('div', { class: 'player' }, el('iframe', { src: `https://www.youtube.com/embed/${encodeURIComponent(cur.videoId)}?${q}`, allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin', title: cur.title || 'Video' })));
+    };
+    const url = el('input', { type: 'url', placeholder: 'Dán link YouTube để thêm vào màn chiếu', enterkeyhint: 'send' });
+    const add = async () => { const v = url.value.trim(); if (!v) return; try { await post('cinema', { action: 'add', url: v }); url.value = ''; toast('🎬 Đã thêm vào màn chiếu'); } catch (e) { toast(e.message); } };
+    url.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); add(); } });
+    const queue = (st.queue || []).slice(0, 6);
+    const sh = bigSheet('🎬 Màn chiếu SIMI', cur ? 'Đang chiếu cho cả Sảnh – bấm Xem cùng để xem đúng đoạn mọi người đang xem.' : 'Chưa có video nào đang chiếu.', el('div', {},
+      cur ? el('div', { class: 'cine-now' }, el('img', { src: ytThumb(cur.videoId), alt: '' }), el('div', {}, el('b', { text: cur.title || 'Video YouTube' }), el('small', { text: cur.byName ? `${cur.byName} chọn` : '' }))) : null,
+      player,
+      cur ? el('div', { class: 'row2' }, el('button', { class: 'btn pri', onclick: watch }, '▶ Xem cùng'), el('button', { class: 'btn', onclick: () => post('cinema', { action: 'skip' }).then(() => toast('Đã bỏ phiếu chuyển video')).catch((e) => toast(e.message)) }, '⏭ Chuyển')) : null,
+      queue.length ? el('div', { class: 'lab', text: `Chờ chiếu (${(st.queue || []).length})` }) : null,
+      queue.length ? el('div', { class: 'list' }, queue.map((v) => el('div', { class: 'row' }, el('img', { src: ytThumb(v.videoId), alt: '', style: 'width:72px;aspect-ratio:16/9;object-fit:cover;border-radius:8px' }), el('div', { class: 'grow' }, el('b', { text: v.title || 'Video' }), el('span', { class: 'sub', text: v.byName || '' }))))) : null,
+      S.perms.cinema !== false && !st.locked ? el('div', { class: 'field' }, url, el('button', { class: 'btn pri', onclick: add, text: 'Thêm' })) : el('p', { class: 'hint', text: st.locked ? 'Admin đang khoá màn chiếu.' : 'Bạn chưa được bật quyền thêm video.' })),
+      { onClose: () => { L3.cineOpen = false; } });
+    sh.n.classList.add('cine');
+  }
+
+  // ---------- Trợ lý SIMI: hướng dẫn có sẵn + hỏi đáp ----------
+  async function openNpc() {
+    if (!window.VPNpcGuides) { try { await loadJs('/m/sanh3d/npc-guides.js'); } catch { /* vẫn hỏi được */ } }
+    let guides = null;
+    try { const r = await api(`${API}/npc`); guides = r.guides || null; } catch { /* Gateway cũ */ }
+    const G = guides || (window.VPNpcGuides && window.VPNpcGuides.GUIDES) || [];
+    const qa = el('div', { class: 'qa' });
+    const paintQa = () => qa.replaceChildren(...L3.qa.flatMap((x) => [el('div', { class: 'q', text: x.q }), el('div', { class: 'a', text: x.a || '…' })]));
+    paintQa();
+    const input = el('input', { type: 'text', placeholder: 'Hỏi Trợ lý SIMI… (VD: cách tạo ảnh)', maxlength: '500', enterkeyhint: 'send' });
+    const ask = async () => {
+      const q = input.value.trim(); if (!q) return;
+      input.value = ''; const item = { q, a: '' }; L3.qa.push(item); paintQa();
+      try {
+        const guide = window.VPNpcGuides ? window.VPNpcGuides.guideText(guides) : '';
+        const history = L3.qa.slice(-6, -1).flatMap((x) => [{ role: 'user', content: x.q }, { role: 'assistant', content: x.a }]);
+        const r = await api(`${API}/npc/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: q, history, guide }) });
+        item.a = String(r.answer || '').replace(/\*\*(.+?)\*\*/g, '$1');
+      } catch (e) { item.a = '⚠️ ' + e.message; }
+      paintQa(); qa.lastChild && qa.lastChild.scrollIntoView({ block: 'nearest' });
+      if (L3.scene) L3.scene.npcSay('Mình trả lời rồi nhé 😉', 2500);
+    };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ask(); } });
+    const topics = el('div', { class: 'grid2' }, G.slice(0, 10).map((g) => el('button', { onclick: () => {
+      document.querySelectorAll('.guide').forEach((n) => n.remove());
+      topics.after(el('div', { class: 'guide' }, el('b', { text: g.title }), el('ol', {}, g.steps.map((s2) => el('li', { text: s2.text })))));
+    } }, g.title)));
+    bigSheet('❓ Trợ lý SIMI', 'Chọn hướng dẫn có sẵn hoặc hỏi bất cứ điều gì về Văn Phòng AI.', el('div', {}, topics, qa, el('div', { class: 'field' }, input, el('button', { class: 'btn pri', onclick: ask, text: 'Hỏi' }))));
+    if (L3.scene) L3.scene.npcWave();
+  }
+
+  // ---------- vòng đời ----------
+  function start() {
+    history.replaceState(null, '', '/m');
+    S.view = S.lastTab = LS.get('vpm.tab', 'lobby'); render(); connect();
+  }
+  document.addEventListener('visibilitychange', () => {
+    pause3D(document.visibilityState !== 'visible' || S.view !== 'lobby');
+    if (document.visibilityState !== 'visible' || !S.token) return;
+    // điện thoại khoá màn hình → trình duyệt cắt kết nối; mở lại thì nối lại ngay và lấy tin bị lỡ
+    if (!S.online) { clearTimeout(S.retryTimer); S.retry = 0; connect(); }
+    else if (S.room) loadMsgs(S.room, false);
+  });
+  window.addEventListener('online', () => { if (S.token && !S.online) { S.retry = 0; connect(); } });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/m/sw.js', { scope: '/m' }).catch(() => { /* chạy được không cần */ });
+
+  const pairCode = () => new URLSearchParams(location.hash.slice(1)).get('pair');
+  // trang đang mở sẵn mà quét mã mới (chỉ đổi phần #pair=…) cũng đăng nhập luôn
+  window.addEventListener('hashchange', () => { const c = pairCode(); if (c) { history.replaceState(null, '', '/m'); if (S.ac) S.ac.abort(); claim(c); } });
+  const pair = pairCode();
+  if (pair) { history.replaceState(null, '', '/m'); claim(pair); }
+  else if (S.token) start();
+  else renderLogin();
+})();
+</script>
+</body>
+</html>

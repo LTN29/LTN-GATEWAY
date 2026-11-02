@@ -25,7 +25,11 @@ function teamPrincipal(team) {
 }
 
 export async function authenticatePrincipal(rawKey) {
-  const keyHash = sha256(rawKey);
+  return authenticateKeyHash(sha256(rawKey));
+}
+
+// tìm principal theo mã băm của key (phiên điện thoại lưu mã băm của key máy tính đã ghép – đổi key là phiên tự hết hiệu lực)
+export async function authenticateKeyHash(keyHash) {
   const users = await loadUsers();
 
   for (const user of users.byId.values()) {
