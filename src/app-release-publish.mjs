@@ -14,7 +14,10 @@ export const PATTERNS = [
   ["mac-arm64-dmg", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-arm64\.dmg$/],
   ["mac-x64-dmg", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-mac-x64\.dmg$/],
   ["linux-deb", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-linux-amd64\.deb$/],
-  ["linux-appimage", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-linux-x86_64\.AppImage$/]
+  ["linux-appimage", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-linux-x86_64\.AppImage$/],
+  // gói code cho "cập nhật nhanh" (mọi hệ điều hành): app chỉ thay phần code, không đổi file chạy → không bị Smart App Control chặn,
+  // Mac không hỏi lại quyền, Ubuntu không hỏi mật khẩu. e<số>: phiên bản Electron, b<số>: giao kèo với vỏ app
+  ["app", /^VanPhongAI-(\d+\.\d+\.\d+(?:-[\w.]+)?)-app-e\d+b\d+\.asar$/]
 ];
 
 export const releaseOut = () => resolve(process.env.VANPHONG_RELEASE_DIR || "./data/releases/vanphong");

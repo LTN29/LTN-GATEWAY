@@ -10,6 +10,7 @@
 //   VanPhongAI-<ver>-mac-arm64.dmg        → mac-arm64-dmg  (cài lần đầu bằng giao diện; tương tự mac-x64-dmg)
 //   VanPhongAI-<ver>-linux-amd64.deb      → linux-deb
 //   VanPhongAI-<ver>-linux-x86_64.AppImage → linux-appimage
+//   VanPhongAI-<ver>-app-e33b1.asar      → app            (cập nhật nhanh: chỉ phần code, mọi hệ điều hành)
 // Thường không cần chạy tay: đặt VANPHONG_GITHUB_REPO + VANPHONG_GITHUB_TOKEN thì Gateway tự lấy bản mới từ GitHub Release.
 import { readFile } from "node:fs/promises";
 import { publishFolder } from "../src/app-release-publish.mjs";

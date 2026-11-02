@@ -18,6 +18,7 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
   await writeFile(join(build, "VanPhongAI-0.9.0-Setup.exe"), setup);
   spawnSync("mkdir", ["-p", join(build, "linux")]);
   await writeFile(join(build, "linux", "VanPhongAI-0.9.0-linux-amd64.deb"), Buffer.from("fake-deb"));
+  await writeFile(join(build, "linux", "VanPhongAI-0.9.0-app-e33b1.asar"), Buffer.from("fake-asar")); // gói cập nhật nhanh
   await writeFile(join(build, "khac.txt"), "bỏ qua");
   const script = fileURLToPath(new URL("../scripts/publish-vanphong.mjs", import.meta.url));
   const r = spawnSync(process.execPath, [script, build, "--notes", "- Computer Use\n- Tự cập nhật"], { env: { ...process.env, VANPHONG_RELEASE_DIR: rel }, encoding: "utf8" });
@@ -26,6 +27,7 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
   assert.equal(manifest.version, "0.9.0");
   assert.equal(manifest.files["win-setup"].sha256, createHash("sha256").update(setup).digest("hex"));
   assert.ok(manifest.files["linux-deb"]);
+  assert.equal(manifest.files.app.name, "VanPhongAI-0.9.0-app-e33b1.asar");
   assert.ok(!JSON.stringify(manifest).includes("khac.txt"));
   // bản cũ hơn bị từ chối
   await writeFile(join(build, "VanPhongAI-0.9.0-Setup.exe"), setup);
@@ -50,6 +52,9 @@ test("Phát hành Văn Phòng AI: publish, trang tải, latest.json, tải file 
     const part = await fetch(base + "/VanPhongAI-0.9.0-Setup.exe", { headers: { range: "bytes=5-9" } });
     assert.equal(part.status, 206);
     assert.equal(await part.text(), "setup");
+    const quick = await fetch(base + "/VanPhongAI-0.9.0-app-e33b1.asar");
+    assert.equal(quick.status, 200);
+    assert.equal(await quick.text(), "fake-asar");
     assert.equal((await fetch(base + "/latest.json.tmp")).status, 404);
     assert.equal((await fetch(base + "/..%2F..%2Fpackage.json")).status, 404);
     assert.equal((await fetch(base + "/VanPhongAI-0.8.0-Setup.exe")).status, 404, "file không có trong latest.json");
