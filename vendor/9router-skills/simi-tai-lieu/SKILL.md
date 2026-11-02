@@ -1,6 +1,6 @@
 ---
 name: simi-tai-lieu
-description: Đọc và sửa file Word (.docx), Excel (.xlsx/.xlsm) và PDF cục bộ do user cung cấp bằng công cụ tài liệu đã cài. Dùng cho tài liệu công việc, bảng tính và PDF; file code dùng công cụ project của Codex.
+description: Đọc, sửa và tạo mới file Word (.docx), Excel (.xlsx/.xlsm), PDF, CSV cục bộ bằng công cụ tài liệu đã cài, giữ đúng font tiếng Việt. Dùng cho tài liệu công việc, bảng tính và PDF; file code dùng công cụ project của Codex.
 ---
 
 # Simi - Tài liệu công việc
@@ -17,6 +17,30 @@ installer also exposes `document_inspect`, `document_read`, `document_edit`
 through its local `simi_browser` MCP. These work on local files without Chrome
 or uploading documents. Use only tools actually exposed; do not fabricate calls.
 Call them directly instead of writing a new Python script for each ordinary edit.
+
+## Tạo file mới tiếng Việt không lỗi font
+
+Lỗi hay gặp: PDF ra ô vuông, mất dấu (ễ thành ê), Excel mở CSV thành "Há»� tÃªn".
+Luôn làm đủ các bước sau khi tạo file mới bằng code:
+
+- Chuẩn hoá chữ về Unicode NFC trước khi ghi (`unicodedata.normalize("NFC", s)`).
+  Không dùng font/bảng mã VNI, TCVN3 (.VnTime).
+- PDF: không dùng font có sẵn của thư viện (Helvetica, Times-Roman, Courier,
+  font mặc định của fpdf / pdfkit / jsPDF) – chúng không có chữ tiếng Việt.
+  Nhúng font TrueType có sẵn trên máy: Windows `C:\Windows\Fonts\arial.ttf`
+  (`arialbd.ttf`, `times.ttf`), macOS `/System/Library/Fonts/Supplemental/Arial.ttf`,
+  Linux `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`. reportlab:
+  `pdfmetrics.registerFont(TTFont("VN", path))` rồi dùng "VN" cho mọi chữ, kể cả bảng
+  và tiêu đề. Hoặc tạo .docx/.html rồi chuyển PDF bằng Word / LibreOffice / Chrome.
+- Word (python-docx): đặt font style Normal và tiêu đề (Times New Roman / Arial),
+  gán cả `w:eastAsia` và `w:cs` trong rFonts.
+- Ảnh, biểu đồ có chữ (PIL, matplotlib): chỉ định đúng file font ở trên.
+- CSV cho Excel: UTF-8 có BOM (`encoding="utf-8-sig"`). Text/HTML/JSON: UTF-8,
+  HTML có `<meta charset="utf-8">`. PowerShell: `-Encoding utf8`.
+- File nháp (ảnh thử, file trung gian, script tạm) để trong thư mục tạm của hệ thống,
+  không để lẫn vào thư mục của user.
+- Tạo xong tự kiểm tra: đọc lại chữ trong file (PDF: trích chữ hoặc xem trang đầu)
+  để chắc tiếng Việt hiển thị đúng rồi mới báo xong.
 
 ## Đọc đúng phần cần thiết
 
