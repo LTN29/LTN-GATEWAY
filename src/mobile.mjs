@@ -21,6 +21,12 @@ const SESSION_DAYS = () => Math.max(1, Number(process.env.MOBILE_SESSION_DAYS ||
 const MAX_SESSIONS = 5; // mỗi người tối đa 5 điện thoại / trình duyệt; ghép thêm thì bỏ phiên cũ nhất
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODE = /^[A-Za-z0-9_-]{20,64}$/;
+// mã ngắn để gõ tay (app đã "Thêm vào MH chính" trên iPhone có bộ nhớ riêng, không nhận đăng nhập từ Safari):
+// 8 ký tự dễ đọc (bỏ 0/O, 1/I/L), dùng 1 lần, hết hạn cùng mã QR; gõ sai nhiều lần thì tạm khoá theo IP
+const SHORT_ABC = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const SHORT = /^[A-Z2-9]{8}$/;
+const normShort = (v) => String(v || "").toUpperCase().replace(/[\s-]/g, "");
+const MAX_FAILS = 10;
 const SITE_DIR = fileURLToPath(new URL("../site/mobile/", import.meta.url));
 const SITE_FILES = new Map([
   ["/m", "index.html"], ["/m/", "index.html"], ["/m/index.html", "index.html"],
@@ -42,7 +48,7 @@ export const mobileConfig = {
 };
 
 class MobileSessions {
-  constructor() { this.file = null; this.sessions = []; this.pairs = new Map(); this.saveTimer = null; }
+  constructor() { this.file = null; this.sessions = []; this.pairs = new Map(); this.shorts = new Map(); this.fails = new Map(); this.saveTimer = null; }
 
   async init() {
     const f = mobileConfig.file;
@@ -63,24 +69,36 @@ class MobileSessions {
   pair(principal, rawKey, clientId) {
     if (principal.mobile) throw httpError(403, "Mã QR chỉ tạo được từ app trên máy tính", "permission_error");
     const now = Date.now();
-    for (const [c, p] of this.pairs) if (p.expiresAt < now) this.pairs.delete(c);
+    for (const [c, p] of this.pairs) if (p.expiresAt < now) { this.pairs.delete(c); if (p.short) this.shorts.delete(p.short); }
     const code = b64(24);
+    let short;
+    do { short = Array.from(randomBytes(8), (x) => SHORT_ABC[x % SHORT_ABC.length]).join(""); } while (this.shorts.has(short));
     const expiresAt = now + PAIR_MS();
-    this.pairs.set(code, { keyHash: sha256(rawKey), who: who(principal), clientId: UUID.test(clientId || "") ? clientId.toLowerCase() : null, name: principal.displayName || "", expiresAt });
-    return { code, expiresAt };
+    this.pairs.set(code, { keyHash: sha256(rawKey), who: who(principal), clientId: UUID.test(clientId || "") ? clientId.toLowerCase() : null, name: principal.displayName || "", expiresAt, short });
+    this.shorts.set(short, code);
+    return { code, short: `${short.slice(0, 4)}-${short.slice(4)}`, expiresAt };
   }
 
   // điện thoại đổi mã ghép lấy token phiên (mã dùng 1 lần)
-  async claim(code, device) {
+  async claim(code, device, ip = "") {
     await this.init();
+    const now = Date.now();
+    const f = this.fails.get(ip);
+    if (f && f.n >= MAX_FAILS && now - f.at < 10 * 60_000) throw httpError(429, "Nhập sai quá nhiều lần – đợi 10 phút rồi thử lại", "rate_limit_error");
+    const sh = normShort(code);
+    if (SHORT.test(sh) && this.shorts.has(sh)) code = this.shorts.get(sh);
     const p = CODE.test(String(code || "")) && this.pairs.get(code);
-    if (!p || p.expiresAt < Date.now()) { if (p) this.pairs.delete(code); throw httpError(400, "Mã QR đã hết hạn hoặc đã dùng – tạo mã mới trên máy tính nhé"); }
-    this.pairs.delete(code);
+    if (!p || p.expiresAt < now) {
+      if (p) { this.pairs.delete(code); this.shorts.delete(p.short); }
+      const g = f && now - f.at < 10 * 60_000 ? f : { n: 0, at: now }; g.n++; this.fails.set(ip, g);
+      if (this.fails.size > 5000) this.fails.clear();
+      throw httpError(400, "Mã đã hết hạn, đã dùng hoặc gõ sai – tạo mã mới trên máy tính nhé");
+    }
+    this.pairs.delete(code); this.shorts.delete(p.short);
     const principal = await authenticateKeyHash(p.keyHash);
     if (!principal || !principal.enabled || !principal.team?.enabled) throw httpError(403, "Tài khoản trên máy tính không còn hiệu lực", "permission_error");
     if (principal.principalType === "team" && !p.clientId) throw httpError(400, "App trên máy tính chưa có mã máy (X-LTN-Client-ID) – cập nhật app rồi tạo lại mã QR");
     const token = TOKEN_PREFIX + b64(32);
-    const now = Date.now();
     const s = { id: b64(9), tokenHash: sha256(token), keyHash: p.keyHash, who: p.who, clientId: p.clientId, device: String(device || "Điện thoại").replace(/[^\p{L}\p{N} ._()/-]/gu, "").slice(0, 60) || "Điện thoại", createdAt: now, lastUsedAt: now };
     const mine = this.sessions.filter((x) => ownerOf(x.who, x.clientId) === ownerOf(s.who, s.clientId)).sort((a, b) => a.lastUsedAt - b.lastUsedAt);
     const drop = new Set(mine.slice(0, Math.max(0, mine.length - MAX_SESSIONS + 1)).map((x) => x.id));
@@ -148,15 +166,16 @@ export async function handleMobileClaim(req, res) {
   const raw = await readBody(req, 4096);
   let body = {};
   try { body = raw.length ? JSON.parse(raw.toString("utf8")) : {}; } catch { throw httpError(400, "JSON không hợp lệ"); }
-  return sendJson(res, 200, await mobileSessions().claim(body.code, body.device));
+  const ip = String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  return sendJson(res, 200, await mobileSessions().claim(body.code, body.device, ip));
 }
 
 export async function handleMobileApi(req, res, principal, pathname, rawKey) {
   const S = mobileSessions();
   await S.init();
   if (req.method === "POST" && pathname === "/v1/mobile/pair") {
-    const { code, expiresAt } = S.pair(principal, rawKey, String(req.headers["x-ltn-client-id"] || "").trim());
-    return sendJson(res, 200, { code, expiresAt, url: `${publicOrigin(req)}${MOBILE_PREFIX}#pair=${code}` });
+    const { code, short, expiresAt } = S.pair(principal, rawKey, String(req.headers["x-ltn-client-id"] || "").trim());
+    return sendJson(res, 200, { code, short, expiresAt, url: `${publicOrigin(req)}${MOBILE_PREFIX}#pair=${code}` });
   }
   const cid = String(req.headers["x-ltn-client-id"] || "").trim();
   if (pathname === "/v1/mobile/sessions" || pathname === "/v1/mobile/revoke") {

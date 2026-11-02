@@ -45,6 +45,10 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .steps b { flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--soft); color: var(--brand); display: grid; place-items: center; font-size: 13px; }
 .login .err { color: var(--bad); font-weight: 600; }
 .credit { font-size: 12px; color: var(--sub); opacity: .8; }
+.codebox { display: flex; gap: 8px; width: min(100%, 360px); }
+.codebox input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 12px; font: inherit; font-size: 20px; letter-spacing: .12em; text-transform: uppercase; text-align: center; font-weight: 700; }
+.codebox button { padding: 0 18px; border-radius: 12px; background: var(--brand); color: var(--brand-ink); font-weight: 700; }
+.or { font-size: 13px; color: var(--sub); }
 
 /* ---------- khung chính ---------- */
 .top { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(10px + var(--safe-t)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
@@ -305,10 +309,20 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
       el('p', { text: busy || 'Xem ai đang online và nhắn tin với đồng nghiệp ngay trên điện thoại.' }),
       err ? el('p', { class: 'err', text: err }) : null,
       busy ? null : el('ol', { class: 'steps' },
-        el('li', {}, el('b', { text: '1' }), el('span', {}, 'Mở app ', el('strong', { text: 'Văn Phòng AI' }), ' trên máy tính, vào tab ', el('strong', { text: 'Sảnh' }), '.')),
-        el('li', {}, el('b', { text: '2' }), el('span', {}, 'Bấm nút ', el('strong', { text: '📱 Điện thoại' }), ' – máy tính hiện mã QR.')),
-        el('li', {}, el('b', { text: '3' }), el('span', { text: 'Mở Camera trên điện thoại, quét mã và bấm vào đường link hiện ra.' }))),
+        el('li', {}, el('b', { text: '1' }), el('span', {}, 'Mở app ', el('strong', { text: 'Văn Phòng AI' }), ' trên máy tính, vào tab ', el('strong', { text: 'Sảnh' }), ', bấm nút ', el('strong', { text: '📱' }), ' – máy tính hiện mã QR và mã 8 ký tự.')),
+        el('li', {}, el('b', { text: '2' }), el('span', { text: standalone() ? 'Gõ mã 8 ký tự vào ô dưới đây.' : 'Quét mã QR bằng Camera điện thoại, hoặc gõ mã 8 ký tự vào ô dưới đây.' }))),
+      busy ? null : codeBox(),
       el('div', { class: 'credit', text: 'Văn Phòng AI · Tạo bởi LTN' })));
+  }
+
+  // app đã "Thêm vào màn hình chính": iPhone cho bộ nhớ riêng (không nhận đăng nhập từ Safari) → đăng nhập bằng mã gõ tay
+  const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+  function codeBox() {
+    const inp = el('input', { type: 'text', inputmode: 'text', autocapitalize: 'characters', autocomplete: 'one-time-code', placeholder: 'ABCD-EF23', maxlength: '9', 'aria-label': 'Mã đăng nhập 8 ký tự' });
+    const go = () => { const v = inp.value.trim(); if (v.replace(/[\s-]/g, '').length >= 8) claim(v); else inp.focus(); };
+    inp.addEventListener('input', () => { const v = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); inp.value = v.length > 4 ? v.slice(0, 4) + '-' + v.slice(4) : v; });
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    return el('div', { class: 'codebox' }, inp, el('button', { onclick: go, text: 'Vào' }));
   }
 
   // ---------- luồng sự kiện Sảnh (SSE qua fetch để gửi được header) ----------

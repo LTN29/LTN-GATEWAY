@@ -142,6 +142,15 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     assert.equal(tmob.me.id, tdesk.me.id);
     assert.equal(tmob.me.id, "t:IT:0b5c9a8e");
 
+    // ---- mã ngắn gõ tay (app trên màn hình chính của iPhone không nhận đăng nhập từ Safari) ----
+    const ps = await (await pair(keys.ltn)).json();
+    assert.match(ps.short, /^[A-HJ-KM-NP-Z2-9]{4}-[A-HJ-KM-NP-Z2-9]{4}$/, "8 ký tự dễ đọc, không có 0/O/1/I/L");
+    const cs = await (await claim(` ${ps.short.toLowerCase().replace("-", " ")} `)).json();
+    assert.match(cs.token, /^vpm_/, "gõ chữ thường, có cách cũng nhận");
+    assert.equal((await claim(ps.short)).status, 400, "mã ngắn chỉ dùng 1 lần");
+    assert.equal((await claim(ps.code)).status, 400, "dùng mã ngắn rồi thì link QR cũng hết");
+    await fetch(`${origin}/v1/mobile/logout`, { method: "POST", headers: bearer(cs.token) });
+
     // ---- máy tính xem + đăng xuất điện thoại từ xa ----
     const list1 = await (await fetch(`${origin}/v1/mobile/sessions`, { headers: bearer(keys.ltn) })).json();
     assert.equal(list1.data.length, 1);
@@ -162,6 +171,11 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     // ---- đăng xuất ----
     assert.equal((await fetch(`${origin}/v1/mobile/logout`, { method: "POST", headers: bearer(ct.token) })).status, 200);
     assert.equal((await fetch(`${base}/members`, { headers: bearer(ct.token) })).status, 401);
+
+    // ---- đoán mã: gõ sai 10 lần thì tạm khoá ----
+    const good = await (await pair(keys.ngoc)).json();
+    for (let i = 0; i < 10; i++) await claim("ZZZZ-ZZZZ");
+    assert.equal((await claim(good.short)).status, 429, "sai quá nhiều lần → khoá 10 phút, kể cả mã đúng");
 
     // ---- đổi key máy tính → phiên điện thoại cũ hết hiệu lực ----
     users.users["it-ltn"].keyHash = hash("key-ltn-moi");
