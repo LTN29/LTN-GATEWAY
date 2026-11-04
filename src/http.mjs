@@ -31,7 +31,7 @@ export async function readBody(req, maxBytes = config.maxBodyBytes) {
     size += chunk.length;
 
     if (size > maxBytes) {
-      const error = new Error("Request body vượt quá giới hạn");
+      const error = new Error(`Request body vượt quá giới hạn ${Math.round(maxBytes / 1_000_000)} MB`);
       error.statusCode = 413;
       throw error;
     }

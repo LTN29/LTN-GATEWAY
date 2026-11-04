@@ -134,6 +134,16 @@ function parseExtractorJson(text) {
   return payload.candidates;
 }
 
+// Model trích xuất bộ nhớ không dùng được (ví dụ Combo không còn model nào) thì mọi lượt đều lỗi giống nhau, tốn một lần gọi
+// 9Router mỗi lượt. Gặp lỗi kiểu "model không dùng được" → tạm dừng trích xuất 30 phút, ghi log 1 lần, rồi thử lại.
+const EXTRACTION_PAUSE_MS = 30 * 60 * 1000;
+const MODEL_BROKEN = /model is unavailable|model not found|does not exist|not supported|unknown model|no available|không thuộc Combo/i;
+let extractionPausedUntil = 0;
+
+export function memoryExtractionPaused() {
+  return Date.now() < extractionPausedUntil;
+}
+
 async function runExtraction({ team, principal, rawKey, originalMessages, assistantText, requestId }) {
   const conversation = latestConversation(originalMessages, assistantText);
   if (!conversation.trim()) return;
@@ -167,6 +177,16 @@ async function runExtraction({ team, principal, rawKey, originalMessages, assist
 
     const text = await response.text();
     if (!response.ok) {
+      if ([400, 404, 422].includes(response.status) && MODEL_BROKEN.test(text)) {
+        extractionPausedUntil = Date.now() + EXTRACTION_PAUSE_MS;
+        jsonLog("memory_extraction_paused", {
+          requestId,
+          model: config.memoryExtractionModel,
+          minutes: EXTRACTION_PAUSE_MS / 60000,
+          reason: redactSecrets(text.slice(0, 300)),
+          hint: "Đổi MEMORY_EXTRACTION_MODEL trong .env sang model chạy được rồi khởi động lại Gateway."
+        });
+      }
       throw new Error(`Memory extractor upstream ${response.status}: ${redactSecrets(text.slice(0, 500))}`);
     }
 
@@ -242,6 +262,7 @@ export function scheduleMemoryExtraction({
 }) {
   if (!config.memoryUpdateEnabled || !config.memoryExtractionEnabled) return;
   if (!assistantText || !String(assistantText).trim()) return;
+  if (memoryExtractionPaused()) return;
   if (scheduledExtractions >= config.memoryExtractionQueueLimit) {
     jsonLog("memory_extraction_dropped_global_queue_full", {
       team: team.code,

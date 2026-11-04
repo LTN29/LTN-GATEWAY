@@ -83,7 +83,8 @@ export async function allowedComboModels(principal, requestId, comboIds) {
 export async function assertComboModelAllowed(principal, model, requestId, comboIds) {
   const allowed = await allowedComboModels(principal, requestId, comboIds);
   if (!allowed.includes(model)) {
-    throw Object.assign(new Error("Model không thuộc Combo được cấp cho tài khoản hoặc đã hết lượt Premium."), {
+    const list = allowed.slice(0, 8).join(", ");
+    throw Object.assign(new Error(`Model ${model || "(trống)"} không thuộc Combo được cấp cho tài khoản. Chọn một trong: ${list || "(Combo chưa có model)"}.`), {
       statusCode: 403, type: "permission_error"
     });
   }
