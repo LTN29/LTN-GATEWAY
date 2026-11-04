@@ -196,6 +196,35 @@ export async function loadMemoryContext(team, principal = null) {
   };
 }
 
+// Ngữ cảnh bộ nhớ "đóng băng" theo từng hội thoại Codex: bộ nhớ team thay đổi liên tục (cả team cùng ghi) mà nằm ngay đầu
+// instructions → mỗi lần đổi là cache prompt của nhà cung cấp mất sạch, lượt sau phải xử lý lại toàn bộ hội thoại (chậm + tốn).
+// Giữ nguyên bản đã đọc ở lượt đầu cho tới hết hội thoại (tối đa MEMORY_SNAPSHOT_TTL_MS); hội thoại mới mới đọc bản mới.
+const memorySnapshots = new Map();
+const SNAPSHOT_LIMIT = 5000;
+
+export function conversationKey(payload, headers = {}) {
+  const key = payload?.prompt_cache_key || headers["session_id"] || headers["conversation_id"] || headers["x-session-id"];
+  return typeof key === "string" && key.length >= 8 && key.length <= 200 ? key : "";
+}
+
+export async function memoryForConversation(team, principal, key) {
+  if (!key) return loadMemoryContext(team, principal);
+  const id = `${team?.code}|${principal?.principalType || ""}|${principal?.userId || ""}|${principal?.memoryMode || ""}|${key}`;
+  const now = Date.now();
+  const hit = memorySnapshots.get(id);
+  if (hit && now - hit.at < config.memorySnapshotTtlMs) return hit.ctx;
+  const ctx = await loadMemoryContext(team, principal);
+  memorySnapshots.delete(id);
+  memorySnapshots.set(id, { at: now, ctx });
+  if (memorySnapshots.size > SNAPSHOT_LIMIT) {
+    for (const [k, v] of memorySnapshots) {
+      if (memorySnapshots.size <= SNAPSHOT_LIMIT * 0.8 && now - v.at < config.memorySnapshotTtlMs) break;
+      memorySnapshots.delete(k);
+    }
+  }
+  return ctx;
+}
+
 export function injectMemory(
   messages,
   team,

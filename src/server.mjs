@@ -8,6 +8,8 @@ import { config, loadTeams } from "./config.mjs";
 import { authenticatePrincipal } from "./auth.mjs";
 import {
   loadMemoryContext,
+  memoryForConversation,
+  conversationKey,
   injectMemory
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
@@ -650,7 +652,7 @@ async function serveInstallerFile(res, path, contentType = "text/plain; charset=
 async function proxyResponses(req, res, rawKey, principal, id) {
   const team = principal.team;
   const signal = clientAbortSignal(req, res);
-  const raw = await readBody(req);
+  const raw = await readBody(req, config.responsesMaxBodyBytes);
   let payload;
   let route = null;
   let shouldReleaseRoute = false;
@@ -671,7 +673,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   const memoryDisabled = outsideControl || principal.memoryMode === "none";
   const { systemContent } = memoryDisabled
     ? { systemContent: "" }
-    : await loadMemoryContext(team, principal);
+    : await memoryForConversation(team, principal, conversationKey(payload, req.headers));
   const budgeted = budgetResponsesPayload(memoryDisabled
     ? payload
     : injectResponsesMemory(payload, systemContent));

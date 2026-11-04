@@ -24,9 +24,14 @@ function emptyStore() {
   };
 }
 
-// Serialize transactions from this process before taking the cross-process
-// filesystem lock. This avoids 25 ms polling loops when requests arrive in a burst.
-let usageTransactionQueue = Promise.resolve();
+// Mỗi request Codex = 1 lần giữ chỗ + 1 lần xác nhận. Trước đây mỗi lần là: khoá file → đọc + parse cả file (vài trăm KB –
+// 1 MB khi đủ người × 30 ngày) → ghi lại cả file, nối đuôi nhau cho mọi người dùng → giờ cao điểm request phải xếp hàng
+// hàng giây trước khi được gửi đi. Giờ: (1) gộp các giao dịch đang chờ vào 1 lần khoá + 1 lần ghi, (2) giữ bản đã đọc
+// trong bộ nhớ, chỉ đọc lại khi file bị nơi khác sửa (khác thời điểm sửa / kích thước), (3) ghi JSON gọn (không thụt lề).
+const pendingTransactions = [];
+let draining = false;
+let cached = null; // { path, mtimeMs, size, store }
+const BATCH_MAX = 64;
 
 async function readStore(path) {
   try {
@@ -81,10 +86,34 @@ async function readStore(path) {
   }
 }
 
+async function loadStore(path) {
+  try {
+    const info = await stat(path);
+    if (cached && cached.path === path && cached.mtimeMs === info.mtimeMs && cached.size === info.size) {
+      return cached.store;
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  cached = null;
+  return readStore(path);
+}
+
+async function saveStore(path, store) {
+  cached = null;
+  await writeStore(path, store);
+  try {
+    const info = await stat(path);
+    cached = { path, mtimeMs: info.mtimeMs, size: info.size, store };
+  } catch {
+    cached = null;
+  }
+}
+
 async function writeStore(path, store) {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(store, null, 2) + "\n", "utf8");
+  await writeFile(tmp, JSON.stringify(store) + "\n", "utf8");
   if (process.platform !== "win32") {
     await chmod(tmp, 0o600);
     await rename(tmp, path);
@@ -92,6 +121,13 @@ async function writeStore(path, store) {
     return;
   }
 
+  // Windows: đổi tên (thay file cũ) nhanh hơn chép cả file; bị chặn tạm (phần mềm diệt virus đang đọc…) thì chép như cũ
+  try {
+    await rename(tmp, path);
+    return;
+  } catch (error) {
+    if (!["EPERM", "EBUSY", "EACCES"].includes(error?.code)) throw error;
+  }
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
       await copyFile(tmp, path);
@@ -168,21 +204,58 @@ async function withStoreFileLock(task) {
   }
 
   try {
-    const store = await readStore(config.codexUsageFile);
+    const store = await loadStore(config.codexUsageFile);
     const result = await task(store);
-    await writeStore(config.codexUsageFile, store);
+    await saveStore(config.codexUsageFile, store);
     return result;
+  } catch (error) {
+    cached = null;
+    throw error;
   } finally {
     await rm(lockPath, { recursive: true, force: true });
   }
 }
 
+// gộp nhóm: giao dịch nào tới trong lúc đang ghi thì chờ, rồi cả nhóm chạy chung 1 lần khoá + 1 lần ghi.
+// Lời hứa của từng giao dịch chỉ xong SAU khi file đã ghi (giữ nguyên đảm bảo cũ).
 function withStoreLock(task) {
-  const transaction = usageTransactionQueue
-    .catch(() => undefined)
-    .then(() => withStoreFileLock(task));
-  usageTransactionQueue = transaction.then(() => undefined, () => undefined);
-  return transaction;
+  return new Promise((resolve, reject) => {
+    pendingTransactions.push({ task, resolve, reject });
+    drainTransactions();
+  });
+}
+
+async function drainTransactions() {
+  if (draining) return;
+  draining = true;
+  try {
+    // chờ hết lượt sự kiện hiện tại để gom các request tới cùng lúc vào chung 1 nhóm
+    await new Promise((resolve) => setImmediate(resolve));
+    while (pendingTransactions.length) {
+      const batch = pendingTransactions.splice(0, BATCH_MAX);
+      const results = [];
+      try {
+        await withStoreFileLock(async (store) => {
+          for (const transaction of batch) {
+            try {
+              results.push({ ok: true, value: await transaction.task(store) });
+            } catch (error) {
+              results.push({ ok: false, error });
+            }
+          }
+        });
+        batch.forEach((transaction, index) => {
+          const result = results[index];
+          if (result.ok) transaction.resolve(result.value);
+          else transaction.reject(result.error);
+        });
+      } catch (error) {
+        batch.forEach((transaction) => transaction.reject(error));
+      }
+    }
+  } finally {
+    draining = false;
+  }
 }
 
 function recordKey({ teamCode, usageDate, usageScope, clientIdHash, principalType, userId }) {

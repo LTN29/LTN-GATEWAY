@@ -149,6 +149,11 @@ export const config = {
   memoryBackupLimit: number(process.env.MEMORY_BACKUP_LIMIT || 20, 20),
   maxBodyBytes: Number(process.env.MAX_BODY_BYTES || 4_000_000),
   maxCapabilityBodyBytes: Number(process.env.MAX_CAPABILITY_BODY_BYTES || 32_000_000),
+  // /v1/responses: Codex gửi lại cả lịch sử kèm mọi ảnh chụp màn hình mỗi lượt → body lớn dần (computer use vài chục MB).
+  // Gateway nhận hết rồi tự lược ảnh cũ (RESPONSES_MAX_IMAGES) trước khi gửi lên 9Router, nên giới hạn nhận được nới rộng.
+  responsesMaxBodyBytes: Math.max(4_000_000, number(process.env.RESPONSES_MAX_BODY_BYTES || 64_000_000, 64_000_000)),
+  // giữ nguyên ngữ cảnh bộ nhớ trong suốt 1 cuộc hội thoại Codex (prompt_cache_key) để 9Router/nhà cung cấp dùng lại cache
+  memorySnapshotTtlMs: Math.max(60_000, number(process.env.MEMORY_SNAPSHOT_TTL_MS || 6 * 60 * 60 * 1000, 6 * 60 * 60 * 1000)),
   maxContextChars: Number(process.env.MAX_CONTEXT_CHARS || 24_000),
   responsesMaxImages: Math.max(0, number(process.env.RESPONSES_MAX_IMAGES || 4, 4)),
   responsesMaxTextChars: Math.max(20_000, number(process.env.RESPONSES_MAX_TEXT_CHARS || 200_000, 200_000)),
