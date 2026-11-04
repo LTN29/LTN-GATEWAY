@@ -5,6 +5,11 @@ description: Đọc URL công khai dạng bài viết/tài liệu (tin tức, bl
 
 # Simi - Đọc nội dung trang web
 
+**Cách nhanh và ổn định nhất:** gọi thẳng công cụ MCP `simi_browser.web_fetch`
+(`url`, `max_characters`) – 1 lần gọi, tự chọn công cụ đọc, tự dự phòng, không cần
+quyền mạng của sandbox. Chỉ khi phiên KHÔNG có công cụ này mới dùng `ltn-9router`
+như hướng dẫn bên dưới.
+
 Không dùng skill này cho sàn TMĐT, mạng xã hội hoặc dashboard (Shopee, Lazada,
 Tiki, TikTok Shop, Facebook, TikTok, Instagram, SharePoint, Google Docs...),
 kể cả khi trang có vẻ công khai: chuyển sang `simi-trinh-duyet`. Nếu kết quả

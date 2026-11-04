@@ -44,7 +44,10 @@ test("browser MCP exposes prompt-first multi-page tools over stdio", async () =>
     "muse_image",
     "document_inspect",
     "document_read",
-    "document_edit"
+    "document_edit",
+    "web_search",
+    "web_fetch",
+    "image_generate"
   ]);
   assert.equal(listed[0].inputSchema.properties.urls.maxItems, 8);
   assert.equal(listed[3].inputSchema.properties.max_rows.maximum, 5000);

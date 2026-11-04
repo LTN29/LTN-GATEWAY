@@ -5,6 +5,19 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
 
 # Simi - Tạo ảnh
 
+## Cách gọi: ưu tiên công cụ `image_generate`
+
+- **Luôn dùng công cụ MCP `simi_browser.image_generate`** nếu có trong phiên:
+  `prompt` (viết theo mục "Viết prompt"), `output_path` (đường dẫn tuyệt đối
+  `<thư mục làm việc>/outputs/<ten-ngan-khong-dau>.png`), `mode` = `generate` /
+  `edit`, `source_path` khi sửa ảnh, `size` nếu cần, `chat_model` = model chat
+  đang dùng. Công cụ tự chọn model ảnh cùng hãng, tự dự phòng, lưu file – không
+  cần quyền mạng của sandbox, không phải chạy khối lệnh dài.
+- Gọi **một lần** cho mỗi yêu cầu. Kết quả `ok:true` → hiển thị ảnh bằng giá trị
+  `show` (`![](đường dẫn)`) và kết thúc lượt. `next:"muse_image"` → chuyển sang
+  công cụ `muse_image` với ảnh gốc làm `refs`, đúng một lần.
+- Chỉ khi phiên KHÔNG có công cụ `image_generate` mới dùng "Khối lệnh" bên dưới.
+
 Dựa trên skill `9router-image` của 9Router, chỉnh cho SIMI: mọi request đi qua
 `https://ai.simi.vn/v1` bằng key đã cài, không bao giờ gọi `router.simi.vn`.
 Model chat không tự vẽ ảnh; ảnh do model ảnh tạo qua Gateway, chọn model ảnh

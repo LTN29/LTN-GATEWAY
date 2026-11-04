@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { unlink } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { execFile, spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import readline from "node:readline";
 import { activateCdpTarget, actOnTab, cdpBrowserVersion, cdpTargets, closeCdpBrowser, findBrowserExecutable, isHeadlessBrowserSession, isHeadlessBrowserVersion, listPageTabs, navigateTab, resolveBrowserProfile, resolveDesktopEnv, screenshotTab, snapshotTab } from "./browser-cdp.mjs";
 
@@ -16,6 +16,58 @@ const documentToolPath = process.env.LTN_DOCUMENT_TOOL_PATH || join(codexHome, "
 const pythonPath = process.env.LTN_PYTHON_PATH || (process.platform === "win32"
   ? join(codexHome, "pdf-runtime", "Scripts", "python.exe")
   : join(codexHome, "pdf-runtime", "bin", "python"));
+
+// Công cụ Gateway gốc: tìm web, đọc web, tạo / sửa ảnh. Chạy NGOÀI sandbox của Codex, gọi thẳng Gateway trong 1 lần,
+// thay cho việc mô hình phải tự gõ cả khối lệnh PowerShell / bash dài (dễ gõ sai, bị sandbox chặn mạng, tốn 3–4 vòng hỏi).
+const GATEWAY_TOOLS = [
+  {
+    name: "web_search",
+    description: "Tìm kiếm Internet qua SIMI Gateway (1 lần gọi, tự chọn công cụ tìm kiếm, tự dự phòng). Dùng khi cần thông tin mới hoặc chưa có link. Trả về danh sách kết quả: tiêu đề, link, ngày, đoạn trích. Muốn đọc kỹ một nguồn thì gọi web_fetch.",
+    annotations: { readOnlyHint: true, openWorldHint: true, title: "Tìm web" },
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Câu tìm kiếm." },
+        max_results: { type: "integer", minimum: 1, maximum: 20, default: 6 }
+      },
+      required: ["query"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "web_fetch",
+    description: "Đọc nội dung trang web công khai (bài báo, blog, tài liệu) thành văn bản qua SIMI Gateway. Trang cần đăng nhập, sàn TMĐT, mạng xã hội hoặc bị chặn / CAPTCHA thì dùng browser_read_pages.",
+    annotations: { readOnlyHint: true, openWorldHint: true, title: "Đọc web" },
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Địa chỉ http/https." },
+        max_characters: { type: "integer", minimum: 1000, maximum: 200000, default: 20000 }
+      },
+      required: ["url"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "image_generate",
+    description: "Tạo ảnh mới hoặc sửa ảnh (xoá chữ, đổi màu, đổi nền, outpaint, ghép) bằng model ảnh qua SIMI Gateway, tự chọn model và dự phòng, lưu file ảnh về máy. Gọi MỘT lần cho mỗi yêu cầu; ok:true thì hiển thị ảnh bằng ![](đường dẫn) và kết thúc, không tạo lại.",
+    annotations: { readOnlyHint: false, openWorldHint: true, title: "Tạo ảnh" },
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", description: "Mô tả đầy đủ ảnh cần tạo / cách sửa (nội dung, bố cục, phong cách, chữ cần có trong ảnh)." },
+        mode: { type: "string", enum: ["generate", "edit"], default: "generate" },
+        source_path: { type: "string", description: "edit: đường dẫn ảnh gốc cần sửa." },
+        output_path: { type: "string", description: "Nơi lưu ảnh: đường dẫn tuyệt đối trong thư mục làm việc của đoạn chat, ví dụ <thư mục làm việc>/outputs/banner-tet.png. Tên mới cho mỗi lần, không ghi đè." },
+        size: { type: "string", enum: ["1024x1024", "1024x1536", "1536x1024"], description: "Vuông / dọc / ngang. Bỏ trống để model tự chọn." },
+        chat_model: { type: "string", description: "ID model chat đang dùng (để chọn model ảnh cùng hãng)." },
+        model: { type: "string", description: "Model ảnh người dùng chỉ định đích danh (thường bỏ trống)." }
+      },
+      required: ["prompt", "output_path"],
+      additionalProperties: false
+    }
+  }
+];
 
 const ACTION_ITEM = {
   type: "object",
@@ -572,6 +624,237 @@ async function browserStatus() {
   }
 }
 
+// ---------- Gateway: key, gọi API ----------
+const gatewayBase = (() => {
+  const base = String(process.env.LTN_GATEWAY_BASE_URL || process.env.NINEROUTER_URL || "https://ai.simi.vn/v1").replace(/\/+$/, "");
+  return /\/v1$/.test(base) ? base : `${base}/v1`;
+})();
+
+function runQuiet(command, args, timeoutMs = 5_000) {
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 65_536 }, (error, stdout) => resolve(error ? "" : String(stdout || "")));
+  });
+}
+
+// biến môi trường của tiến trình, rồi tới biến người dùng Windows (đặt sau khi Codex đã mở)
+async function userEnv(name) {
+  const value = String(process.env[name] || "").trim();
+  if (value || process.platform !== "win32") return value;
+  const out = await runQuiet("reg", ["query", "HKCU\\Environment", "/v", name]);
+  const match = out.match(new RegExp(`${name}\\s+REG_(?:EXPAND_)?SZ\\s+(.+)`, "i"));
+  return match ? match[1].trim() : "";
+}
+
+let cachedKey = "";
+async function gatewayKey() {
+  if (cachedKey) return cachedKey;
+  let key = await userEnv("LTN_TEAM_API_KEY") || await userEnv("NINEROUTER_KEY");
+  if (!key && process.platform !== "win32") {
+    const helper = process.env.LTN_CODEX_TOKEN_HELPER || join(codexHome, "bin", "ltn-codex-token");
+    if (existsSync(helper)) key = (await runQuiet(helper, [])).trim();
+  }
+  if (!key) throw new Error("Thiếu key Gateway trên máy. Chạy bộ cài SIMI chọn 5 (Update) rồi mở lại.");
+  cachedKey = key;
+  return key;
+}
+
+async function clientId() {
+  const value = await userEnv("LTN_CLIENT_ID");
+  if (value) return value;
+  try { return readFileSync(join(codexHome, "ltn-client-id"), "utf8").trim(); } catch { return ""; }
+}
+
+async function gatewayCall(path, { method = "GET", body, timeoutMs = 60_000 } = {}) {
+  const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: "application/json", "user-agent": "simi-browser-mcp/1.0" };
+  const cid = await clientId();
+  if (cid) headers["x-ltn-client-id"] = cid;
+  if (body !== undefined) headers["content-type"] = "application/json";
+  let response;
+  try {
+    response = await fetch(gatewayBase + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+  } catch (error) {
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    const failure = new Error(timedOut ? `Gateway không trả lời sau ${Math.round(timeoutMs / 1000)} giây.` : `Không kết nối được Gateway: ${error?.cause?.code || error?.message}`);
+    failure.status = 0;
+    throw failure;
+  }
+  const text = await response.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+  if (!response.ok) {
+    const message = json?.error?.message || json?.message || text.slice(0, 300) || `HTTP ${response.status}`;
+    const failure = new Error(response.status === 403 ? `Tính năng chưa được mở cho tài khoản này (${message}).` : response.status === 401 ? "Key Gateway không hợp lệ hoặc đã bị thu hồi." : message);
+    failure.status = response.status;
+    throw failure;
+  }
+  return json ?? text;
+}
+
+// danh sách model web / ảnh (giữ 10 phút)
+const discovery = new Map();
+async function discover(path) {
+  const hit = discovery.get(path);
+  if (hit && Date.now() - hit.at < 600_000) return hit.items;
+  const payload = await gatewayCall(path, { timeoutMs: 30_000 });
+  const items = (Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [])
+    .map((item) => (typeof item === "string" ? { id: item } : item)).filter((item) => item && item.id);
+  discovery.set(path, { at: Date.now(), items });
+  return items;
+}
+
+function kindOf(item) {
+  return String(item.kind || item.type || item.capability || (Array.isArray(item.capabilities) ? item.capabilities.join(" ") : "")).toLowerCase();
+}
+
+async function webModels(kind) {
+  const items = await discover("/models/web");
+  const wanted = kind === "search" ? /search/ : /fetch|read|extract|crawl/;
+  const byId = kind === "search" ? /(?:\/search|search-combo)$/i : /(?:\/fetch|fetch-combo)$/i;
+  // combo (tự dự phòng nhiều nhà cung cấp) lên trước
+  const matched = items.filter((item) => wanted.test(kindOf(item)) || byId.test(item.id))
+    .sort((a, b) => Number(/combo/i.test(b.id)) - Number(/combo/i.test(a.id)));
+  if (!matched.length) throw new Error(`Gateway chưa có công cụ ${kind === "search" ? "tìm kiếm" : "đọc"} web nào cho tài khoản này.`);
+  return matched.map((item) => item.id);
+}
+
+async function webSearch(args = {}) {
+  const query = String(args.query || "").trim();
+  if (!query) throw new Error("Thiếu câu tìm kiếm (query).");
+  const max = Math.max(1, Math.min(20, Number(args.max_results) || 6));
+  const errors = [];
+  for (const model of (await webModels("search")).slice(0, 3)) {
+    try {
+      const payload = await gatewayCall("/search", { method: "POST", body: { model, query, max_results: max }, timeoutMs: 45_000 });
+      const results = (payload?.results || payload?.data || []).slice(0, max);
+      if (!results.length) { errors.push(`${model}: không có kết quả`); continue; }
+      const lines = results.map((item, index) => [
+        `${index + 1}. ${item.title || "(không tiêu đề)"}`,
+        `   ${item.url || item.link || ""}${item.published_at || item.date ? ` · ${item.published_at || item.date}` : ""}`,
+        item.snippet || item.content || item.description ? `   ${String(item.snippet || item.content || item.description).replace(/\s+/g, " ").slice(0, 400)}` : ""
+      ].filter(Boolean).join("\n"));
+      return { __content: [{ type: "text", text: `Kết quả tìm "${query}" (${model}):\n\n${lines.join("\n\n")}\n\nĐoạn trích chưa phải toàn bài – cần chắc chắn thì gọi web_fetch nguồn đó.` }] };
+    } catch (error) {
+      if ([401, 403, 429].includes(error.status)) throw error;
+      errors.push(`${model}: ${error.message}`);
+    }
+  }
+  throw new Error(`Tìm kiếm không thành công: ${errors.join(" | ")}`);
+}
+
+async function webFetch(args = {}) {
+  const [url] = validUrls([args.url]);
+  const max = Math.max(1_000, Math.min(200_000, Number(args.max_characters) || 20_000));
+  const errors = [];
+  for (const model of (await webModels("fetch")).slice(0, 3)) {
+    try {
+      const payload = await gatewayCall("/web/fetch", { method: "POST", body: { model, url, format: "markdown", max_characters: max }, timeoutMs: 60_000 });
+      const text = String(payload?.content?.text ?? payload?.text ?? payload?.content ?? "").trim();
+      if (!text) { errors.push(`${model}: trang rỗng`); continue; }
+      const blocked = /captcha|verify you are human|access denied|đăng nhập để|sign in to continue|enable javascript/i.test(text.slice(0, 2000));
+      return { __content: [{ type: "text", text: [
+        `${payload?.title || ""}`.trim() ? `# ${payload.title}` : "",
+        `Nguồn: ${payload?.url || url}${text.length >= max ? ` (đã cắt ở ${max} ký tự)` : ""}`,
+        blocked ? "⚠️ Trang có vẻ bắt đăng nhập / CAPTCHA – dùng browser_read_pages để đọc bằng Trình duyệt SIMI." : "",
+        "",
+        text.slice(0, max)
+      ].filter((line, index) => line || index === 3).join("\n") }] };
+    } catch (error) {
+      if ([401, 403, 429].includes(error.status)) throw error;
+      errors.push(`${model}: ${error.message}`);
+    }
+  }
+  throw new Error(`Không đọc được trang: ${errors.join(" | ")}. Thử browser_read_pages.`);
+}
+
+// ---------- tạo / sửa ảnh ----------
+const BAD_IMAGE_FILE = join(tmpdir(), "simi-image-bad.json");
+async function readBadModels() {
+  try {
+    const now = Date.now() / 1000;
+    return Object.fromEntries(Object.entries(JSON.parse(await readFile(BAD_IMAGE_FILE, "utf8"))).filter(([, at]) => now - Number(at) < 1800));
+  } catch { return {}; }
+}
+
+function chatModelFromConfig() {
+  try {
+    const text = readFileSync(join(codexHome, "config.toml"), "utf8");
+    return (text.match(/^\s*model\s*=\s*"([^"]+)"/m) || [])[1] || "";
+  } catch { return ""; }
+}
+
+async function imageGenerate(args = {}) {
+  const prompt = String(args.prompt || "").trim();
+  if (!prompt) throw new Error("Thiếu mô tả ảnh (prompt).");
+  const mode = args.mode === "edit" ? "edit" : "generate";
+  const output = String(args.output_path || "").trim();
+  if (!output) throw new Error("Thiếu output_path (nơi lưu ảnh).");
+  let outPath = isAbsolute(output) ? output : resolvePath(process.cwd(), output);
+  if (!/\.(png|jpe?g|webp)$/i.test(outPath)) outPath += ".png";
+  let source = null;
+  if (mode === "edit") {
+    const src = String(args.source_path || "").trim();
+    if (!src || !existsSync(src)) throw new Error("Sửa ảnh cần source_path là ảnh có trên máy.");
+    const ext = extname(src).toLowerCase();
+    const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
+    source = `data:${mime};base64,${(await readFile(src)).toString("base64")}`;
+  }
+  const ids = (await discover("/models/image")).map((item) => item.id);
+  if (!ids.length) throw new Error("Gateway chưa có model ảnh nào cho tài khoản này.");
+  const chat = String(args.chat_model || chatModelFromConfig());
+  const cx = ids.filter((id) => /^cx\//.test(id));
+  const gemini = ids.filter((id) => /gemini/i.test(id) && /image/i.test(id));
+  const others = ids.filter((id) => !cx.includes(id) && !gemini.includes(id));
+  let order = /^(cx\/|gpt|openai\/)/i.test(chat) ? [...cx, ...gemini, ...others] : [...gemini, ...cx, ...others];
+  if (args.model && ids.includes(args.model)) order = [args.model, ...order];
+  const bad = await readBadModels();
+  order = [...new Set(order)].filter((id) => !bad[id]);
+  if (mode === "edit") {
+    const editable = [];
+    for (const id of order) {
+      if (editable.length >= 2) break;
+      try {
+        const info = await gatewayCall(`/models/info?id=${encodeURIComponent(id)}`, { timeoutMs: 20_000 });
+        if ((info?.capabilities || info?.data?.capabilities || []).includes("edit")) editable.push(id);
+      } catch {}
+    }
+    order = editable;
+    if (!order.length) return { ok: false, error: "Chưa có model sửa ảnh dùng được – dùng công cụ muse_image với ảnh gốc làm refs.", next: "muse_image" };
+  }
+  await mkdir(dirname(outPath), { recursive: true });
+  const tried = [];
+  for (const model of order.slice(0, 2)) {
+    tried.push(model);
+    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}) };
+    try {
+      const payload = await gatewayCall("/images/generations", { method: "POST", body, timeoutMs: 180_000 });
+      const item = [...(payload?.data || [])].reverse().find((entry) => entry?.b64_json || entry?.url) || {};
+      let bytes = item.b64_json ? Buffer.from(String(item.b64_json).replace(/^data:[^,]+,/, ""), "base64") : null;
+      if (!bytes && item.url) {
+        const image = await fetch(item.url, { signal: AbortSignal.timeout(60_000) });
+        if (image.ok && /^image\//.test(image.headers.get("content-type") || "image/")) bytes = Buffer.from(await image.arrayBuffer());
+      }
+      if (!bytes || bytes.length < 1000) throw new Error("model không trả ảnh");
+      let finalPath = outPath;
+      if (bytes[0] === 0xff && bytes[1] === 0xd8) finalPath = outPath.replace(/\.(png|webp)$/i, ".jpg");
+      for (let n = 2; existsSync(finalPath); n += 1) finalPath = finalPath.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
+      await writeFile(finalPath, bytes);
+      return { __content: [{ type: "text", text: JSON.stringify({ ok: true, path: finalPath, model, show: `![](${finalPath.replace(/\\/g, "/")})` }) }] };
+    } catch (error) {
+      if (error.status === 0 && /không trả lời/.test(error.message)) {
+        return { ok: false, error: `${error.message} Ảnh có thể vẫn đang được tạo – không tự gọi lại.`, model };
+      }
+      if ([401, 403, 429].includes(error.status)) return { ok: false, status: error.status, error: error.message };
+      bad[model] = Math.floor(Date.now() / 1000);
+      if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
+        const prefix = model.split("/")[0] + "/";
+        for (const id of ids) if (id.startsWith(prefix)) bad[id] = bad[model];
+      }
+      await writeFile(BAD_IMAGE_FILE, JSON.stringify(bad)).catch(() => {});
+    }
+  }
+  return { ok: false, error: "no_working_model", tried, next: mode === "edit" ? "muse_image" : "" };
+}
+
 // ---------- thao tác trang (DOM) ----------
 let currentTab = null;
 
@@ -652,6 +935,9 @@ async function browserScreenshot(args = {}) {
 }
 
 async function callTool(name, args = {}) {
+  if (name === "web_search") return webSearch(args);
+  if (name === "web_fetch") return webFetch(args);
+  if (name === "image_generate") return imageGenerate(args);
   if (name === "browser_snapshot") return browserSnapshot(args);
   if (name === "browser_act") return browserAct(args);
   if (name === "browser_screenshot") return browserScreenshot(args);
@@ -790,7 +1076,7 @@ async function handle(message) {
       return;
     }
     if (message.method === "tools/list") {
-      send({ jsonrpc: "2.0", id: message.id, result: { tools } });
+      send({ jsonrpc: "2.0", id: message.id, result: { tools: [...tools, ...GATEWAY_TOOLS] } });
       return;
     }
     if (message.method === "tools/call") {

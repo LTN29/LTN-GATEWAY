@@ -650,6 +650,7 @@ async function serveInstallerFile(res, path, contentType = "text/plain; charset=
 }
 
 async function proxyResponses(req, res, rawKey, principal, id) {
+  const receivedAt = Date.now();
   const team = principal.team;
   const signal = clientAbortSignal(req, res);
   const raw = await readBody(req, config.responsesMaxBodyBytes);
@@ -722,6 +723,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   });
 
   const startedAt = Date.now();
+  const upstreamBody = JSON.stringify(upstreamPayload);
   try {
     const upstream = await upstreamFetch("/v1/responses", {
       method: "POST",
@@ -729,8 +731,10 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       requestId: id,
       accept: req.headers.accept || "*/*",
       signal,
-      body: JSON.stringify(upstreamPayload)
+      body: upstreamBody
     });
+    // thời gian 9Router / nhà cung cấp bắt đầu trả lời (chưa tính lúc stream) – để biết chậm nằm ở đâu
+    const upstreamFirstByteMs = Date.now() - startedAt;
 
     copyHeaders(upstream, res);
     res.setHeader("X-LTN-Route-Tier", route.routeTier);
@@ -796,7 +800,12 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       userId: principal.userId,
       model: upstreamPayload.model,
       status: upstream.status,
-      latencyMs: Date.now() - startedAt
+      latencyMs: Date.now() - startedAt,
+      gatewayMs: startedAt - receivedAt,
+      upstreamFirstByteMs,
+      requestBytes: raw.length,
+      upstreamBytes: upstreamBody.length,
+      images: (upstreamBody.match(/"input_image"/g) || []).length
     });
   } finally {
     if (shouldReleaseRoute) {

@@ -5,6 +5,11 @@ description: Tìm kiếm Internet qua Simi Gateway bằng nhiều công cụ và
 
 # Simi - Tìm kiếm Internet
 
+**Cách nhanh và ổn định nhất:** gọi thẳng công cụ MCP `simi_browser.web_search`
+(`query`, `max_results`) – 1 lần gọi, tự chọn công cụ tìm kiếm, tự dự phòng, không
+cần quyền mạng của sandbox. Đọc kỹ nguồn bằng `simi_browser.web_fetch`. Chỉ khi
+phiên KHÔNG có các công cụ này mới dùng `ltn-9router` như hướng dẫn bên dưới.
+
 Khi user đưa link cụ thể cần đọc, đặc biệt link sàn TMĐT/mạng xã hội
 (Shopee, Lazada, Tiki, TikTok, Facebook...), không thay bằng tìm kiếm: dùng
 `simi-trinh-duyet`. Chỉ search khi user hỏi thông tin chưa có link.
