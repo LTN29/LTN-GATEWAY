@@ -182,6 +182,7 @@ export async function runAutoUpdate({ holdLock = false } = {}) {
       const ok = await applyFiles(manifest, status);
       if (ok && status.serverBundle) status.syncedBundle = status.serverBundle;
     }
+    if (!manifest.paused) status.catalog = await refreshModelCatalog();
     const localVersion = Number(readFileSafe(versionPath) || 0);
     status.installerVersion = { local: localVersion, server: Number(manifest.installerVersion || 0) };
     if (typeof manifest.releaseNote === "string") status.releaseNote = manifest.releaseNote.slice(0, 200);
@@ -198,6 +199,65 @@ export async function runAutoUpdate({ holdLock = false } = {}) {
   writeStatus(status);
   if (holdLock) status.lockHeld = true;
   return status;
+}
+
+// Danh sách model (catalog) của Codex chỉ được bộ cài ghi một lần → admin đổi Combo, thêm model hay đổi chỉ dẫn gốc
+// thì máy user vẫn giữ bản cũ (chọn phải model đã bị gỡ → lỗi "Model không thuộc Combo"). Mỗi lần tự cập nhật:
+// lấy catalog mới theo Combo hiện tại; model mặc định trong config.toml không còn trong Combo thì đổi sang model
+// Gateway gợi ý. Chỉ làm khi máy đã được bộ cài cấu hình catalog (model_catalog_json); không đụng phần khác của config.
+export async function refreshModelCatalog(home = codexHome) {
+  const configPath = join(home, "config.toml");
+  let toml;
+  try { toml = readFileSync(configPath, "utf8"); } catch { return { skipped: "no config.toml" }; }
+  const catalogLine = /^\s*model_catalog_json\s*=\s*"((?:[^"\\]|\\.)*)"/m.exec(toml);
+  if (!catalogLine) return { skipped: "no model catalog" };
+  const apiKey = readApiKey();
+  if (!apiKey) return { skipped: "no api key" };
+  const clientId = readClientId();
+  let remote;
+  try {
+    const response = await fetch(`${gatewayRoot}/v1/codex/config`, {
+      redirect: "error",
+      signal: AbortSignal.timeout(20_000),
+      headers: { authorization: `Bearer ${apiKey}`, ...(clientId ? { "x-ltn-client-id": clientId } : {}) }
+    });
+    if (!response.ok) return { error: `HTTP ${response.status}` };
+    remote = await response.json();
+  } catch (error) {
+    return { error: error.message };
+  }
+  const models = remote?.modelCatalog?.models;
+  if (!Array.isArray(models) || !models.length || !models.every((model) => model && typeof model.slug === "string")) {
+    return { skipped: "gateway has no catalog" };
+  }
+  const result = { models: models.length, updated: false, defaultModel: null };
+  const catalogPath = catalogLine[1].replace(/\\\\/g, "\\").replace(/\\"/g, '"');
+  const next = `${JSON.stringify({ models }, null, 2)}\n`;
+  let current = "";
+  try { current = readFileSync(catalogPath, "utf8"); } catch {}
+  let same = false;
+  try { same = JSON.stringify(JSON.parse(current)) === JSON.stringify({ models }); } catch {}
+  if (!same) {
+    const temporary = `${catalogPath}.${process.pid}.update`;
+    writeFileSync(temporary, next);
+    renameSync(temporary, catalogPath);
+    result.updated = true;
+  }
+  // model mặc định (khoá "model" ở đầu file, trước bảng [..] đầu tiên)
+  const tableAt = toml.search(/^\s*\[/m);
+  const rootPart = tableAt >= 0 ? toml.slice(0, tableAt) : toml;
+  const modelLine = /^(\s*model\s*=\s*")((?:[^"\\]|\\.)*)(".*)$/m.exec(rootPart);
+  const slugs = new Set(models.map((model) => model.slug));
+  const suggested = typeof remote.defaultModel === "string" && slugs.has(remote.defaultModel) ? remote.defaultModel : models[0].slug;
+  if (modelLine && !slugs.has(modelLine[2]) && suggested) {
+    const fixedRoot = rootPart.replace(modelLine[0], `${modelLine[1]}${suggested.replace(/["\\]/g, "")}${modelLine[3]}`);
+    const temporary = `${configPath}.${process.pid}.update`;
+    copyFileSync(configPath, `${configPath}.before-model-fix`);
+    writeFileSync(temporary, fixedRoot + toml.slice(rootPart.length));
+    renameSync(temporary, configPath);
+    result.defaultModel = { from: modelLine[2], to: suggested };
+  }
+  return result;
 }
 
 export function pythonRuntimeHealthy(home = codexHome) {

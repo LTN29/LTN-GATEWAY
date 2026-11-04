@@ -70,6 +70,8 @@ test("catalog does not invent reasoning levels or context capacity", () => {
   assert.equal(model.visibility, "list");
   assert.deepEqual(model.supported_reasoning_levels, []);
   assert.equal(model.context_window, null);
+  assert.equal(model.auto_compact_token_limit, 200000, "không biết context thì vẫn tự tóm tắt phiên dài cho nhanh");
+  assert.equal(codexModelEntry({ id: "cx/gpt", context_window: 400000 }).auto_compact_token_limit, null, "biết context thì Codex tự tính");
   assert.deepEqual(model.input_modalities, ["text"]);
 });
 

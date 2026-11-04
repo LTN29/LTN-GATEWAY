@@ -117,5 +117,26 @@ foreach ($im in ($imgIds | Select-Object -First 3)) {
   W ("  ảnh " + $im + ": " + $r.status + " " + $r.total + "s, dữ liệu " + $len + " ký tự" + $(if ($r.status -ne '200') { " – " + $r.text.Substring(0, [Math]::Min(300, $r.text.Length)) } else { '' }))
 }
 
+H '6. Gọi nhiều công cụ trong 1 lượt (parallel tool calls) – để biết có nên bật CODEX_PARALLEL_TOOL_CALLS'
+$tools = @(@{ type = 'function'; name = 'get_weather'; description = 'Lấy thời tiết một thành phố'; parameters = @{ type = 'object'; properties = @{ city = @{ type = 'string' } }; required = @('city') } })
+foreach ($m in @($ClaudeModel, $GptModel)) {
+  $r = Call 'POST' "$Gateway/v1/responses" @{ model = $m; input = 'Gọi get_weather cho Hà Nội và cho TP.HCM cùng lúc (2 lệnh gọi), chưa cần trả lời.'; tools = $tools; parallel_tool_calls = $true; stream = $false; max_output_tokens = 300 } 120
+  $calls = 0; try { $calls = @(($r.text | ConvertFrom-Json).output | Where-Object { $_.type -eq 'function_call' }).Count } catch {}
+  W ("{0,-24} {1} {2}s – số lệnh gọi công cụ trong 1 lượt: {3}" -f $m, $r.status, $r.total, $calls)
+}
+
+H '7. Tốc độ thật theo model từ log Gateway (20000 dòng cuối)'
+$logFile = Join-Path $GatewayDir 'logs\gateway-out.log'
+if (Test-Path $logFile) {
+  $rows = @(Get-Content $logFile -Tail 20000 -Encoding UTF8 | Where-Object { $_ -match '"event":"responses_completed"' } | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} })
+  W ("số lượt: " + $rows.Count)
+  function Med($xs) { $a = @($xs | Where-Object { $null -ne $_ } | Sort-Object); if (-not $a.Count) { return '-' }; return [Math]::Round($a[[int][Math]::Floor(($a.Count - 1) / 2)] / 1000, 1) }
+  $rows | Group-Object model | Sort-Object Count -Descending | ForEach-Object {
+    $g = $_.Group; $err = @($g | Where-Object { $_.status -ne 200 }).Count
+    $img = ($g | Where-Object { $null -ne $_.images } | Measure-Object images -Average).Average
+    W ("{0,-34} lượt {1,5}  lỗi {2,4}  chữ-đầu {3,6}s  tổng {4,6}s  gateway {5,5}s  ảnh-tb {6}" -f $_.Name, $g.Count, $err, (Med ($g | ForEach-Object { $_.firstTokenMs })), (Med ($g | ForEach-Object { $_.latencyMs })), (Med ($g | ForEach-Object { $_.gatewayMs })), $(if ($null -ne $img) { [Math]::Round($img, 1) } else { '-' }))
+  }
+} else { W ("Không thấy " + $logFile) }
+
 W ''; W ("Xong. Báo cáo: " + $out)
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

@@ -14,6 +14,7 @@ import {
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
 import { memberSelectionEnabled, comboModelList, assertComboModelAllowed, preferredDefaultModel } from "./combo-model-access.mjs";
+import { recordModelSpeed, withModelSpeed } from "./model-speed.mjs";
 import { scheduleMemoryExtraction } from "./extractor.mjs";
 import {
   parseModelRequest,
@@ -44,7 +45,7 @@ import {
   storeBrowserPage
 } from "./browser-page-store.mjs";
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
-import { handleLobby, isLobbyPath } from "./lobby.mjs";
+import { handleLobby, isLobbyPath, setLobbyToolsSource } from "./lobby.mjs";
 import { handleRelease, isReleasePath } from "./app-release.mjs";
 import { mobileSessions, isMobileToken, isMobileApiPath, isMobileSitePath, handleMobileClaim, handleMobileApi, serveMobileSite } from "./mobile.mjs";
 import { startReleaseSync } from "./app-release-sync.mjs";
@@ -182,6 +183,8 @@ function autoUpdateEntries() {
   }
   return entries;
 }
+
+setLobbyToolsSource(() => buildAutoUpdateManifest());
 
 export function autoUpdatePaused() {
   return /^(0|false|no|off)$/i.test(String(process.env.SIMI_AUTO_UPDATE_ENABLED || "").trim());
@@ -375,7 +378,7 @@ function usageFromResponsePayload(payload) {
   return payload?.usage || payload?.response?.usage || null;
 }
 
-async function pipeAndCapture(upstream, res, toolMap = null) {
+async function pipeAndCapture(upstream, res, toolMap = null, onChunk = null) {
   if (!upstream.body) {
     res.end();
     return Buffer.alloc(0);
@@ -412,6 +415,7 @@ async function pipeAndCapture(upstream, res, toolMap = null) {
       if (text) {
         const chunk = Buffer.from(text);
         res.write(chunk);
+        if (onChunk) onChunk(chunk);
         capture(chunk);
       }
     }
@@ -440,6 +444,7 @@ async function pipeAndCapture(upstream, res, toolMap = null) {
 
     const chunk = Buffer.from(value);
     res.write(chunk);
+    if (onChunk) onChunk(chunk);
 
     if (capturedBytes < config.maxCaptureBytes) {
       const remaining = config.maxCaptureBytes - capturedBytes;
@@ -456,7 +461,8 @@ async function pipeAndCapture(upstream, res, toolMap = null) {
 async function proxyModels(req, res, rawKey, principal, id) {
   if (memberSelectionEnabled(principal)) {
     res.setHeader("Cache-Control", "no-store");
-    sendJson(res, 200, await comboModelList(principal, rawKey, id));
+    const list = await comboModelList(principal, rawKey, id);
+    sendJson(res, 200, { ...list, data: withModelSpeed(list.data) });
     return;
   }
   const team = principal.team;
@@ -743,8 +749,13 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       res.setHeader("X-LTN-Premium-Remaining", String(route.premiumRemaining));
     }
     res.statusCode = upstream.status;
-    const captured = await pipeAndCapture(upstream, res, upstream.ok ? toolMap : null);
+    // lúc model bắt đầu ra chữ / suy nghĩ / gọi công cụ (sự kiện *.delta đầu tiên) – user thấy "bắt đầu trả lời" từ đây
+    let firstTokenMs = null;
+    const captured = await pipeAndCapture(upstream, res, upstream.ok ? toolMap : null, (chunk) => {
+      if (firstTokenMs === null && chunk.includes('delta"')) firstTokenMs = Date.now() - startedAt;
+    });
     let responseUsage = null;
+    let succeeded = false;
 
     if (upstream.ok) {
       let assistantText = "";
@@ -764,6 +775,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
         assistantText = "";
       }
 
+      succeeded = completed;
       if (completed) {
         await route.confirm();
         shouldReleaseRoute = false;
@@ -793,6 +805,9 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       });
     }
 
+    // người dùng bấm Dừng (đóng kết nối) thì không tính là model lỗi
+    if (!signal.aborted) recordModelSpeed(upstreamPayload.model, { ok: succeeded, firstTokenMs: firstTokenMs ?? (succeeded ? Date.now() - startedAt : null) });
+
     jsonLog("responses_completed", {
       requestId: id,
       team: team.code,
@@ -803,10 +818,15 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       latencyMs: Date.now() - startedAt,
       gatewayMs: startedAt - receivedAt,
       upstreamFirstByteMs,
+      firstTokenMs,
       requestBytes: raw.length,
       upstreamBytes: upstreamBody.length,
       images: (upstreamBody.match(/"input_image"/g) || []).length
     });
+  } catch (error) {
+    // 9Router không phản hồi / đứt giữa chừng cũng tính là lỗi của model đó
+    if (!signal.aborted) recordModelSpeed(upstreamPayload.model, { ok: false });
+    throw error;
   } finally {
     if (shouldReleaseRoute) {
       await route.release();

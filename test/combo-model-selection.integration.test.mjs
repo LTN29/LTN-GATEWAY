@@ -103,6 +103,15 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal(response.headers.get("x-ltn-selected-model"), "ag/gemini");
   assert.equal(forwarded.at(-1).payload.model, "ag/gemini");
   assert.equal(forwarded.at(-1).payload.reasoning.effort, "high");
+  // tốc độ thực tế: đủ 5 lượt thì danh sách model kèm speed (chỉ ở data[], catalog Codex giữ nguyên)
+  for (let i = 0; i < 4; i++) assert.equal((await call("/v1/responses", "key-alpha", { model: "ag/gemini", input: "hi" })).status, 200);
+  const timedList = await (await call("/v1/models")).json();
+  const timed = timedList.data.find((m) => m.id === "ag/gemini");
+  assert.equal(timed.speed.samples, 5);
+  assert.equal(timed.speed.errorRate, 0);
+  assert.equal(timed.speed.label, "fast");
+  assert.equal(timedList.data.find((m) => m.id === "cx/gpt").speed, undefined, "chưa đủ mẫu thì không gắn nhãn");
+  assert.equal(JSON.stringify(timedList.models).includes("speed"), false);
   const claude = await call("/v1/responses", "key-beta", {
     model: "cc/claude-opus-5-5", input: "hi", reasoning: { effort: "high" }, thinking: { type: "disabled" }
   });

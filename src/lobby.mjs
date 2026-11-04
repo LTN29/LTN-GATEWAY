@@ -205,15 +205,26 @@ class Lobby {
     });
   }
 
-  // admin đăng bản app mới (scripts/publish-vanphong.mjs ghi latest.json) → báo ngay cho mọi app đang online
+  // admin đăng bản app mới (scripts/publish-vanphong.mjs ghi latest.json) → báo ngay cho mọi app đang online.
+  // Bộ công cụ / skill SIMI đổi (git pull trên server) → báo "tools-update" để app tự chạy cập nhật SIMI ngay,
+  // không phải đợi lịch 6 tiếng của máy user.
   watchRelease() {
     let first = true; // lần đọc đầu chỉ ghi nhận bản hiện có, không báo
     const tick = async () => {
       const r = await releaseInfo().catch(() => null);
       const changed = !first && r && r.version !== (this.app && this.app.version);
-      first = false;
       this.app = r;
       if (changed) { this.broadcast("app-release", r); jsonLog("lobby_app_release", { version: r.version }); }
+      if (toolsSource) {
+        const manifest = await toolsSource().catch(() => null);
+        const version = manifest && !manifest.paused && typeof manifest.bundleVersion === "string" ? manifest.bundleVersion : null;
+        if (version && !first && this.toolsVersion && version !== this.toolsVersion) {
+          this.broadcast("tools-update", { version });
+          jsonLog("lobby_tools_update", { version });
+        }
+        if (version) this.toolsVersion = version;
+      }
+      first = false;
     };
     this.releaseReady = tick();
     this.releaseTimer = setInterval(tick, RELEASE_CHECK_MS());
@@ -405,7 +416,7 @@ class Lobby {
     res.connectedAt = Date.now();
     m.conns.add(res);
     const others = [...this.members.keys()].filter((id) => id !== ident.id).map((id) => this.publicMember(id)).filter((x) => x && x.online);
-    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true, devices: this.devices(m) }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, cinema: this.cinemaState(), cat: this.cat.state, npc: npcInfo, games: this.games.list(), features: FEATURES, ...this.personal(ident) })}\n\n`);
+    res.write(`event: hello\ndata: ${JSON.stringify({ me: { ...this.publicMember(ident.id), hidden: this.profileOf(ident).hidden, online: true, devices: this.devices(m) }, members: others, rooms: this.roomsFor(ident), retentionDays: lobbyConfig.retentionDays, app: this.app ? { version: this.app.version } : null, tools: this.toolsVersion || null, cinema: this.cinemaState(), cat: this.cat.state, npc: npcInfo, games: this.games.list(), features: FEATURES, ...this.personal(ident) })}\n\n`);
     if (!wasOnline) { this.broadcastMember(ident.id); jsonLog("lobby_join", { member: ident.id }); }
     else this.tellDevices(m, devBefore);
     const ping = setInterval(() => res.write(": ping\n\n"), PING_MS);
@@ -815,6 +826,10 @@ function spawnPoint(id) {
   const h = createHash("sha1").update(id).digest();
   return { x: Math.round(((h[0] / 255) * 8 + 8) * 10) / 10, z: Math.round(((h[1] / 255) * 3.5 + 13) * 10) / 10, seat: null };
 }
+
+// nguồn "phiên bản bộ công cụ SIMI" (server.mjs gắn vào: manifest tự cập nhật) – tránh import vòng
+let toolsSource = null;
+export function setLobbyToolsSource(fn) { toolsSource = typeof fn === "function" ? fn : null; }
 
 let lobby = null;
 export function getLobby() { return lobby || (lobby = new Lobby()); }
