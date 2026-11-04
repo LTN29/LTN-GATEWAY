@@ -977,3 +977,334 @@ export async function downloadCdpWorkbook({
     connection.close();
   }
 }
+
+// ======================= Điều khiển trang theo DOM (bấm, gõ, chọn, cuộn) =======================
+// Nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình: AI đọc danh sách phần tử dạng chữ (mỗi phần tử có mã eN),
+// rồi bấm / gõ đúng phần tử đó – không phải gửi ảnh lên mô hình sau mỗi thao tác. Chữ gõ bằng Input.insertText
+// (có dấu tiếng Việt, dán được vào ô soạn thảo giàu định dạng). Bấm bằng sự kiện chuột thật của Chrome.
+const SNAPSHOT_EXPRESSION = (maxElements, maxText) => `(() => {
+  const SEL = 'a[href],button,input:not([type=hidden]),textarea,select,summary,[contenteditable=""],[contenteditable="true"],[role=button],[role=link],[role=textbox],[role=searchbox],[role=combobox],[role=checkbox],[role=radio],[role=switch],[role=tab],[role=menuitem],[role=option],[role=treeitem]';
+  let n = window.__simiRefN || 0;
+  const clean = (v, max) => String(v || '').replace(/\\s+/g, ' ').trim().slice(0, max);
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) === 0) return null;
+    return r;
+  };
+  const labelOf = (el) => clean(el.getAttribute('aria-label') || (el.labels && el.labels[0] && el.labels[0].innerText) ||
+    el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('alt') ||
+    (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable ? '' : el.innerText) || el.getAttribute('name') || el.id, 90);
+  const roleOf = (el) => {
+    const tag = el.tagName.toLowerCase(), type = (el.getAttribute('type') || '').toLowerCase();
+    if (el.getAttribute('role')) return el.getAttribute('role');
+    if (el.isContentEditable) return 'editor';
+    if (tag === 'a') return 'link';
+    if (tag === 'input') return ['checkbox', 'radio', 'submit', 'button', 'file', 'range', 'date', 'color'].includes(type) ? type : 'textbox';
+    if (tag === 'textarea') return 'textbox';
+    return tag;
+  };
+  const roots = [document];
+  for (const host of document.querySelectorAll('*')) if (host.shadowRoot) roots.push(host.shadowRoot);
+  const lines = [];
+  const seen = new Set();
+  for (const root of roots) {
+    for (const el of root.querySelectorAll(SEL)) {
+      if (lines.length >= ${maxElements}) break;
+      if (seen.has(el)) continue; seen.add(el);
+      // ô soạn thảo lồng nhau: chỉ lấy ô ngoài cùng
+      if (el.isContentEditable && el.parentElement && el.parentElement.isContentEditable) continue;
+      const r = visible(el); if (!r) continue;
+      let ref = el.getAttribute('data-simi-ref');
+      if (!ref) { ref = 'e' + (++n); el.setAttribute('data-simi-ref', ref); }
+      const role = roleOf(el);
+      let line = ref + ' ' + role + ' "' + labelOf(el) + '"';
+      if (role === 'textbox' || role === 'searchbox' || role === 'editor' || role === 'combobox' || el.tagName === 'SELECT') {
+        const v = el.isContentEditable ? el.innerText : el.tagName === 'SELECT' ? (el.selectedOptions[0] && el.selectedOptions[0].text) : el.value;
+        if (v) line += ' value="' + clean(v, 120) + '"';
+        if (el.tagName === 'SELECT') line += ' options=[' + [...el.options].slice(0, 15).map((o) => clean(o.text, 30)).join(' | ') + ']';
+      }
+      if (el.type === 'checkbox' || el.type === 'radio' || el.getAttribute('aria-checked')) line += (el.checked || el.getAttribute('aria-checked') === 'true') ? ' [x]' : ' [ ]';
+      if (el.tagName === 'A' && el.href && !/^javascript:/i.test(el.href)) line += ' -> ' + clean(el.href, 100);
+      if (el.disabled || el.getAttribute('aria-disabled') === 'true') line += ' (khoá)';
+      if (r.bottom < 0 || r.top > innerHeight) line += ' (ngoài màn hình)';
+      lines.push(line);
+    }
+  }
+  window.__simiRefN = n;
+  const text = String((document.body && document.body.innerText) || '').replace(/[ \\t\\u00a0]+/g, ' ').replace(/\\s*\\n\\s*/g, '\\n').trim().slice(0, ${maxText});
+  const focused = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute('data-simi-ref');
+  return { url: location.href, title: document.title, readyState: document.readyState, elements: lines, focused: focused || null,
+    text, scrollY: Math.round(scrollY), pageHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight };
+})()`;
+
+const RISKY_ACTION = /(thanh\s*to[áa]n|đặt\s*h[àa]ng|mua\s*ngay|x[óo]a|xo[áa]|g[ửu]i|đăng(?!\s*nh)|chia\s*s[ẻe]|publish|post\b|send|delete|remove|pay|checkout|place\s*order|buy\s*now|submit\s*order|transfer|chuyển\s*khoản)/i;
+
+const KEY_DEFS = {
+  enter: { key: "Enter", code: "Enter", keyCode: 13, text: "\r" },
+  tab: { key: "Tab", code: "Tab", keyCode: 9 },
+  escape: { key: "Escape", code: "Escape", keyCode: 27 },
+  esc: { key: "Escape", code: "Escape", keyCode: 27 },
+  backspace: { key: "Backspace", code: "Backspace", keyCode: 8 },
+  delete: { key: "Delete", code: "Delete", keyCode: 46 },
+  space: { key: " ", code: "Space", keyCode: 32, text: " " },
+  arrowup: { key: "ArrowUp", code: "ArrowUp", keyCode: 38 }, up: { key: "ArrowUp", code: "ArrowUp", keyCode: 38 },
+  arrowdown: { key: "ArrowDown", code: "ArrowDown", keyCode: 40 }, down: { key: "ArrowDown", code: "ArrowDown", keyCode: 40 },
+  arrowleft: { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 }, left: { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },
+  arrowright: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 }, right: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+  home: { key: "Home", code: "Home", keyCode: 36 }, end: { key: "End", code: "End", keyCode: 35 },
+  pageup: { key: "PageUp", code: "PageUp", keyCode: 33 }, pagedown: { key: "PageDown", code: "PageDown", keyCode: 34 }
+};
+const MODIFIER_BITS = { alt: 1, option: 1, ctrl: 2, control: 2, meta: 4, cmd: 4, command: 4, shift: 8 };
+
+function parseKeys(combo, platform = process.platform) {
+  const parts = String(combo || "").split("+").map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) throw new Error("Thiếu phím cần nhấn.");
+  let modifiers = 0;
+  let main = "";
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    // "mod" = Ctrl trên Windows/Linux, Cmd trên macOS
+    if (lower === "mod") modifiers |= platform === "darwin" ? 4 : 2;
+    else if (MODIFIER_BITS[lower] !== undefined) modifiers |= MODIFIER_BITS[lower];
+    else main = part;
+  }
+  let def = KEY_DEFS[main.toLowerCase()];
+  if (!def && /^f([1-9]|1[0-2])$/i.test(main)) def = { key: main.toUpperCase(), code: main.toUpperCase(), keyCode: 111 + Number(main.slice(1)) };
+  if (!def && main.length === 1) {
+    const upper = main.toUpperCase();
+    def = {
+      key: modifiers & 8 ? upper : main.toLowerCase(),
+      code: /[a-z]/i.test(main) ? `Key${upper}` : /\d/.test(main) ? `Digit${main}` : "",
+      keyCode: upper.charCodeAt(0),
+      text: modifiers & ~8 ? undefined : (modifiers & 8 ? upper : main)
+    };
+  }
+  if (!def) throw new Error(`Không hiểu phím "${main}".`);
+  return { ...def, modifiers };
+}
+
+// phím tắt soạn thảo: sự kiện phím giả không tự chạy lệnh (nhất là trên macOS) → gửi kèm lệnh soạn thảo của Chrome
+const EDIT_COMMANDS = { a: "selectAll", c: "copy", v: "paste", x: "cut", z: "undo", y: "redo" };
+function editCommands(def) {
+  if (def.key === "Backspace") return ["deleteBackward"];
+  if (def.key === "Delete") return ["deleteForward"];
+  if (def.modifiers & 6 && EDIT_COMMANDS[def.key.toLowerCase()]) return [EDIT_COMMANDS[def.key.toLowerCase()]];
+  return undefined;
+}
+
+async function pressKeys(connection, combo) {
+  const def = parseKeys(combo);
+  const base = { key: def.key, code: def.code, windowsVirtualKeyCode: def.keyCode, nativeVirtualKeyCode: def.keyCode, modifiers: def.modifiers };
+  const commands = editCommands(def);
+  await connection.command("Input.dispatchKeyEvent", { type: def.text ? "keyDown" : "rawKeyDown", ...base, ...(def.text ? { text: def.text, unmodifiedText: def.text } : {}), ...(commands ? { commands } : {}) });
+  await connection.command("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+}
+
+async function evaluateValue(connection, expression) {
+  const result = await connection.command("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+  if (result?.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Lỗi chạy trên trang");
+  return result?.result?.value;
+}
+
+function refSelector(ref) {
+  const value = String(ref || "").trim();
+  if (!/^e\d{1,6}$/.test(value)) throw new Error(`Mã phần tử "${value}" không hợp lệ – dùng mã eN từ browser_snapshot.`);
+  return value;
+}
+
+// tìm phần tử theo mã (kể cả trong shadow DOM), cuộn vào giữa màn hình, trả toạ độ tâm + thông tin
+async function locate(connection, ref) {
+  const id = refSelector(ref);
+  const info = await evaluateValue(connection, `(() => {
+    const find = (root) => { const el = root.querySelector('[data-simi-ref="${id}"]'); if (el) return el;
+      for (const h of root.querySelectorAll('*')) if (h.shadowRoot) { const f = find(h.shadowRoot); if (f) return f; } return null; };
+    const el = find(document);
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center', inline: 'center' });
+    const r = el.getBoundingClientRect();
+    const label = String(el.getAttribute('aria-label') || el.innerText || el.value || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 120);
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, tag: el.tagName, type: el.type || '',
+      editable: el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox','radio','submit','button','file'].includes(el.type)),
+      label, disabled: !!el.disabled };
+  })()`);
+  if (!info) throw new Error(`Không còn phần tử ${id} trên trang (trang đã đổi) – gọi browser_snapshot để lấy mã mới.`);
+  return info;
+}
+
+async function mouseClick(connection, x, y, clickCount = 1) {
+  await connection.command("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  for (let count = 1; count <= clickCount; count += 1) {
+    await connection.command("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: count });
+    await connection.command("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: count });
+  }
+}
+
+async function settle(connection, beforeUrl, maxMs = 6_000) {
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    try {
+      const state = await evaluateValue(connection, "({ url: location.href, readyState: document.readyState })");
+      if (state && state.readyState === "complete") {
+        if (state.url !== beforeUrl) await new Promise((resolve) => setTimeout(resolve, 400));
+        return;
+      }
+    } catch {
+      // trang đang chuyển – thử lại
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+}
+
+async function openTargetConnection({ host, port, targetId, timeoutMs = 15_000 }) {
+  const targets = await cdpTargets({ host, port, timeoutMs: 5_000 });
+  const pages = targets.filter((target) => target?.type === "page" && typeof target.webSocketDebuggerUrl === "string" && !/^devtools:/i.test(target.url || ""));
+  const target = pages.find((item) => item.id === targetId) || pages.find((item) => /^https?:/i.test(item.url || "")) || pages[0];
+  if (!target) throw new Error("Trình duyệt SIMI chưa có tab nào – gọi browser_snapshot với url để mở trang.");
+  const connection = await new WebSocketConnection(target.webSocketDebuggerUrl, timeoutMs).connect();
+  return { connection, target, pages };
+}
+
+export async function listPageTabs({ host = "127.0.0.1", port = 9222 } = {}) {
+  const targets = await cdpTargets({ host, port, timeoutMs: 5_000 });
+  return targets.filter((target) => target?.type === "page" && !/^devtools:/i.test(target.url || ""))
+    .map((target) => ({ id: target.id, title: String(target.title || "").slice(0, 80), url: String(target.url || "").slice(0, 200) }));
+}
+
+// mở url ở tab đang dùng (hoặc tab mới) rồi chờ tải xong
+export async function navigateTab({ host = "127.0.0.1", port = 9222, targetId, url, newTab = false, timeoutMs = 20_000 }) {
+  const wanted = resolveNavigationUrl(url);
+  if (!/^https?:\/\//i.test(wanted)) throw new Error("Chỉ mở được địa chỉ http/https.");
+  let target;
+  if (newTab) target = await createCdpTarget({ host, port, targetUrl: wanted, timeoutMs: 5_000 });
+  const opened = await openTargetConnection({ host, port, targetId: target ? target.id : targetId, timeoutMs });
+  try {
+    await opened.connection.command("Page.bringToFront").catch(() => {});
+    if (!newTab) {
+      const navigation = await opened.connection.command("Page.navigate", { url: wanted });
+      if (navigation?.errorText) throw new Error(`Không mở được trang: ${navigation.errorText}`);
+    }
+    await settle(opened.connection, "", Math.min(timeoutMs, 15_000));
+    return opened.target.id;
+  } finally {
+    opened.connection.close();
+  }
+}
+
+// danh sách phần tử bấm/gõ được (mã eN) + chữ trên trang
+export async function snapshotTab({ host = "127.0.0.1", port = 9222, targetId, maxElements = 250, maxText = 6_000 } = {}) {
+  const opened = await openTargetConnection({ host, port, targetId });
+  try {
+    const page = await evaluateValue(opened.connection, SNAPSHOT_EXPRESSION(Math.max(20, Math.min(600, maxElements)), Math.max(0, Math.min(60_000, maxText))));
+    return { tabId: opened.target.id, ...page };
+  } finally {
+    opened.connection.close();
+  }
+}
+
+// chạy lần lượt nhiều thao tác trong 1 lần gọi (bấm, gõ, chọn, phím, cuộn, chờ) → bớt số lượt hỏi mô hình
+export async function actOnTab({ host = "127.0.0.1", port = 9222, targetId, actions = [] } = {}) {
+  if (!Array.isArray(actions) || !actions.length) throw new Error("Thiếu danh sách thao tác (actions).");
+  if (actions.length > 30) throw new Error("Tối đa 30 thao tác mỗi lần.");
+  const opened = await openTargetConnection({ host, port, targetId });
+  const { connection } = opened;
+  const done = [];
+  try {
+    await connection.command("Page.bringToFront").catch(() => {});
+    for (const [index, step] of actions.entries()) {
+      const kind = String(step?.action || "").toLowerCase();
+      const beforeUrl = await evaluateValue(connection, "location.href").catch(() => "");
+      try {
+        if (kind === "click" || kind === "double_click") {
+          const info = await locate(connection, step.ref);
+          if (info.disabled) throw new Error(`Phần tử ${step.ref} đang bị khoá (disabled).`);
+          if (RISKY_ACTION.test(info.label) && step.confirmed !== true) {
+            throw new Error(`Nút "${info.label}" có thể gửi / đăng / thanh toán / xoá. Hỏi người dùng xác nhận trước, rồi gọi lại với "confirmed": true.`);
+          }
+          await mouseClick(connection, info.x, info.y, kind === "double_click" ? 2 : 1);
+          done.push(`${kind === "click" ? "bấm" : "bấm đúp"} ${step.ref} "${info.label.slice(0, 50)}"`);
+        } else if (kind === "type" || kind === "fill") {
+          const text = String(step.text ?? "");
+          if (text.length > 20_000) throw new Error("Chữ quá dài (tối đa 20.000 ký tự mỗi lần).");
+          const info = await locate(connection, step.ref);
+          if (!info.editable) throw new Error(`Phần tử ${step.ref} không phải ô nhập chữ.`);
+          await mouseClick(connection, info.x, info.y, 1);
+          if (step.clear !== false) {
+            // chọn hết nội dung cũ của đúng ô này (không dùng Ctrl+A – có trang chọn cả trang), chữ mới gõ đè lên
+            await evaluateValue(connection, `(() => { const el = document.querySelector('[data-simi-ref="${refSelector(step.ref)}"]'); if (!el) return;
+              el.focus(); if (el.select) { el.select(); return; }
+              const sel = getSelection(); sel.removeAllRanges(); const range = document.createRange(); range.selectNodeContents(el); sel.addRange(range); })()`);
+            if (!text) await pressKeys(connection, "Backspace");
+          }
+          if (text) await connection.command("Input.insertText", { text });
+          if (step.submit === true) await pressKeys(connection, "Enter");
+          done.push(`gõ ${text.length} ký tự vào ${step.ref}${step.submit ? " + Enter" : ""}`);
+        } else if (kind === "select") {
+          const id = refSelector(step.ref);
+          const value = String(step.value ?? "");
+          const picked = await evaluateValue(connection, `(() => {
+            const el = document.querySelector('[data-simi-ref="${id}"]');
+            if (!el || el.tagName !== 'SELECT') return null;
+            const want = ${JSON.stringify(value)}.toLowerCase();
+            const opt = [...el.options].find((o) => o.value.toLowerCase() === want || o.text.trim().toLowerCase() === want) ||
+              [...el.options].find((o) => o.text.toLowerCase().includes(want));
+            if (!opt) return '';
+            el.value = opt.value; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+            return opt.text.trim();
+          })()`);
+          if (picked === null) throw new Error(`Phần tử ${id} không phải ô chọn (select).`);
+          if (!picked) throw new Error(`Không có lựa chọn "${value}" trong ${id}.`);
+          done.push(`chọn "${picked}" ở ${id}`);
+        } else if (kind === "press") {
+          await pressKeys(connection, step.keys);
+          done.push(`nhấn ${step.keys}`);
+        } else if (kind === "scroll") {
+          const amount = Math.max(-30, Math.min(30, Number(step.amount) || 5));
+          if (step.ref) {
+            const info = await locate(connection, step.ref);
+            await connection.command("Input.dispatchMouseEvent", { type: "mouseWheel", x: info.x, y: info.y, deltaX: 0, deltaY: amount * 120 });
+          } else {
+            await evaluateValue(connection, `window.scrollBy(0, ${amount * 120})`);
+          }
+          done.push(`cuộn ${amount > 0 ? "xuống" : "lên"} ${Math.abs(amount)}`);
+        } else if (kind === "wait") {
+          const ms = Math.max(100, Math.min(15_000, Number(step.ms || (step.seconds ? step.seconds * 1000 : 1000))));
+          await new Promise((resolve) => setTimeout(resolve, ms));
+          done.push(`chờ ${ms} ms`);
+        } else {
+          throw new Error(`Thao tác "${kind}" không hỗ trợ (click, double_click, type, select, press, scroll, wait).`);
+        }
+      } catch (error) {
+        return { ok: false, done, failedAt: index, error: error?.message || String(error) };
+      }
+      await settle(connection, beforeUrl, 5_000);
+    }
+    return { ok: true, done };
+  } finally {
+    connection.close();
+  }
+}
+
+// ảnh chụp tab (JPEG nhỏ) khi thật sự cần nhìn bố cục / hình ảnh
+export async function screenshotTab({ host = "127.0.0.1", port = 9222, targetId, maxWidth = 1280, quality = 60 } = {}) {
+  const opened = await openTargetConnection({ host, port, targetId });
+  try {
+    const metrics = await opened.connection.command("Page.getLayoutMetrics");
+    const view = metrics?.cssVisualViewport || metrics?.visualViewport || { clientWidth: 1280, clientHeight: 800 };
+    const width = Math.round(view.clientWidth || 1280);
+    const height = Math.round(view.clientHeight || 800);
+    const scale = Math.min(1, maxWidth / Math.max(1, width));
+    const shot = await opened.connection.command("Page.captureScreenshot", {
+      format: "jpeg",
+      quality: Math.max(30, Math.min(90, quality)),
+      clip: { x: Math.round(view.pageX || 0), y: Math.round(view.pageY || 0), width, height, scale }
+    });
+    return { tabId: opened.target.id, data: shot.data, width: Math.round(width * scale), height: Math.round(height * scale) };
+  } finally {
+    opened.connection.close();
+  }
+}
+
+export { parseKeys as parseKeyCombo, RISKY_ACTION };

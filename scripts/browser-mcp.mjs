@@ -4,7 +4,7 @@ import { unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import readline from "node:readline";
-import { activateCdpTarget, cdpBrowserVersion, cdpTargets, closeCdpBrowser, findBrowserExecutable, isHeadlessBrowserSession, isHeadlessBrowserVersion, resolveBrowserProfile, resolveDesktopEnv } from "./browser-cdp.mjs";
+import { activateCdpTarget, actOnTab, cdpBrowserVersion, cdpTargets, closeCdpBrowser, findBrowserExecutable, isHeadlessBrowserSession, isHeadlessBrowserVersion, listPageTabs, navigateTab, resolveBrowserProfile, resolveDesktopEnv, screenshotTab, snapshotTab } from "./browser-cdp.mjs";
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), ".codex");
 const browserPagePath = process.env.LTN_BROWSER_PAGE_PATH || join(codexHome, "browser-page.mjs");
@@ -16,6 +16,24 @@ const documentToolPath = process.env.LTN_DOCUMENT_TOOL_PATH || join(codexHome, "
 const pythonPath = process.env.LTN_PYTHON_PATH || (process.platform === "win32"
   ? join(codexHome, "pdf-runtime", "Scripts", "python.exe")
   : join(codexHome, "pdf-runtime", "bin", "python"));
+
+const ACTION_ITEM = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["click", "double_click", "type", "select", "press", "scroll", "wait"] },
+    ref: { type: "string", description: "Mã phần tử eN lấy từ browser_snapshot (click, double_click, type, select; scroll tại phần tử)." },
+    text: { type: "string", description: "type: chữ cần gõ (có dấu tiếng Việt, xuống dòng bằng \\n)." },
+    clear: { type: "boolean", description: "type: xoá nội dung cũ của ô trước khi gõ (mặc định true)." },
+    submit: { type: "boolean", description: "type: nhấn Enter sau khi gõ." },
+    value: { type: "string", description: "select: giá trị hoặc chữ của lựa chọn." },
+    keys: { type: "string", description: "press: phím hoặc tổ hợp, ví dụ Enter, Tab, Escape, Backspace, ArrowDown, mod+s (mod = Ctrl, Cmd trên Mac)." },
+    amount: { type: "number", description: "scroll: > 0 cuộn xuống, < 0 cuộn lên (mỗi đơn vị ~ 1 nấc chuột)." },
+    ms: { type: "number", description: "wait: số mili-giây chờ." },
+    confirmed: { type: "boolean", description: "click: chỉ đặt true khi người dùng đã đồng ý bấm nút gửi / đăng / thanh toán / xoá." }
+  },
+  required: ["action"],
+  additionalProperties: false
+};
 
 const tools = [
   {
@@ -119,6 +137,40 @@ const tools = [
       required: ["workbook_path", "link_column"],
       additionalProperties: false
     }
+  },
+  {
+    name: "browser_snapshot",
+    description: "Thao tác trên web (điền form, sửa / đăng nội dung, bấm nút, chọn mục) trong cửa sổ Trình duyệt SIMI hiện trên máy – giữ đăng nhập sẵn có. Trả về danh sách phần tử bấm / gõ được, mỗi phần tử có mã eN, kèm chữ trên trang. NHANH hơn nhiều so với điều khiển bằng ảnh chụp màn hình: với mọi việc trên trang web hãy dùng browser_snapshot + browser_act thay cho vp_computer / Computer Use (chỉ dùng chụp màn hình khi trang vẽ bằng canvas hoặc cần nhìn bố cục). Có url thì mở trang đó trước.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Mở địa chỉ này trước (http/https)." },
+        new_tab: { type: "boolean", description: "Mở url ở tab mới thay vì tab đang dùng." },
+        tab_id: { type: "string", description: "Chuyển sang tab khác (id lấy từ danh sách tabs)." },
+        max_elements: { type: "integer", minimum: 20, maximum: 600, default: 250 },
+        max_text_chars: { type: "integer", minimum: 0, maximum: 60000, default: 6000, description: "Số ký tự chữ trên trang trả về (0 = chỉ danh sách phần tử)." }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: "browser_act",
+    description: "Làm lần lượt nhiều thao tác trên tab đang dùng trong 1 lần gọi (bấm, gõ, chọn, nhấn phím, cuộn, chờ) theo mã eN của browser_snapshot, rồi trả lại danh sách phần tử mới của trang. Gộp các bước liền nhau (ví dụ gõ tiêu đề + gõ nội dung + bấm Lưu) vào cùng một lần gọi. Nút gửi / đăng / thanh toán / xoá cần người dùng đồng ý trước rồi mới đặt confirmed: true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: { type: "array", minItems: 1, maxItems: 30, items: ACTION_ITEM },
+        tab_id: { type: "string" },
+        max_text_chars: { type: "integer", minimum: 0, maximum: 60000, default: 3000 }
+      },
+      required: ["actions"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "browser_screenshot",
+    description: "Chụp ảnh tab đang dùng của Trình duyệt SIMI (JPEG nhỏ). Chỉ dùng khi cần nhìn bố cục, hình ảnh, biểu đồ hoặc trang vẽ bằng canvas – việc bấm / gõ hãy dùng browser_snapshot + browser_act.",
+    inputSchema: { type: "object", properties: { tab_id: { type: "string" } }, additionalProperties: false }
   }
 ];
 
@@ -520,7 +572,89 @@ async function browserStatus() {
   }
 }
 
+// ---------- thao tác trang (DOM) ----------
+let currentTab = null;
+
+async function ensureVisibleBrowser() {
+  try {
+    const version = await cdpBrowserVersion({ host: cdpHost, port: cdpPort });
+    if (!isHeadlessBrowserSession() && isHeadlessBrowserVersion(version)) await openBrowserWindow({});
+    return;
+  } catch {
+    // chưa chạy → mở cửa sổ Trình duyệt SIMI
+  }
+  await runChromeLauncher("");
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    try { await cdpBrowserVersion({ host: cdpHost, port: cdpPort, timeoutMs: 1_000 }); return; } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error("Không mở được Trình duyệt SIMI. Gọi browser_status để xem chi tiết.");
+}
+
+function formatSnapshot(page, tabs, heading = "") {
+  const lines = [];
+  if (heading) lines.push(heading, "");
+  lines.push(`Tab đang dùng: ${page.title || "(không tiêu đề)"} — ${page.url} (tab_id ${page.tabId})`);
+  if (tabs && tabs.length > 1) lines.push("Các tab: " + tabs.map((tab) => `[${tab.id === page.tabId ? "*" : ""}${tab.id.slice(0, 8)}] ${tab.title || tab.url}`).join(" · "));
+  lines.push(`Cuộn: ${page.scrollY}/${Math.max(0, page.pageHeight - page.viewportHeight)} px${page.focused ? ` · đang chọn ô ${page.focused}` : ""}${page.readyState !== "complete" ? " · trang đang tải" : ""}`);
+  lines.push("", `Phần tử (${page.elements.length}) – dùng mã eN cho browser_act:`, ...page.elements);
+  if (page.text) lines.push("", "--- Chữ trên trang ---", page.text);
+  return lines.join("\n");
+}
+
+function resolveTabId(tabs, wanted) {
+  if (!wanted) return currentTab && tabs.some((tab) => tab.id === currentTab) ? currentTab : null;
+  const match = tabs.find((tab) => tab.id === wanted || tab.id.startsWith(String(wanted)));
+  if (!match) throw new Error(`Không có tab ${wanted}.`);
+  return match.id;
+}
+
+async function browserSnapshot(args = {}) {
+  await ensureVisibleBrowser();
+  let tabs = await listPageTabs({ host: cdpHost, port: cdpPort });
+  let tabId = resolveTabId(tabs, args.tab_id);
+  if (args.url) {
+    tabId = await navigateTab({ host: cdpHost, port: cdpPort, targetId: tabId, url: validUrls([args.url])[0], newTab: args.new_tab === true || !tabs.length });
+    tabs = await listPageTabs({ host: cdpHost, port: cdpPort });
+  }
+  if (tabId) await activateCdpTarget({ host: cdpHost, port: cdpPort, targetId: tabId });
+  const page = await snapshotTab({ host: cdpHost, port: cdpPort, targetId: tabId, maxElements: args.max_elements || 250, maxText: args.max_text_chars ?? 6_000 });
+  currentTab = page.tabId;
+  return { __content: [{ type: "text", text: formatSnapshot(page, tabs) }] };
+}
+
+async function browserAct(args = {}) {
+  await ensureVisibleBrowser();
+  const tabs = await listPageTabs({ host: cdpHost, port: cdpPort });
+  const tabId = resolveTabId(tabs, args.tab_id);
+  const result = await actOnTab({ host: cdpHost, port: cdpPort, targetId: tabId, actions: args.actions });
+  // trang có thể mở tab mới (link target=_blank) → dùng tab mới nhất nếu tab cũ đã đóng
+  const after = await listPageTabs({ host: cdpHost, port: cdpPort });
+  const nextTab = after.some((tab) => tab.id === tabId) ? tabId : (after[0] && after[0].id);
+  const page = await snapshotTab({ host: cdpHost, port: cdpPort, targetId: nextTab, maxText: args.max_text_chars ?? 3_000 });
+  currentTab = page.tabId;
+  const heading = result.ok
+    ? `Đã làm: ${result.done.join("; ")}`
+    : `Đã làm: ${result.done.join("; ") || "(chưa bước nào)"}\nDỪNG ở bước ${result.failedAt + 1}: ${result.error}`;
+  return { __content: [{ type: "text", text: formatSnapshot(page, after, heading) }], __error: !result.ok && /xác nhận/.test(result.error) };
+}
+
+async function browserScreenshot(args = {}) {
+  await ensureVisibleBrowser();
+  const tabs = await listPageTabs({ host: cdpHost, port: cdpPort });
+  const shot = await screenshotTab({ host: cdpHost, port: cdpPort, targetId: resolveTabId(tabs, args.tab_id) });
+  currentTab = shot.tabId;
+  return { __content: [
+    { type: "text", text: `Ảnh tab ${shot.tabId} (${shot.width}x${shot.height}). Bấm / gõ hãy dùng browser_snapshot + browser_act theo mã eN.` },
+    { type: "image", data: shot.data, mimeType: "image/jpeg" }
+  ] };
+}
+
 async function callTool(name, args = {}) {
+  if (name === "browser_snapshot") return browserSnapshot(args);
+  if (name === "browser_act") return browserAct(args);
+  if (name === "browser_screenshot") return browserScreenshot(args);
   if (["document_inspect", "document_read", "document_edit"].includes(name)) {
     return runSpreadsheetAudit(args.path, { ...args, action: name.slice("document_".length) }, documentToolPath);
   }
@@ -664,10 +798,9 @@ async function handle(message) {
       send({
         jsonrpc: "2.0",
         id: message.id,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(result) }],
-          structuredContent: result
-        }
+        result: result?.__content
+          ? { content: result.__content, ...(result.__error ? { isError: true } : {}) }
+          : { content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result }
       });
       return;
     }

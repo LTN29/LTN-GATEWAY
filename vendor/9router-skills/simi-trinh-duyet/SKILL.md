@@ -1,6 +1,6 @@
 ---
 name: simi-trinh-duyet
-description: Đọc trang bằng Chrome SIMI (MCP/CDP cục bộ, chỉ đọc, giữ phiên đăng nhập). BẮT BUỘC dùng trước tiên cho link Shopee, Lazada, Tiki, TikTok Shop, Facebook, TikTok, SharePoint và các trang sàn TMĐT/mạng xã hội/dashboard, khi user nói đã login hoặc cần giá, voucher, tồn kho, đơn hàng; không dùng curl hay đọc web thay thế.
+description: Đọc và THAO TÁC trang web (điền form, sửa / đăng nội dung, bấm nút) bằng Chrome SIMI (MCP/CDP cục bộ, giữ phiên đăng nhập) – nhanh hơn nhiều so với điều khiển bằng ảnh chụp màn hình. BẮT BUỘC dùng trước tiên cho link Shopee, Lazada, Tiki, TikTok Shop, Facebook, TikTok, SharePoint và các trang sàn TMĐT/mạng xã hội/dashboard, khi user nói đã login hoặc cần giá, voucher, tồn kho, đơn hàng; không dùng curl hay đọc web thay thế.
 ---
 
 # Simi - Trình duyệt đã đăng nhập
@@ -13,6 +13,25 @@ browser session stores.
 For an ordinary user, describe browser work in natural language. Call only the
 actual `simi_browser` MCP tools; never display their arguments, XML tool-call
 syntax, JSON payloads, or an invented spreadsheet/browser tool in chat.
+
+## Thao tác trên trang (điền form, sửa nội dung, bấm nút) – nhanh
+
+Khi người dùng muốn LÀM gì đó trên web (sửa bài, điền form, đăng sản phẩm, đổi
+cài đặt, trả lời bình luận…), dùng `simi_browser.browser_snapshot` +
+`simi_browser.browser_act`, KHÔNG dùng vp_computer / Computer Use / chụp màn hình
+từng bước (chậm gấp nhiều lần vì mỗi bước phải gửi ảnh lên mô hình).
+
+1. `browser_snapshot` (có `url` thì mở trang đó) → danh sách phần tử dạng
+   `e12 textbox "Tiêu đề" value="..."`, `e13 button "Lưu"` + chữ trên trang.
+2. `browser_act` với nhiều bước trong MỘT lần gọi, ví dụ
+   `[{action:"type",ref:"e12",text:"Tiêu đề mới"},{action:"select",ref:"e14",value:"Khuyến mãi"},{action:"type",ref:"e15",text:"Nội dung…"},{action:"click",ref:"e13"}]`.
+   Kết quả trả về danh sách phần tử mới của trang – đọc luôn, không cần gọi lại snapshot.
+3. Mã eN đổi khi trang tải lại → lấy mã mới từ kết quả gần nhất.
+4. Nút gửi / đăng / thanh toán / xoá: hỏi người dùng trước, được đồng ý mới gọi
+   lại với `confirmed: true` (công cụ tự chặn nếu thiếu).
+5. `browser_screenshot` (JPEG nhỏ) chỉ khi cần nhìn bố cục, ảnh, biểu đồ hoặc
+   trang vẽ bằng canvas. Trang cần đăng nhập → `browser_open_window` cho người
+   dùng tự đăng nhập, rồi làm tiếp.
 
 ## Browser-first sites (mandatory)
 
