@@ -5,6 +5,17 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
 
 # Simi - Tạo ảnh
 
+## Chỉnh ảnh có sẵn: dùng `image_retouch` trước (nhanh, giữ đúng chi tiết)
+
+- Làm nét, phóng to, chỉnh sáng / màu, khử nhiễu, cắt, xoay, xoá chữ / vết, viết lại
+  chữ hoặc logo bị mờ, che / làm mờ vùng, chèn logo → **`simi_browser.image_retouch`**
+  (chạy Pillow trên máy, vài giây, giữ nguyên mọi chi tiết khác của ảnh gốc).
+- Cách làm: `inspect:true` lấy kích thước → nhìn ảnh, ước lượng `box` theo tỉ lệ 0–1 →
+  gọi `ops` (vd chữ mờ: `erase` vùng chữ → `text` đúng chữ, màu, đậm → `sharpen`) →
+  xem ảnh kết quả, chưa khớp thì chỉnh box / màu, gọi lại tối đa 2 lần.
+- Model tạo ảnh (`image_generate` mode `edit`) vẽ lại cả ảnh nên chậm và dễ sai chi tiết;
+  chỉ dùng khi cần vẽ nội dung mới (đổi bối cảnh, thêm / bớt vật thể, đổi phong cách).
+
 ## Cách gọi: ưu tiên công cụ `image_generate`
 
 - **Luôn dùng công cụ MCP `simi_browser.image_generate`** nếu có trong phiên:

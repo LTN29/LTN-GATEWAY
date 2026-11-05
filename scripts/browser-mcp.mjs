@@ -83,6 +83,45 @@ const GATEWAY_TOOLS = [
       required: ["path"],
       additionalProperties: false
     }
+  },
+  {
+    name: "image_retouch",
+    description: "Sửa ảnh CHÍNH XÁC ngay trên máy, giữ nguyên mọi chi tiết ảnh gốc, vài giây là xong: làm nét (cả ảnh hoặc 1 vùng), phóng to, chỉnh sáng / tương phản / màu, khử nhiễu, cắt, xoay, đổi cỡ, xoá chữ / vết bẩn bằng màu nền, viết lại chữ đúng vị trí (vd làm rõ logo / chữ bị mờ), làm mờ / che vùng, chèn logo. DÙNG TRƯỚC image_generate cho mọi yêu cầu chỉnh ảnh có sẵn mà phải giữ đúng chi tiết; image_generate (vẽ lại cả ảnh, chậm) chỉ khi cần vẽ nội dung mới. Xem ảnh kết quả rồi chỉnh thêm 1–2 lần nếu cần.",
+    annotations: { readOnlyHint: false, openWorldHint: false, title: "Chỉnh ảnh" },
+    inputSchema: {
+      type: "object",
+      properties: {
+        source_path: { type: "string", description: "Đường dẫn tuyệt đối ảnh gốc." },
+        output_path: { type: "string", description: "Nơi lưu ảnh kết quả (đường dẫn tuyệt đối trong thư mục làm việc, tên mới, không ghi đè ảnh gốc)." },
+        inspect: { type: "boolean", description: "true: chỉ trả kích thước ảnh, không sửa." },
+        ops: {
+          type: "array", maxItems: 40,
+          description: "Các bước theo thứ tự. box = [x0,y0,x1,y1] theo pixel hoặc theo tỉ lệ 0–1 của ảnh (vd [0.42,0.31,0.58,0.36]). Ví dụ làm rõ chữ mờ: [{op:'erase',box},{op:'text',text:'UNIQ',box,color:'#5a5a5a',font:'bold'},{op:'sharpen',amount:120}].",
+          items: {
+            type: "object",
+            properties: {
+              op: { type: "string", enum: ["sharpen", "upscale", "denoise", "enhance", "autocontrast", "blur", "crop", "resize", "rotate", "flip", "erase", "text", "overlay"] },
+              box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
+              amount: { type: "number", description: "sharpen: độ nét 50–300 (mặc định 160)." },
+              radius: { type: "number", description: "sharpen / blur: bán kính." },
+              factor: { type: "number", description: "upscale: 1–4." },
+              brightness: { type: "number" }, contrast: { type: "number" }, saturation: { type: "number" }, sharpness: { type: "number" },
+              width: { type: "integer" }, height: { type: "integer" }, degrees: { type: "number" },
+              direction: { type: "string", enum: ["horizontal", "vertical"] },
+              color: { type: "string", description: "erase: 'auto' (màu nền xung quanh) hoặc #hex; text: màu chữ #hex." },
+              text: { type: "string" },
+              font: { type: "string", description: "text: bold | regular | serif | đường dẫn file .ttf." },
+              align: { type: "string", enum: ["left", "center", "right"] },
+              letter_spacing: { type: "number" }, opacity: { type: "number" }, soften: { type: "number" },
+              image: { type: "string", description: "overlay: đường dẫn ảnh logo (PNG nền trong)." }
+            },
+            required: ["op"]
+          }
+        }
+      },
+      required: ["source_path"],
+      additionalProperties: false
+    }
   }
 ];
 
@@ -681,7 +720,7 @@ async function clientId() {
   try { return readFileSync(join(codexHome, "ltn-client-id"), "utf8").trim(); } catch { return ""; }
 }
 
-async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000 } = {}) {
+async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000, signal } = {}) {
   const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: "application/json", "user-agent": "simi-browser-mcp/1.0" };
   const cid = await clientId();
   if (cid) headers["x-ltn-client-id"] = cid;
@@ -689,8 +728,9 @@ async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_00
   let response;
   try {
     // form (multipart, ví dụ file audio): để fetch tự đặt Content-Type có boundary
-    response = await fetch(gatewayBase + path, { method, headers, body: form || (body === undefined ? undefined : JSON.stringify(body)), signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+    response = await fetch(gatewayBase + path, { method, headers, body: form || (body === undefined ? undefined : JSON.stringify(body)), signal: signal && AbortSignal.any ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs), redirect: "manual" });
   } catch (error) {
+    if (signal?.aborted) { const stopped = new Error("đã dừng (model khác xong trước)"); stopped.status = -1; throw stopped; }
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
     const failure = new Error(timedOut ? `Gateway không trả lời sau ${Math.round(timeoutMs / 1000)} giây.` : `Không kết nối được Gateway: ${error?.cause?.code || error?.message}`);
     failure.status = 0;
@@ -845,24 +885,25 @@ async function imageGenerate(args = {}) {
   const bad = await readBadModels();
   order = [...new Set(order)].filter((id) => !bad[id]);
   if (mode === "edit") {
-    const editable = [];
-    for (const id of order) {
-      if (editable.length >= 2) break;
-      try {
-        const info = await gatewayCall(`/models/info?id=${encodeURIComponent(id)}`, { timeoutMs: 20_000 });
-        if ((info?.capabilities || info?.data?.capabilities || []).includes("edit")) editable.push(id);
-      } catch {}
-    }
-    order = editable;
+    // kiểm tra khả năng sửa ảnh của nhiều model CÙNG LÚC (trước đây hỏi lần lượt, mỗi model chờ tới 20 giây)
+    const checked = await Promise.all(order.slice(0, 6).map(async (id) => {
+      const caps = await imageCaps(id);
+      return caps === null ? (EDIT_HINT.test(id) ? id : null) : caps.includes("edit") ? id : null;
+    }));
+    order = checked.filter(Boolean);
     if (!order.length) return { ok: false, error: "Chưa có model sửa ảnh dùng được – dùng công cụ muse_image với ảnh gốc làm refs.", next: "muse_image" };
   }
   await mkdir(dirname(outPath), { recursive: true });
-  const tried = [];
-  for (const model of order.slice(0, 2)) {
+  const startedAt = Date.now();
+  const tried = []; const errors = [];
+  const controllers = new Map();
+  const attempt = async (model) => {
     tried.push(model);
-    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}), ...(/gpt-image/i.test(model) ? { quality: "high" } : {}) };
+    const ac = new AbortController(); controllers.set(model, ac);
+    // gpt-image: chất lượng "medium" – đẹp gần bằng "high" mà nhanh hơn nhiều
+    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}), ...(/gpt-image/i.test(model) ? { quality: "medium" } : {}) };
     try {
-      const payload = await gatewayCall("/images/generations", { method: "POST", body, timeoutMs: 180_000 });
+      const payload = await gatewayCall("/images/generations", { method: "POST", body, timeoutMs: 180_000, signal: ac.signal });
       const item = [...(payload?.data || [])].reverse().find((entry) => entry?.b64_json || entry?.url) || {};
       let bytes = item.b64_json ? Buffer.from(String(item.b64_json).replace(/^data:[^,]+,/, ""), "base64") : null;
       if (!bytes && item.url) {
@@ -870,25 +911,118 @@ async function imageGenerate(args = {}) {
         if (image.ok && /^image\//.test(image.headers.get("content-type") || "image/")) bytes = Buffer.from(await image.arrayBuffer());
       }
       if (!bytes || bytes.length < 1000) throw new Error("model không trả ảnh");
-      let finalPath = outPath;
-      if (bytes[0] === 0xff && bytes[1] === 0xd8) finalPath = outPath.replace(/\.(png|webp)$/i, ".jpg");
-      for (let n = 2; existsSync(finalPath); n += 1) finalPath = finalPath.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
-      await writeFile(finalPath, bytes);
-      return { __content: [{ type: "text", text: JSON.stringify({ ok: true, path: finalPath, model, show: `![](${finalPath.replace(/\\/g, "/")})` }) }] };
+      return { model, bytes };
     } catch (error) {
-      if (error.status === 0 && /không trả lời/.test(error.message)) {
-        return { ok: false, error: `${error.message} Ảnh có thể vẫn đang được tạo – không tự gọi lại.`, model };
+      if (error.status === -1) throw error;
+      errors.push({ model, error: error.message.slice(0, 200) });
+      if ([401, 403, 429].includes(error.status)) { error.fatal = true; throw error; }
+      if (!(error.status === 0 && /không trả lời/.test(error.message))) {
+        bad[model] = Math.floor(Date.now() / 1000);
+        if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
+          const prefix = model.split("/")[0] + "/";
+          for (const id of ids) if (id.startsWith(prefix)) bad[id] = bad[model];
+        }
+        await writeFile(BAD_IMAGE_FILE, JSON.stringify(bad)).catch(() => {});
       }
-      if ([401, 403, 429].includes(error.status)) return { ok: false, status: error.status, error: error.message };
-      bad[model] = Math.floor(Date.now() / 1000);
-      if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
-        const prefix = model.split("/")[0] + "/";
-        for (const id of ids) if (id.startsWith(prefix)) bad[id] = bad[model];
-      }
-      await writeFile(BAD_IMAGE_FILE, JSON.stringify(bad)).catch(() => {});
+      throw error;
     }
+  };
+  try {
+    // model đầu chưa xong sau IMAGE_HEDGE_MS thì chạy luôn model kế tiếp song song, lấy ảnh nào xong trước
+    const { model, bytes } = await hedged(order.slice(0, 3), attempt, IMAGE_HEDGE_MS);
+    for (const [other, ac] of controllers) if (other !== model) ac.abort();
+    let finalPath = outPath;
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) finalPath = outPath.replace(/\.(png|webp)$/i, ".jpg");
+    for (let n = 2; existsSync(finalPath); n += 1) finalPath = finalPath.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
+    await writeFile(finalPath, bytes);
+    return { __content: [{ type: "text", text: JSON.stringify({ ok: true, path: finalPath, model, seconds: Math.round((Date.now() - startedAt) / 1000), show: `![](${finalPath.replace(/\\/g, "/")})` }) }] };
+  } catch (error) {
+    if (error.fatal) return { ok: false, status: error.status, error: error.message };
+    return {
+      ok: false, error: "Các model ảnh đều lỗi", tried, errors,
+      next: mode === "edit" ? "muse_image" : "",
+      advice: "Báo người dùng lý do ngắn gọn (từ errors) và gợi ý thử lại sau ít phút; không tự viết script / thử tiếp nhiều cách khác."
+    };
   }
-  return { ok: false, error: "no_working_model", tried, next: mode === "edit" ? "muse_image" : "" };
+}
+
+const IMAGE_HEDGE_MS = Number(process.env.LTN_IMAGE_HEDGE_MS) || 45_000;
+const EDIT_HINT = /gpt-image|gemini[\w.-]*image|nano-?banana|kontext|seedream|qwen[\w.-]*edit|flux-?2/i;
+const capsCache = new Map();
+// khả năng của model ảnh (generate / edit) – hỏi 1 lần, nhớ 1 giờ; null = không biết
+async function imageCaps(id) {
+  const hit = capsCache.get(id);
+  if (hit && Date.now() - hit.at < 3_600_000) return hit.caps;
+  let caps = null;
+  try {
+    const info = await gatewayCall(`/models/info?id=${encodeURIComponent(id)}`, { timeoutMs: 8_000 });
+    const list = info?.capabilities || info?.data?.capabilities;
+    caps = Array.isArray(list) ? list.map(String) : null;
+  } catch { caps = null; }
+  capsCache.set(id, { at: Date.now(), caps });
+  return caps;
+}
+
+// chạy lần lượt các model nhưng không chờ model chậm: quá hedgeMs chưa xong (hoặc vừa lỗi) thì chạy model kế tiếp,
+// model nào trả ảnh trước thì lấy; lỗi tài khoản (fatal) thì dừng ngay
+function hedged(candidates, run, hedgeMs) {
+  return new Promise((resolve, reject) => {
+    let next = 0; let running = 0; let finished = false; let timer = null;
+    const launch = () => {
+      if (finished || next >= candidates.length) return;
+      const model = candidates[next++]; running += 1;
+      clearTimeout(timer); timer = setTimeout(launch, hedgeMs);
+      run(model).then((result) => {
+        if (finished) return;
+        finished = true; clearTimeout(timer); resolve(result);
+      }, (error) => {
+        running -= 1;
+        if (finished) return;
+        if (error.fatal) { finished = true; clearTimeout(timer); reject(error); return; }
+        if (next < candidates.length) launch();
+        else if (!running) { finished = true; clearTimeout(timer); reject(new Error("all failed")); }
+      });
+    };
+    if (!candidates.length) reject(new Error("no model")); else launch();
+  });
+}
+
+// ---------- chỉnh ảnh chính xác trên máy (Pillow) ----------
+const retouchScriptPath = process.env.LTN_IMAGE_RETOUCH_PATH || join(codexHome, "tools", "image-retouch.py");
+async function imageRetouch(args = {}) {
+  const src = String(args.source_path || "").trim();
+  if (!src || !existsSync(src)) throw new Error("Không thấy ảnh gốc – cần source_path là đường dẫn tuyệt đối.");
+  if (!existsSync(retouchScriptPath)) throw new Error("Công cụ chỉnh ảnh chưa được cài – bấm Cập nhật SIMI rồi thử lại.");
+  const request = { source: src, inspect: !!args.inspect };
+  if (!args.inspect) {
+    const output = String(args.output_path || "").trim();
+    if (!output) throw new Error("Thiếu output_path (nơi lưu ảnh kết quả).");
+    let out = isAbsolute(output) ? output : resolvePath(process.cwd(), output);
+    if (!/\.(png|jpe?g|webp)$/i.test(out)) out += extname(src).match(/\.(png|jpe?g|webp)$/i) ? extname(src) : ".png";
+    if (resolvePath(out) === resolvePath(src)) throw new Error("Không ghi đè ảnh gốc – chọn output_path khác.");
+    for (let n = 2; existsSync(out); n += 1) out = out.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
+    request.output = out;
+    request.ops = Array.isArray(args.ops) ? args.ops : [];
+  }
+  const python = await findPython();
+  const startedAt = Date.now();
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(python.command, [...python.prefix, retouchScriptPath], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: process.env });
+    let stdout = ""; let stderr = "";
+    const timer = setTimeout(() => { child.kill(); reject(new Error("Chỉnh ảnh quá 2 phút – ảnh quá lớn?")); }, 120_000);
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("close", () => {
+      clearTimeout(timer);
+      let payload = null; try { payload = JSON.parse(stdout.trim().split("\n").pop()); } catch { payload = null; }
+      if (!payload || payload.error) reject(new Error(payload?.error?.message || stderr.trim().split("\n").slice(-3).join(" ") || "Chỉnh ảnh không thành công"));
+      else resolve(payload);
+    });
+    child.stdin.end(JSON.stringify(request));
+  });
+  if (args.inspect) return { __content: [{ type: "text", text: JSON.stringify(result) }] };
+  return { __content: [{ type: "text", text: JSON.stringify({ ...result, seconds: Math.round((Date.now() - startedAt) / 100) / 10, show: `![](${String(result.path).replace(/\\/g, "/")})`, note: "Xem ảnh kết quả; chưa đạt thì chỉnh box / thông số và gọi lại (tối đa 1–2 lần)." }) }] };
 }
 
 // ---------- chép lời audio / video ----------
@@ -1097,6 +1231,7 @@ async function callTool(name, args = {}) {
   if (name === "web_fetch") return webFetch(args);
   if (name === "image_generate") return imageGenerate(args);
   if (name === "audio_transcribe") return audioTranscribe(args);
+  if (name === "image_retouch") return imageRetouch(args);
   if (name === "browser_snapshot") return browserSnapshot(args);
   if (name === "browser_act") return browserAct(args);
   if (name === "browser_screenshot") return browserScreenshot(args);

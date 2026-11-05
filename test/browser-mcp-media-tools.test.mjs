@@ -50,7 +50,7 @@ test("image_generate: chọn model ảnh tốt nhất trước, gpt-image xin ch
     assert.equal(r.ok, true);
     const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
     assert.equal(gen[0].body.model, "cx/gpt-image-2", "model ảnh mạnh nhất trước, không phải bản mini / schnell");
-    assert.equal(gen[0].body.quality, "high");
+    assert.equal(gen[0].body.quality, "medium");
   } finally { t.stop(); }
 });
 
@@ -97,5 +97,60 @@ test("audio_transcribe: file dài hơn giới hạn → cắt bằng ffmpeg rồ
     assert.match(t.text(r), /3 đoạn 15 phút/);
     assert.equal(t.seen.filter((s) => s.url === "/v1/audio/transcriptions").length, 3);
     assert.ok(!t.seen.some((s) => /name="language"/.test(s.raw.toString("latin1"))), "auto → không gửi language");
+  } finally { t.stop(); }
+});
+
+test("image_generate: model đầu chậm → sau vài giây chạy model kế tiếp song song, lấy ảnh xong trước; sửa ảnh hỏi khả năng các model cùng lúc", async () => {
+  let infoInFlight = 0; let maxInFlight = 0;
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2" }, { id: "gg/gemini-3-pro-image" }] });
+    if (url.startsWith("/v1/models/info")) { infoInFlight += 1; maxInFlight = Math.max(maxInFlight, infoInFlight); return setTimeout(() => { infoInFlight -= 1; send(200, { capabilities: ["generate", "edit"] }); }, 200); }
+    if (url === "/v1/images/generations") {
+      if (body.model === "cx/gpt-image-2") return setTimeout(() => send(200, { data: [{ b64_json: PNG.toString("base64") }] }), 4000);
+      return setTimeout(() => send(200, { data: [{ b64_json: PNG.toString("base64") }] }), 300);
+    }
+    send(404, {});
+  }, "cx/gpt-6.1-sol", { LTN_IMAGE_HEDGE_MS: "500" });
+  try {
+    const src = join(t.home, "goc.png"); writeFileSync(src, PNG);
+    const t0 = Date.now();
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "Sharpen the logo", mode: "edit", source_path: src, output_path: join(t.home, "out", "net.png") })));
+    assert.equal(r.ok, true);
+    assert.equal(r.model, "gg/gemini-3-pro-image", "model nhanh hơn thắng");
+    assert.ok(Date.now() - t0 < 3000, "không chờ model chậm 4 giây");
+    assert.equal(maxInFlight, 2, "hỏi khả năng sửa ảnh của 2 model cùng lúc");
+  } finally { t.stop(); }
+});
+
+test("image_retouch: làm rõ chữ mờ ngay trên máy, giữ nguyên phần còn lại của ảnh", async () => {
+  const py = (() => { for (const c of ["python3", "python"]) { try { execFileSync(c, ["-c", "import PIL"]); return c; } catch {} } return null; })();
+  if (!py) return;
+  const t = await start((_e, send) => send(404, {}), "cc/claude-sonnet-5-5", { LTN_PYTHON_PATH: execFileSync(py, ["-c", "import sys; print(sys.executable)"]).toString().trim(), LTN_IMAGE_RETOUCH_PATH: join(import.meta.dirname, "..", "scripts", "image-retouch.py") });
+  try {
+    const src = join(t.home, "den.png");
+    execFileSync(py, ["-c", `from PIL import Image, ImageDraw, ImageFilter
+im = Image.new("RGB", (400, 200), (236, 236, 232))
+d = ImageDraw.Draw(im); d.rectangle((10, 150, 60, 190), fill=(200, 30, 30))
+d.text((170, 80), "UNIQ", fill=(120, 120, 120))
+im = im.filter(ImageFilter.GaussianBlur(3)); im.save(${JSON.stringify(src)})`]);
+    const info = JSON.parse(t.text(await t.call("image_retouch", { source_path: src, inspect: true })));
+    assert.deepEqual([info.width, info.height], [400, 200]);
+    const out = join(t.home, "outputs", "den-net.png");
+    const r = JSON.parse(t.text(await t.call("image_retouch", { source_path: src, output_path: out, ops: [
+      { op: "erase", box: [0.35, 0.33, 0.65, 0.55] },
+      { op: "text", text: "UNIQ", box: [0.38, 0.35, 0.62, 0.53], color: "#5a5a5a", font: "bold" },
+      { op: "sharpen", amount: 120, box: [0.3, 0.3, 0.7, 0.6] }
+    ] })));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.applied, ["erase", "text", "sharpen"]);
+    assert.ok(r.seconds < 10);
+    const px = JSON.parse(execFileSync(py, ["-c", `import json; from PIL import Image
+a = Image.open(${JSON.stringify(src)}).convert("RGB"); b = Image.open(${JSON.stringify(out)}).convert("RGB")
+dark = sum(1 for x in range(150, 250) for y in range(70, 110) if sum(b.getpixel((x, y))) < 400)
+print(json.dumps({"corner_same": a.getpixel((30, 170)) == b.getpixel((30, 170)), "dark": dark}))`]).toString());
+    assert.equal(px.corner_same, true, "phần ngoài vùng sửa giữ nguyên");
+    if (process.env.KEEP_RETOUCH) execFileSync("cp", [src, out, process.env.KEEP_RETOUCH]);
+    assert.ok(px.dark > 150, "chữ mới rõ nét");
+    assert.match(t.text(await t.call("image_retouch", { source_path: src, output_path: src, ops: [{ op: "sharpen" }] })), /Không ghi đè ảnh gốc/);
   } finally { t.stop(); }
 });

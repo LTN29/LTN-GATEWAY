@@ -117,6 +117,10 @@ const localToolPaths = new Map([
   [
     "/install/tools/spreadsheet-audit.py",
     fileURLToPath(new URL("../scripts/spreadsheet-audit.py", import.meta.url))
+  ],
+  [
+    "/install/tools/image-retouch.py",
+    fileURLToPath(new URL("../scripts/image-retouch.py", import.meta.url))
   ]
 ]);
 
