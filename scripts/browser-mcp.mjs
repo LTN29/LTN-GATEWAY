@@ -1,8 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve as resolvePath } from "node:path";
 import readline from "node:readline";
 import { activateCdpTarget, actOnTab, cdpBrowserVersion, cdpTargets, closeCdpBrowser, findBrowserExecutable, isHeadlessBrowserSession, isHeadlessBrowserVersion, listPageTabs, navigateTab, resolveBrowserProfile, resolveDesktopEnv, screenshotTab, snapshotTab } from "./browser-cdp.mjs";
 
@@ -55,7 +55,7 @@ const GATEWAY_TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        prompt: { type: "string", description: "Mô tả đầy đủ ảnh cần tạo / cách sửa (nội dung, bố cục, phong cách, chữ cần có trong ảnh)." },
+        prompt: { type: "string", description: "Prompt chi tiết, viết bằng tiếng Anh cho model ảnh hiểu tốt nhất: chủ thể + hành động, bối cảnh, bố cục / góc máy, phong cách (ảnh chụp thật, 3D, minh hoạ phẳng…), ánh sáng, bảng màu, chất lượng (sharp, high detail), điều cần tránh. Chữ cần in trong ảnh: giữ nguyên tiếng Việt có dấu, đặt trong ngoặc kép, càng ngắn càng tốt. Sửa ảnh: nói rõ giữ nguyên gì, đổi gì." },
         mode: { type: "string", enum: ["generate", "edit"], default: "generate" },
         source_path: { type: "string", description: "edit: đường dẫn ảnh gốc cần sửa." },
         output_path: { type: "string", description: "Nơi lưu ảnh: đường dẫn tuyệt đối trong thư mục làm việc của đoạn chat, ví dụ <thư mục làm việc>/outputs/banner-tet.png. Tên mới cho mỗi lần, không ghi đè." },
@@ -64,6 +64,23 @@ const GATEWAY_TOOLS = [
         model: { type: "string", description: "Model ảnh người dùng chỉ định đích danh (thường bỏ trống)." }
       },
       required: ["prompt", "output_path"],
+      additionalProperties: false
+    }
+  },
+  {
+    name: "audio_transcribe",
+    description: "Chuyển giọng nói trong file âm thanh / video (mp3, m4a, wav, ogg, mp4, webm, ghi âm điện thoại…) thành chữ qua SIMI Gateway – 1 lần gọi, tự chọn model, tự cắt file dài (cần ffmpeg). Dùng khi người dùng nhờ chép lời, gỡ băng, biên bản họp từ file ghi âm, làm phụ đề. Không tự viết code / cài whisper.",
+    annotations: { readOnlyHint: false, openWorldHint: true, title: "Chép lời audio" },
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Đường dẫn tuyệt đối file âm thanh / video trên máy." },
+        language: { type: "string", description: "Mã ngôn ngữ nói trong file, mặc định vi. Bỏ trống \"auto\" để model tự nhận." },
+        format: { type: "string", enum: ["text", "srt"], default: "text", description: "text: bản chép lời; srt: phụ đề có mốc thời gian." },
+        output_path: { type: "string", description: "Nơi lưu bản chép lời (.txt / .srt) – đường dẫn tuyệt đối trong thư mục làm việc. Bỏ trống thì chỉ trả về nội dung." },
+        model: { type: "string", description: "Model chép lời người dùng chỉ định đích danh (thường bỏ trống)." }
+      },
+      required: ["path"],
       additionalProperties: false
     }
   }
@@ -664,14 +681,15 @@ async function clientId() {
   try { return readFileSync(join(codexHome, "ltn-client-id"), "utf8").trim(); } catch { return ""; }
 }
 
-async function gatewayCall(path, { method = "GET", body, timeoutMs = 60_000 } = {}) {
+async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000 } = {}) {
   const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: "application/json", "user-agent": "simi-browser-mcp/1.0" };
   const cid = await clientId();
   if (cid) headers["x-ltn-client-id"] = cid;
   if (body !== undefined) headers["content-type"] = "application/json";
   let response;
   try {
-    response = await fetch(gatewayBase + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
+    // form (multipart, ví dụ file audio): để fetch tự đặt Content-Type có boundary
+    response = await fetch(gatewayBase + path, { method, headers, body: form || (body === undefined ? undefined : JSON.stringify(body)), signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
   } catch (error) {
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
     const failure = new Error(timedOut ? `Gateway không trả lời sau ${Math.round(timeoutMs / 1000)} giây.` : `Không kết nối được Gateway: ${error?.cause?.code || error?.message}`);
@@ -782,6 +800,27 @@ function chatModelFromConfig() {
   } catch { return ""; }
 }
 
+// Xếp model ảnh theo chất lượng thực tế (model đời mới / bản "pro" trước, bản rút gọn / miễn phí / tốc độ sau),
+// cùng hãng với model chat được cộng thêm chút điểm. Trước đây chỉ xếp theo hãng nên hay rơi vào model ảnh yếu.
+const IMAGE_TIERS = [
+  [100, /gpt-image-2|gpt-image-1\.5/i],
+  [96, /gemini-3[\w.-]*image|nano-?banana-?(pro|2)|imagen-?4[\w-]*ultra/i],
+  [92, /gpt-image-1(?!-mini)|imagen-?4/i],
+  [88, /seedream-?[45]|flux[\w.-]*(pro|max|2)|ideogram[\w.-]*(v?3)|recraft[\w.-]*v3|midjourney|kling[\w.-]*image/i],
+  [82, /gemini-2\.5[\w.-]*image|nano-?banana|muse/i],
+  [65, /gpt-image-1-mini|dall-?e-?3|imagen-?3|flux[\w.-]*dev/i]
+];
+const IMAGE_WEAK = /schnell|sdxl|sd-?1\.5|sd-?2|stable-?diffusion(?!-3\.5-large)|dall-?e-?2|lite|tiny|turbo|lightning|free|preview-?low/i;
+function rankImageModels(ids, chat = "") {
+  const family = /^(cx\/|gpt|openai\/)/i.test(chat) ? /^cx\/|gpt-image|openai/i : /gemini|imagen|nano-?banana/i;
+  const score = (id) => {
+    const tier = IMAGE_TIERS.find(([, re]) => re.test(id));
+    return (tier ? tier[0] : 60) - (IMAGE_WEAK.test(id) ? 40 : 0) + (family.test(id) ? 15 : 0) + (/combo/i.test(id) ? 3 : 0);
+  };
+  return [...new Set(ids)].map((id, index) => ({ id, index, score: score(id) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);
+}
+
 async function imageGenerate(args = {}) {
   const prompt = String(args.prompt || "").trim();
   if (!prompt) throw new Error("Thiếu mô tả ảnh (prompt).");
@@ -801,10 +840,7 @@ async function imageGenerate(args = {}) {
   const ids = (await discover("/models/image")).map((item) => item.id);
   if (!ids.length) throw new Error("Gateway chưa có model ảnh nào cho tài khoản này.");
   const chat = String(args.chat_model || chatModelFromConfig());
-  const cx = ids.filter((id) => /^cx\//.test(id));
-  const gemini = ids.filter((id) => /gemini/i.test(id) && /image/i.test(id));
-  const others = ids.filter((id) => !cx.includes(id) && !gemini.includes(id));
-  let order = /^(cx\/|gpt|openai\/)/i.test(chat) ? [...cx, ...gemini, ...others] : [...gemini, ...cx, ...others];
+  let order = rankImageModels(ids, chat);
   if (args.model && ids.includes(args.model)) order = [args.model, ...order];
   const bad = await readBadModels();
   order = [...new Set(order)].filter((id) => !bad[id]);
@@ -824,7 +860,7 @@ async function imageGenerate(args = {}) {
   const tried = [];
   for (const model of order.slice(0, 2)) {
     tried.push(model);
-    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}) };
+    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}), ...(/gpt-image/i.test(model) ? { quality: "high" } : {}) };
     try {
       const payload = await gatewayCall("/images/generations", { method: "POST", body, timeoutMs: 180_000 });
       const item = [...(payload?.data || [])].reverse().find((entry) => entry?.b64_json || entry?.url) || {};
@@ -853,6 +889,128 @@ async function imageGenerate(args = {}) {
     }
   }
   return { ok: false, error: "no_working_model", tried, next: mode === "edit" ? "muse_image" : "" };
+}
+
+// ---------- chép lời audio / video ----------
+const STT_DIRECT = /\.(mp3|mpga|mpeg|m4a|mp4|wav|ogg|oga|webm|flac)$/i;
+const STT_MAX_BYTES = 24 * 1024 * 1024; // giới hạn file của phần lớn nhà cung cấp (25MB)
+const STT_PART_SECONDS = 900;
+const AUDIO_MIME = { ".mp3": "audio/mpeg", ".mpga": "audio/mpeg", ".mpeg": "audio/mpeg", ".m4a": "audio/mp4", ".mp4": "video/mp4", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".webm": "audio/webm", ".flac": "audio/flac" };
+const STT_STRONG = /combo|gpt-4o[\w-]*transcribe|whisper-large-v3(?!-turbo)|scribe|nova-3|gemini|chirp/i;
+const STT_WEAK = /tiny|base|small|turbo|mini/i;
+
+function execFileAsync(cmd, args, timeout) {
+  return new Promise((resolve, reject) => execFile(cmd, args, { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(Object.assign(error, { stderr })) : resolve(stdout))));
+}
+async function hasFfmpeg() {
+  try { await execFileAsync(process.env.LTN_FFMPEG_PATH || "ffmpeg", ["-version"], 15_000); return true; } catch { return false; }
+}
+
+const srtTime = (sec) => {
+  const ms = Math.max(0, Math.round(sec * 1000));
+  const p = (n, w = 2) => String(n).padStart(w, "0");
+  return `${p(Math.floor(ms / 3_600_000))}:${p(Math.floor(ms / 60_000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`;
+};
+const parseSrtTime = (t) => { const m = /(\d+):(\d+):(\d+)[,.](\d+)/.exec(t); return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4].padEnd(3, "0").slice(0, 3)) / 1000 : 0; };
+// mốc thời gian của từng đoạn đã cắt cộng thêm vị trí đoạn đó trong file gốc
+function cuesFrom(payload, offset) {
+  if (typeof payload === "string" && /-->/.test(payload)) {
+    return payload.replace(/\r/g, "").split(/\n\n+/).map((block) => {
+      const lines = block.trim().split("\n");
+      const at = lines.findIndex((line) => line.includes("-->"));
+      if (at < 0) return null;
+      const [a, b] = lines[at].split("-->");
+      return { start: parseSrtTime(a) + offset, end: parseSrtTime(b) + offset, text: lines.slice(at + 1).join(" ").trim() };
+    }).filter((cue) => cue && cue.text);
+  }
+  const segments = Array.isArray(payload?.segments) ? payload.segments : [];
+  return segments.map((seg) => ({ start: Number(seg.start || 0) + offset, end: Number(seg.end || 0) + offset, text: String(seg.text || "").trim() })).filter((cue) => cue.text);
+}
+
+async function transcribeOnce(model, file, { language, wantSrt }) {
+  const bytes = await readFile(file);
+  const attempts = wantSrt ? ["verbose_json", "srt", "json"] : ["json"];
+  let lastError = null;
+  for (const responseFormat of attempts) {
+    for (const lang of language ? [language, ""] : [""]) {
+      const form = new FormData();
+      form.append("model", model);
+      form.append("file", new Blob([bytes], { type: AUDIO_MIME[extname(file).toLowerCase()] || "application/octet-stream" }), basename(file));
+      form.append("response_format", responseFormat);
+      if (responseFormat === "verbose_json") form.append("timestamp_granularities[]", "segment");
+      if (lang) form.append("language", lang);
+      try {
+        const payload = await gatewayCall("/audio/transcriptions", { method: "POST", form, timeoutMs: 15 * 60_000 });
+        const text = typeof payload === "string" ? (/-->/.test(payload) ? cuesFrom(payload, 0).map((cue) => cue.text).join(" ") : payload) : String(payload?.text || "");
+        return { text: text.trim(), payload };
+      } catch (error) {
+        if ([0, 401, 403, 429].includes(error.status) || error.status >= 500) throw error;
+        lastError = error; // 400: thử bỏ language / đổi định dạng trả về
+      }
+    }
+  }
+  throw lastError || new Error("model không chép được lời");
+}
+
+async function audioTranscribe(args = {}) {
+  const src = String(args.path || "").trim();
+  if (!src || !existsSync(src)) throw new Error("Không thấy file âm thanh – cần đường dẫn tuyệt đối file trên máy.");
+  const info = await stat(src);
+  if (!info.isFile() || info.size < 100) throw new Error("File âm thanh rỗng hoặc không hợp lệ.");
+  const wantSrt = args.format === "srt";
+  const language = !args.language ? "vi" : /^auto$/i.test(args.language) ? "" : String(args.language).toLowerCase().slice(0, 8);
+  const items = await discover("/models/stt");
+  const ids = items.map((item) => item.id);
+  if (!ids.length) throw new Error("Gateway chưa có model chép lời (speech-to-text) nào cho tài khoản này – báo admin bật trên 9Router.");
+  let order = [...ids].sort((a, b) => (Number(STT_STRONG.test(b)) - Number(STT_WEAK.test(b))) - (Number(STT_STRONG.test(a)) - Number(STT_WEAK.test(a))));
+  if (args.model && ids.includes(args.model)) order = [args.model, ...order.filter((id) => id !== args.model)];
+
+  // file lớn hoặc định dạng lạ (amr, 3gp, mov, aac…) → cắt / đổi sang mp3 mono 16kHz bằng ffmpeg
+  let parts = [src]; let tmp = null;
+  if (info.size > STT_MAX_BYTES || !STT_DIRECT.test(src)) {
+    if (!(await hasFfmpeg())) {
+      return { ok: false, error: info.size > STT_MAX_BYTES
+        ? `File ${Math.round(info.size / 1048576)}MB lớn hơn 24MB mà máy chưa có ffmpeg để tự cắt nhỏ. Cài ffmpeg (Windows: winget install Gyan.FFmpeg) rồi thử lại, hoặc gửi file ngắn hơn.`
+        : `Định dạng ${extname(src) || "này"} cần ffmpeg để đổi sang mp3. Cài ffmpeg (Windows: winget install Gyan.FFmpeg) hoặc gửi file mp3 / m4a / wav.` };
+    }
+    tmp = await mkdtemp(join(tmpdir(), "simi-stt-"));
+    await execFileAsync(process.env.LTN_FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k",
+      "-f", "segment", "-segment_time", String(STT_PART_SECONDS), "-reset_timestamps", "1", join(tmp, "part-%03d.mp3")], 30 * 60_000);
+    parts = (await readdir(tmp)).filter((name) => name.endsWith(".mp3")).sort().map((name) => join(tmp, name));
+    if (!parts.length) throw new Error("ffmpeg không đọc được âm thanh trong file này.");
+  }
+  try {
+    const errors = [];
+    for (const model of order.slice(0, 2)) {
+      try {
+        const texts = []; const cues = [];
+        for (let index = 0; index < parts.length; index += 1) {
+          const { text, payload } = await transcribeOnce(model, parts[index], { language, wantSrt });
+          texts.push(text);
+          if (wantSrt) cues.push(...cuesFrom(payload, index * STT_PART_SECONDS));
+        }
+        const transcript = texts.filter(Boolean).join("\n\n").trim();
+        if (!transcript) { errors.push(`${model}: không nghe được lời nào`); continue; }
+        const srt = wantSrt && cues.length ? cues.map((cue, i) => `${i + 1}\n${srtTime(cue.start)} --> ${srtTime(cue.end)}\n${cue.text}`).join("\n\n") + "\n" : "";
+        let saved = "";
+        if (args.output_path) {
+          saved = isAbsolute(String(args.output_path)) ? String(args.output_path) : resolvePath(process.cwd(), String(args.output_path));
+          if (!/\.(txt|srt|md)$/i.test(saved)) saved += srt ? ".srt" : ".txt";
+          for (let n = 2; existsSync(saved); n += 1) saved = saved.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
+          await mkdir(dirname(saved), { recursive: true });
+          await writeFile(saved, srt || transcript, "utf8");
+        }
+        const note = wantSrt && !srt ? "\n(Model này không trả mốc thời gian nên chỉ có bản chép lời, chưa có phụ đề.)" : "";
+        return { __content: [{ type: "text", text: `Chép lời xong (${model}${parts.length > 1 ? `, ${parts.length} đoạn ${STT_PART_SECONDS / 60} phút` : ""})${saved ? ` – đã lưu: ${saved}` : ""}.${note}\n\n${(srt || transcript).slice(0, 60_000)}${(srt || transcript).length > 60_000 ? "\n\n…(còn tiếp trong file đã lưu)" : ""}` }] };
+      } catch (error) {
+        if ([401, 403, 429].includes(error.status)) return { ok: false, status: error.status, error: error.message };
+        errors.push(`${model}: ${error.message}`);
+      }
+    }
+    return { ok: false, error: `Chưa chép được lời: ${errors.join(" | ")}` };
+  } finally {
+    if (tmp) await rm(tmp, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // ---------- thao tác trang (DOM) ----------
@@ -938,6 +1096,7 @@ async function callTool(name, args = {}) {
   if (name === "web_search") return webSearch(args);
   if (name === "web_fetch") return webFetch(args);
   if (name === "image_generate") return imageGenerate(args);
+  if (name === "audio_transcribe") return audioTranscribe(args);
   if (name === "browser_snapshot") return browserSnapshot(args);
   if (name === "browser_act") return browserAct(args);
   if (name === "browser_screenshot") return browserScreenshot(args);

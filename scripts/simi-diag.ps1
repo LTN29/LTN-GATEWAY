@@ -1,5 +1,6 @@
 ﻿# Chẩn đoán SIMI trên máy server (chỉ ĐỌC, không sửa gì). Chạy trong PowerShell (Administrator):
 #   $env:SIMI_TEST_KEY = "<key test>"      # key tài khoản test, không dùng key admin
+#   (Chạy nhanh vài giây: bỏ dòng SIMI_TEST_KEY → chỉ đọc dịch vụ, Docker và log tốc độ thật, không gửi yêu cầu thử)
 #   powershell -ExecutionPolicy Bypass -File .\simi-diag.ps1
 # Kết quả ghi ra file simi-diag-<ngày-giờ>.txt cạnh script; key, token, email đều được che bằng ***.
 param(
@@ -12,13 +13,14 @@ param(
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $key = $env:SIMI_TEST_KEY
-if (-not $key) { Write-Host 'Thiếu $env:SIMI_TEST_KEY – đặt key test trước rồi chạy lại.'; exit 1 }
+# không có key → chế độ nhanh: chỉ đọc dịch vụ, Docker và log Gateway (vài giây, không gửi yêu cầu nào tới model)
+$quick = -not $key
 $out = Join-Path $PSScriptRoot ("simi-diag-" + (Get-Date -Format 'yyyyMMdd-HHmm') + ".txt")
 $tmp = Join-Path $env:TEMP 'simi-diag'; New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 
 function Mask([string]$s) {
   if ($null -eq $s) { return '' }
-  $s = $s.Replace($key, '***')
+  if ($key) { $s = $s.Replace($key, '***') }
   $s = [regex]::Replace($s, '(?i)(bearer\s+)[A-Za-z0-9._\-]{8,}', '$1***')
   $s = [regex]::Replace($s, '[\w.+\-]+@[\w\-]+\.[\w.\-]+', '***@***')
   $s = [regex]::Replace($s, '(?i)\b(sk|key|tok|token|pat|ghp)[-_][A-Za-z0-9]{12,}', '$1-***')
@@ -69,6 +71,7 @@ foreach ($name in @(docker ps --format '{{.Names}}' | Where-Object { $_ -match '
   $err | Select-Object -Last 20 | ForEach-Object { W ("    " + $_.Substring(0, [Math]::Min(300, $_.Length))) }
 }
 
+if ($quick) { W ''; W 'Chế độ nhanh (không có SIMI_TEST_KEY): bỏ qua phần 3–6, chỉ đọc log.' } else {
 H '3. Tốc độ: qua Gateway và thẳng 9Router (yêu cầu nhỏ, không stream)'
 foreach ($m in @($ClaudeModel, $GptModel)) {
   foreach ($target in @(@{ n = 'Gateway'; u = "$Gateway/v1/responses" }, @{ n = '9Router'; u = "$Router/v1/responses" })) {
@@ -117,12 +120,18 @@ foreach ($im in ($imgIds | Select-Object -First 3)) {
   W ("  ảnh " + $im + ": " + $r.status + " " + $r.total + "s, dữ liệu " + $len + " ký tự" + $(if ($r.status -ne '200') { " – " + $r.text.Substring(0, [Math]::Min(300, $r.text.Length)) } else { '' }))
 }
 
+$stt = Call 'GET' "$Gateway/v1/models/stt" $null 30
+$sttIds = @(); try { $sttIds = @(($stt.text | ConvertFrom-Json).data | ForEach-Object { $_.id }) } catch {}
+W ("/v1/models/stt (chép lời): " + $stt.status + " – " + $(if ($sttIds.Count) { $sttIds -join ', ' } else { 'KHÔNG CÓ model nào' }))
+
 H '6. Gọi nhiều công cụ trong 1 lượt (parallel tool calls) – để biết có nên bật CODEX_PARALLEL_TOOL_CALLS'
 $tools = @(@{ type = 'function'; name = 'get_weather'; description = 'Lấy thời tiết một thành phố'; parameters = @{ type = 'object'; properties = @{ city = @{ type = 'string' } }; required = @('city') } })
 foreach ($m in @($ClaudeModel, $GptModel)) {
   $r = Call 'POST' "$Gateway/v1/responses" @{ model = $m; input = 'Gọi get_weather cho Hà Nội và cho TP.HCM cùng lúc (2 lệnh gọi), chưa cần trả lời.'; tools = $tools; parallel_tool_calls = $true; stream = $false; max_output_tokens = 300 } 120
   $calls = 0; try { $calls = @(($r.text | ConvertFrom-Json).output | Where-Object { $_.type -eq 'function_call' }).Count } catch {}
   W ("{0,-24} {1} {2}s – số lệnh gọi công cụ trong 1 lượt: {3}" -f $m, $r.status, $r.total, $calls)
+}
+
 }
 
 H '7. Tốc độ thật theo model từ log Gateway (20000 dòng cuối)'
@@ -134,7 +143,7 @@ if (Test-Path $logFile) {
   $rows | Group-Object model | Sort-Object Count -Descending | ForEach-Object {
     $g = $_.Group; $err = @($g | Where-Object { $_.status -ne 200 }).Count
     $img = ($g | Where-Object { $null -ne $_.images } | Measure-Object images -Average).Average
-    W ("{0,-34} lượt {1,5}  lỗi {2,4}  chữ-đầu {3,6}s  tổng {4,6}s  gateway {5,5}s  ảnh-tb {6}" -f $_.Name, $g.Count, $err, (Med ($g | ForEach-Object { $_.firstTokenMs })), (Med ($g | ForEach-Object { $_.latencyMs })), (Med ($g | ForEach-Object { $_.gatewayMs })), $(if ($null -ne $img) { [Math]::Round($img, 1) } else { '-' }))
+    W ("{0,-34} lượt {1,5}  lỗi {2,4}  chữ-đầu {3,6}s  9router-đầu {4,6}s  tổng {5,6}s  gateway {6,5}s  ảnh-tb {7}" -f $_.Name, $g.Count, $err, (Med ($g | ForEach-Object { $_.firstTokenMs })), (Med ($g | ForEach-Object { $_.upstreamFirstByteMs })), (Med ($g | ForEach-Object { $_.latencyMs })), (Med ($g | ForEach-Object { $_.gatewayMs })), $(if ($null -ne $img) { [Math]::Round($img, 1) } else { '-' }))
   }
 } else { W ("Không thấy " + $logFile) }
 

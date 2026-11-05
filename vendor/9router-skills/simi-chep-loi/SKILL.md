@@ -5,6 +5,17 @@ description: Chép lời audio/video và tạo phụ đề bằng công cụ tra
 
 # Simi - Chép lời âm thanh
 
+## Cách gọi: ưu tiên công cụ `audio_transcribe`
+
+- **Luôn dùng công cụ MCP `simi_browser.audio_transcribe`** nếu có trong phiên:
+  `path` = đường dẫn tuyệt đối file audio/video user gửi, `language` = `vi` (hoặc
+  mã ngôn ngữ nói trong file, `auto` nếu không rõ), `format` = `text` hoặc `srt`
+  (phụ đề), `output_path` = `<thư mục làm việc>/outputs/<ten-file>.txt`.
+- Công cụ tự chọn model, tự cắt file dài / đổi định dạng (cần ffmpeg), chạy ngoài
+  sandbox. Gọi **một lần** cho mỗi file; xong thì trình bày kết quả (tóm tắt,
+  biên bản…) theo yêu cầu. Không tự viết code, cài whisper hay gọi API bằng lệnh.
+- Kết quả `ok:false` có lời nhắn (thiếu ffmpeg, file hỏng…) → báo đúng lời nhắn đó.
+
 Dùng công cụ transcription thực sự có trong phiên nếu có. Chỉ xử lý file
 user cung cấp/chỉ định. Với Gateway được cấp quyền, discover `/models/stt`
 và metadata `/models/info?id=<ID đã URL-encode>` qua `ltn-9router GET`.

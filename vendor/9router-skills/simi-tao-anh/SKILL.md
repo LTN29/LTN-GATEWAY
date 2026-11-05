@@ -1,6 +1,6 @@
 ---
 name: simi-tao-anh
-description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổi nền, outpaint) qua Simi Gateway bằng model ảnh cùng hãng với model chat đang dùng, lưu file ảnh về máy và hiển thị trong chat. Dùng khi user yêu cầu tạo, vẽ, sửa hoặc xóa chữ trên ảnh.
+description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổi nền, outpaint) qua Simi Gateway bằng model ảnh tốt nhất đang có, lưu file ảnh về máy và hiển thị trong chat. Dùng khi user yêu cầu tạo, vẽ, sửa hoặc xóa chữ trên ảnh.
 ---
 
 # Simi - Tạo ảnh
@@ -50,8 +50,9 @@ Model chat không tự vẽ ảnh; ảnh do model ảnh tạo qua Gateway, chọ
 | `Chat` | ID model chat của phiên (ví dụ `cx/gpt-5.5`, `ag/gemini-3-pro`, `cc/claude-opus-5-5`); không rõ thì đọc dòng `model = "..."` trong `config.toml` của Codex |
 | `Want` | model ảnh user chỉ định đích danh; thường để trống |
 
-Khối lệnh tự chọn: chat GPT (`cx/`, `gpt`, `openai/`) → model ảnh `cx/` trước;
-Gemini, Claude và model khác → model Gemini image trước. Mỗi yêu cầu thử tối đa
+Công cụ `image_generate` tự xếp model ảnh theo chất lượng (bản mới / pro trước,
+bản mini / miễn phí sau). Khối lệnh dự phòng: chat GPT (`cx/`, `gpt`, `openai/`) →
+model ảnh `cx/` trước; Gemini, Claude và model khác → model Gemini image trước. Mỗi yêu cầu thử tối đa
 2 model. Sửa ảnh chỉ dùng model có khả năng `edit` theo `/models/info` (model chỉ
 tạo ảnh từ chữ sẽ bỏ qua ảnh gốc nên không dùng). Model lỗi phía provider bị bỏ
 qua 30 phút; lỗi tài khoản/không hỗ trợ thì bỏ qua cả nhóm provider đó. Lỗi
@@ -267,10 +268,21 @@ lưu file mới, không ghi đè ảnh gốc.
 
 ## Viết prompt
 
-Ảnh mới: chủ thể và hành động; bố cục, khung hình; chi tiết bắt buộc; phong cách,
-ánh sáng; điều cần tránh; tỉ lệ. Chữ trong ảnh ngắn và chính xác. Tỉ lệ theo mục
-đích: vuông cho bài đăng, dọc cho story/poster, ngang cho banner/slide; tôn trọng
-kích thước user nêu.
+Prompt quyết định ảnh đẹp hay xấu – không chuyển nguyên câu ngắn của user.
+Viết prompt **bằng tiếng Anh**, 60–150 từ, đủ các ý:
+
+1. Chủ thể + hành động, chi tiết bắt buộc (sản phẩm, người, số lượng, trang phục).
+2. Bối cảnh, bố cục, góc máy / khung hình (close-up, wide shot, top-down…).
+3. Phong cách rõ ràng: professional product photo / cinematic photo / flat vector
+   illustration / 3D render / watercolor…; hợp mục đích (quảng cáo, mạng xã hội, in ấn).
+4. Ánh sáng, bảng màu, chất liệu; thêm `high detail, sharp focus`.
+5. Chữ trong ảnh: giữ nguyên tiếng Việt có dấu, đặt trong ngoặc kép, tối đa vài
+   từ (ví dụ `headline text "Khai trương"`); nội dung dài để ngoài ảnh.
+6. Điều cần tránh (no watermark, no extra text, no distorted hands…).
+
+Tỉ lệ (`size`) theo mục đích: vuông cho bài đăng, dọc cho story/poster, ngang cho
+banner/slide; tôn trọng kích thước user nêu. User đưa yêu cầu quá chung chung
+("vẽ ảnh đẹp về Tết") thì tự bổ sung chi tiết hợp lý, không hỏi lại.
 
 Sửa ảnh: luôn dùng ảnh user gửi hoặc ảnh vừa tạo làm `Src`, không âm thầm tạo ảnh
 mới thay thế. Prompt ghi rõ phần cần đổi và phần **giữ nguyên** (chủ thể, khuôn
