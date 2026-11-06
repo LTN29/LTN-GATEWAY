@@ -320,7 +320,7 @@ img, video { display: block; max-width: 100% }
         </div>
       </div>
       <dl class="facts">
-        <div class="fade"><dt>hệ điều hành: Windows, macOS, Ubuntu, Android</dt><dd>04</dd></div>
+        <div class="fade"><dt>nền tảng: Windows, macOS, Ubuntu, Android, iPhone</dt><dd>05</dd></div>
         <div class="fade"><dt>bài hướng dẫn ở quầy lễ tân</dt><dd>10</dd></div>
         <div class="fade"><dt>bàn bida trong khu Game</dt><dd>02</dd></div>
         <div class="fade"><dt>tài khoản SIMI cho mọi model</dt><dd>01</dd></div>
@@ -437,7 +437,7 @@ img, video { display: block; max-width: 100% }
       <div class="wrap stats-frame">
         <p class="label">03 — Văn Phòng AI trong vài con số</p>
         <div class="stats-stage">
-          <div class="stat on"><span class="mask stat-value"><span>04</span></span><div class="stat-text"><span class="mask stat-title"><span>hệ điều hành</span></span><span class="mask stat-note"><span>Windows · macOS chip Apple và Intel · Ubuntu · app Android</span></span></div></div>
+          <div class="stat on"><span class="mask stat-value"><span>05</span></span><div class="stat-text"><span class="mask stat-title"><span>nền tảng</span></span><span class="mask stat-note"><span>Windows · macOS chip Apple và Intel · Ubuntu · app Android · iPhone</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>06</span></span><div class="stat-text"><span class="mask stat-title"><span>khu trong Sảnh 3D</span></span><span class="mask stat-note"><span>Lễ tân · quầy bar · sàn nhảy · màn chiếu · khu Game · sân vườn</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>10</span></span><div class="stat-text"><span class="mask stat-title"><span>bài hướng dẫn</span></span><span class="mask stat-note"><span>Quầy lễ tân Trợ lý SIMI</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>01</span></span><div class="stat-text"><span class="mask stat-title"><span>tài khoản cho mọi model</span></span><span class="mask stat-note"><span>SIMI Gateway</span></span></div></div>
@@ -625,6 +625,13 @@ const OS = {
       { t: 'Mở file, cho phép cài', d: 'Bấm thông báo tải xong (hoặc vào Tệp → Tải xuống). Lần đầu Android hỏi quyền "Cài ứng dụng không rõ nguồn" → Cài đặt → bật Cho phép từ nguồn này → quay lại bấm Cài đặt. Play Protect cảnh báo thì bấm Chi tiết → Vẫn cài đặt.' },
       { t: 'Ghép với máy tính', d: 'Trên máy tính: app Văn Phòng AI → tab Sảnh → bấm 📱 hiện mã QR. Quét mã bằng camera điện thoại (chọn mở bằng Văn Phòng AI) hoặc gõ mã 8 ký tự vào app. Xong là vào Sảnh, Chat AI dưới đúng tên bạn.' },
     ] },
+  ios: { label: 'iPhone', req: 'iPhone / iPad, iOS 15 trở lên · dùng Safari', apk: { href: '/m', file: 'ai.simi.vn/m', qr: '/install/vanphong/site/qr-iphone.svg', web: true, btn: 'Mở trên iPhone' },
+    note: 'Không cần cài từ App Store: mở bằng Safari rồi thêm vào màn hình chính là dùng như app – Sảnh 3D (xoay ngang được), Chat AI, nhắn tin với đồng nghiệp.',
+    steps: [
+      { t: 'Mở ai.simi.vn/m bằng Safari', d: 'Quét mã QR bằng Camera iPhone (đang ở máy tính), hoặc gõ ai.simi.vn/m vào Safari. Dùng Safari, không dùng Chrome / Zalo / Facebook để thêm được vào màn hình chính.' },
+      { t: 'Chia sẻ ⬆︎ → Thêm vào MH chính', d: 'Bấm nút Chia sẻ (ô vuông có mũi tên lên) ở thanh dưới Safari, kéo xuống chọn Thêm vào MH chính → Thêm. Biểu tượng Văn Phòng AI hiện trên màn hình như app.' },
+      { t: 'Mở biểu tượng vừa thêm, gõ mã 8 ký tự', d: 'Trên máy tính: app Văn Phòng AI → tab Sảnh → bấm 📱 để hiện mã. Gõ mã 8 ký tự vào app trên iPhone. Muốn Sảnh rộng hơn thì xoay ngang điện thoại (tắt khoá xoay màn hình).' },
+    ] },
   linux: { label: 'Ubuntu', req: 'Ubuntu 22.04 / 24.04, 64-bit', main: { kind: 'linux-deb' }, alt: { kind: 'linux-appimage', label: 'Hoặc tải AppImage, chạy ngay không cần cài' },
     quick: { open: 'Mở Terminal (Ctrl + Alt + T). Dán lệnh dưới đây, Enter, nhập mật khẩu máy khi được hỏi.', cmd: `curl -fsSL ${BASE}/install.sh | sh` },
     steps: [
@@ -644,7 +651,7 @@ const fill = (x) => { const f = FILES[x.kind]; if (f && f.name) { x.file = f.nam
 for (const c of Object.values(OS.mac.chips)) if (!FILES[c.kind]) c.kind = c.zip; // bản cũ chưa có .dmg
 fill(OS.windows.main); fill(OS.mac.chips.apple); fill(OS.mac.chips.intel); fill(OS.linux.main);
 const ua = navigator.userAgent || '';
-let cur = /Android/i.test(ua) ? 'android' : /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) ? 'linux' : 'windows';
+let cur = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : /Android/i.test(ua) ? 'android' : /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) ? 'linux' : 'windows';
 let chip = (() => {
   if (!/Macintosh|Mac OS X/.test(ua)) return 'apple';
   try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
@@ -656,12 +663,12 @@ function renderApk(o) {
   const a = o.apk;
   $('#dlBody').innerHTML = `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` +
     `<p class="apk-note">${esc(o.note)}</p>` +
-    `<div class="file"><span>${esc(a.file)}</span><span>${esc(apkSize)}</span></div>` +
-    `<div class="actions"><a class="btn" href="${a.href}" download="${esc(a.file)}" data-apk="1"><span>Tải bản Android</span></a></div>` +
-    `<div class="apk-qr"><img src="${a.qr}" alt="Mã QR tải app Android" width="132" height="132"><p><b>Đang xem trên máy tính?</b>Mở camera điện thoại Android, quét mã này để tải app.</p></div>`;
+    `<div class="file"><span>${esc(a.file)}</span><span>${a.web ? 'web app' : esc(apkSize)}</span></div>` +
+    `<div class="actions">${a.web ? `<a class="btn" href="${a.href}"><span>${esc(a.btn)}</span></a>` : `<a class="btn" href="${a.href}" download="${esc(a.file)}" data-apk="1"><span>Tải bản Android</span></a>`}</div>` +
+    `<div class="apk-qr"><img src="${a.qr}" alt="Mã QR ${esc(o.label)}" width="132" height="132"><p><b>Đang xem trên máy tính?</b>${a.web ? 'Mở Camera iPhone, quét mã này – Safari mở trang, rồi làm theo các bước bên cạnh.' : 'Mở camera điện thoại Android, quét mã này để tải app.'}</p></div>`;
   $('#steps').innerHTML = stepsHtml(o);
-  const hd = $('#heroDl'); hd.removeAttribute('data-dl'); hd.setAttribute('href', a.href); hd.dataset.apk = '1';
-  hd.firstElementChild.textContent = 'Tải cho Android';
+  const hd = $('#heroDl'); hd.removeAttribute('data-dl'); hd.setAttribute('href', a.href); if (a.web) delete hd.dataset.apk; else hd.dataset.apk = '1';
+  hd.firstElementChild.textContent = a.web ? 'Mở trên iPhone' : 'Tải cho Android';
 }
 function render() {
   const o = OS[cur]; const main = o.chips ? o.chips[chip] : o.main; const label = o.chips ? main.label : o.label;
