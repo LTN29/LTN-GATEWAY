@@ -288,6 +288,11 @@ img, video { display: block; max-width: 100% }
   .stats { height: auto } .stats-pin { position: relative; height: auto } .stats-stage { display: grid; gap: 56px; padding: 40px 0 }
   .stat { position: relative; bottom: auto } .stat .mask > span { transform: none !important }
 }
+.apk-note { margin: 0 0 18px; color: var(--ink-2); max-width: 46ch }
+.apk-qr { display: flex; align-items: center; gap: 18px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line) }
+.apk-qr img { flex: none; width: 132px; height: 132px; border-radius: 10px; border: 1px solid var(--line); background: #fff; padding: 6px }
+.apk-qr p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 30ch } .apk-qr b { display: block; color: var(--ink); font-weight: 500; margin-bottom: 4px }
+@media (max-width: 720px) { .apk-qr { display: none } }
 </style>
 </head>
 <body>
@@ -315,7 +320,7 @@ img, video { display: block; max-width: 100% }
         </div>
       </div>
       <dl class="facts">
-        <div class="fade"><dt>hệ điều hành: Windows, macOS, Ubuntu</dt><dd>03</dd></div>
+        <div class="fade"><dt>hệ điều hành: Windows, macOS, Ubuntu, Android</dt><dd>04</dd></div>
         <div class="fade"><dt>bài hướng dẫn ở quầy lễ tân</dt><dd>10</dd></div>
         <div class="fade"><dt>bàn bida trong khu Game</dt><dd>02</dd></div>
         <div class="fade"><dt>tài khoản SIMI cho mọi model</dt><dd>01</dd></div>
@@ -432,7 +437,7 @@ img, video { display: block; max-width: 100% }
       <div class="wrap stats-frame">
         <p class="label">03 — Văn Phòng AI trong vài con số</p>
         <div class="stats-stage">
-          <div class="stat on"><span class="mask stat-value"><span>03</span></span><div class="stat-text"><span class="mask stat-title"><span>hệ điều hành</span></span><span class="mask stat-note"><span>Windows · macOS chip Apple và Intel · Ubuntu</span></span></div></div>
+          <div class="stat on"><span class="mask stat-value"><span>04</span></span><div class="stat-text"><span class="mask stat-title"><span>hệ điều hành</span></span><span class="mask stat-note"><span>Windows · macOS chip Apple và Intel · Ubuntu · app Android</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>06</span></span><div class="stat-text"><span class="mask stat-title"><span>khu trong Sảnh 3D</span></span><span class="mask stat-note"><span>Lễ tân · quầy bar · sàn nhảy · màn chiếu · khu Game · sân vườn</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>10</span></span><div class="stat-text"><span class="mask stat-title"><span>bài hướng dẫn</span></span><span class="mask stat-note"><span>Quầy lễ tân Trợ lý SIMI</span></span></div></div>
           <div class="stat"><span class="mask stat-value"><span>01</span></span><div class="stat-text"><span class="mask stat-title"><span>tài khoản cho mọi model</span></span><span class="mask stat-note"><span>SIMI Gateway</span></span></div></div>
@@ -562,7 +567,7 @@ function showAfter(label) {
   const o = OS[cur];
   $('#afterTitle').textContent = 'Đang tải ' + label;
   $('#afterSteps').innerHTML = stepsHtml(o);
-  $('#afterQuick').innerHTML = `<p class="label">${o.fileFirst ? 'Quen dùng Terminal? Hoặc cài bằng 1 lệnh' : 'Tải không được hoặc bị chặn? Cài bằng 1 lệnh'}</p><p>${esc(o.quick.open)}</p>${cmdBox(o.quick.cmd)}`;
+  $('#afterQuick').innerHTML = o.quick ? `<p class="label">${o.fileFirst ? 'Quen dùng Terminal? Hoặc cài bằng 1 lệnh' : 'Tải không được hoặc bị chặn? Cài bằng 1 lệnh'}</p><p>${esc(o.quick.open)}</p>${cmdBox(o.quick.cmd)}` : '';
   $('#after').hidden = false; document.body.style.overflow = 'hidden';
 }
 $('#after').addEventListener('click', (e) => { if (e.target.closest('[data-close]')) { $('#after').hidden = true; document.body.style.overflow = ''; } });
@@ -584,6 +589,8 @@ $('#mailForm').addEventListener('submit', async (e) => {
   btn.disabled = false; btn.firstElementChild.textContent = 'Tải về';
 });
 document.addEventListener('click', (e) => { const a = e.target.closest('[data-dl]'); if (!a) return; e.preventDefault(); startDownload(a.dataset.dl, a.dataset.label || ''); });
+// app Android: file công khai (đăng nhập bằng mã ghép từ máy tính) → tải thẳng, hiện các bước cài
+document.addEventListener('click', (e) => { const a = e.target.closest('[data-apk]'); if (!a) return; if (cur !== 'android') { cur = 'android'; render(); } setTimeout(() => showAfter('Văn Phòng AI cho Android'), 300); });
 
 // ---------- bảng tải ----------
 // cài bằng 1 lệnh: tải bằng PowerShell / Terminal nên không bị trình duyệt, SmartScreen, Gatekeeper chặn
@@ -611,6 +618,13 @@ const OS = {
       { t: 'Mac báo "bị hỏng" / "không thể mở"? Chạy 2 lệnh này', d: 'Mở Terminal, chạy lần lượt 2 lệnh (bản này chưa ký nên macOS chặn lần đầu):', cmd: ['xattr -cr /Applications/VanPhongAI.app', 'codesign --force --deep --sign - /Applications/VanPhongAI.app'] },
       { t: 'Mở app từ Applications', d: 'Lần sau app tự cập nhật, không cần chạy lại 2 lệnh trên.' },
     ] },
+  android: { label: 'Android', req: 'Điện thoại Android 7 trở lên', apk: { href: '/m/VanPhongAI.apk', file: 'VanPhongAI.apk', qr: '/install/vanphong/site/qr-android.svg' },
+    note: 'Sảnh 3D xoay ngang, Chat AI bằng quota của bạn, nhắn tin với đồng nghiệp. Giao diện tự cập nhật, không phải cài lại.',
+    steps: [
+      { t: 'Tải file trên điện thoại', d: 'Mở trang này trên điện thoại rồi bấm Tải bản Android (đang ở máy tính thì quét mã QR bằng camera điện thoại). Chrome hỏi "file có thể gây hại" → Vẫn tải xuống. File do công ty phát hành, không qua CH Play.' },
+      { t: 'Mở file, cho phép cài', d: 'Bấm thông báo tải xong (hoặc vào Tệp → Tải xuống). Lần đầu Android hỏi quyền "Cài ứng dụng không rõ nguồn" → Cài đặt → bật Cho phép từ nguồn này → quay lại bấm Cài đặt. Play Protect cảnh báo thì bấm Chi tiết → Vẫn cài đặt.' },
+      { t: 'Ghép với máy tính', d: 'Trên máy tính: app Văn Phòng AI → tab Sảnh → bấm 📱 hiện mã QR. Quét mã bằng camera điện thoại (chọn mở bằng Văn Phòng AI) hoặc gõ mã 8 ký tự vào app. Xong là vào Sảnh, Chat AI dưới đúng tên bạn.' },
+    ] },
   linux: { label: 'Ubuntu', req: 'Ubuntu 22.04 / 24.04, 64-bit', main: { kind: 'linux-deb' }, alt: { kind: 'linux-appimage', label: 'Hoặc tải AppImage, chạy ngay không cần cài' },
     quick: { open: 'Mở Terminal (Ctrl + Alt + T). Dán lệnh dưới đây, Enter, nhập mật khẩu máy khi được hỏi.', cmd: `curl -fsSL ${BASE}/install.sh | sh` },
     steps: [
@@ -630,15 +644,31 @@ const fill = (x) => { const f = FILES[x.kind]; if (f && f.name) { x.file = f.nam
 for (const c of Object.values(OS.mac.chips)) if (!FILES[c.kind]) c.kind = c.zip; // bản cũ chưa có .dmg
 fill(OS.windows.main); fill(OS.mac.chips.apple); fill(OS.mac.chips.intel); fill(OS.linux.main);
 const ua = navigator.userAgent || '';
-let cur = /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) && !/Android/i.test(ua) ? 'linux' : 'windows';
+let cur = /Android/i.test(ua) ? 'android' : /Mac OS X|Macintosh/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac' : /Linux/i.test(ua) ? 'linux' : 'windows';
 let chip = (() => {
   if (!/Macintosh|Mac OS X/.test(ua)) return 'apple';
   try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info'); const r = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
     return /Apple M|Apple GPU/i.test(r) ? 'apple' : /Intel|AMD|Radeon|NVIDIA/i.test(r) ? 'intel' : 'apple'; } catch { return 'apple'; }
 })();
+let apkSize = '';
+fetch('/m/VanPhongAI.apk', { method: 'HEAD' }).then((r) => { const n = Number(r.headers.get('content-length')) || 0; if (r.ok && n) { apkSize = n < 1048576 ? '≈ ' + Math.max(1, Math.round(n / 1024)) + ' KB' : '≈ ' + (n / 1048576).toFixed(1) + ' MB'; if (cur === 'android') render(); } }).catch(() => {});
+function renderApk(o) {
+  const a = o.apk;
+  $('#dlBody').innerHTML = `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` +
+    `<p class="apk-note">${esc(o.note)}</p>` +
+    `<div class="file"><span>${esc(a.file)}</span><span>${esc(apkSize)}</span></div>` +
+    `<div class="actions"><a class="btn" href="${a.href}" download="${esc(a.file)}" data-apk="1"><span>Tải bản Android</span></a></div>` +
+    `<div class="apk-qr"><img src="${a.qr}" alt="Mã QR tải app Android" width="132" height="132"><p><b>Đang xem trên máy tính?</b>Mở camera điện thoại Android, quét mã này để tải app.</p></div>`;
+  $('#steps').innerHTML = stepsHtml(o);
+  const hd = $('#heroDl'); hd.removeAttribute('data-dl'); hd.setAttribute('href', a.href); hd.dataset.apk = '1';
+  hd.firstElementChild.textContent = 'Tải cho Android';
+}
 function render() {
   const o = OS[cur]; const main = o.chips ? o.chips[chip] : o.main; const label = o.chips ? main.label : o.label;
   $('#seg').innerHTML = Object.entries(OS).map(([k, x]) => `<button class="link" type="button" role="tab" aria-selected="${k === cur}" data-os="${k}">${x.label}</button>`).join('');
+  const note = $('.dl-note'); if (note) note.hidden = !!o.apk; // "Cần SIMI đã cài trên máy" chỉ cho máy tính
+  if (o.apk) return renderApk(o);
+  delete $('#heroDl').dataset.apk;
   $('#dlBody').innerHTML =
     `<p class="label">${esc(o.req)}</p><h3>${esc(o.label)}</h3>` + (o.fileFirst ? '' : quickHtml(o) + `<p class="label or">Hoặc tải file cài</p>`) +
     (o.chips ? `<div class="chips" role="radiogroup" aria-label="Loại chip của máy Mac">${Object.entries(o.chips).map(([k, c]) => `<button class="link" type="button" role="radio" aria-checked="${k === chip}" data-chip="${k}">${esc(c.name)}<small>${esc(c.sub)}</small></button>`).join('')}</div>` : '') +
