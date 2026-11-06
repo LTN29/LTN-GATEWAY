@@ -1,9 +1,28 @@
 ---
 name: simi-tao-anh
-description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổi nền, outpaint) qua Simi Gateway bằng model ảnh tốt nhất đang có, lưu file ảnh về máy và hiển thị trong chat. Dùng khi user yêu cầu tạo, vẽ, sửa hoặc xóa chữ trên ảnh.
+description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổi nền, outpaint) qua Simi Gateway bằng model ảnh tốt nhất đang có, hoặc tự thiết kế ảnh có chữ (poster, banner, bài đăng, thumbnail, infographic) bằng HTML rồi xuất qua design_render; lưu file ảnh về máy và hiển thị trong chat. Dùng khi user yêu cầu tạo, vẽ, thiết kế, sửa hoặc xóa chữ trên ảnh.
 ---
 
 # Simi - Tạo ảnh
+
+## Ảnh có chữ / thiết kế: tự thiết kế rồi `design_render` (kiểu Claude Desktop)
+
+- Poster, banner, bài đăng MXH, thumbnail, infographic, thiệp, menu, chứng nhận,
+  logo chữ, ảnh quảng cáo… mà phiên có công cụ **`design_render`** (Văn Phòng AI,
+  server `vp_browser`) → tự viết 1 trang HTML / CSS / SVG đúng khổ ảnh rồi gọi
+  `design_render` (`html`, `path` = `<thư mục làm việc>/outputs/<ten>.png|.jpg|.pdf`,
+  `width`, `height`). Chữ tiếng Việt đúng 100 %, nét gấp 2, đúng màu thương hiệu –
+  model tạo ảnh hay viết sai / méo chữ.
+- **Đang dùng model Claude: đây là cách mặc định để "tạo ảnh"** (Claude không có
+  model ảnh riêng; ảnh đẹp của Claude Desktop là ảnh tự thiết kế bằng code).
+- Làm đẹp: 1 ý chính + 1 điểm nhấn lớn, lưới căn lề, tối đa 2 font Google có tiếng
+  Việt (Be Vietnam Pro, Montserrat, Inter, Lexend, Playfair Display…), 3–5 màu,
+  trang trí bằng SVG / gradient / hình khối tự vẽ.
+- Cần ảnh chụp / tranh chân thực (người, sản phẩm, phong cảnh): `image_generate`
+  tạo phần ảnh **không chữ** → đặt làm nền / khung trong HTML → phủ chữ bằng
+  `design_render`.
+- Xuất xong **nhìn ảnh xem trước + đọc cảnh báo** (chữ tràn, bị cắt, bị khối khác
+  đè) → sửa → xuất lại cùng `path`, tối đa 3 vòng.
 
 ## Chỉnh ảnh có sẵn: dùng `image_retouch` trước (nhanh, giữ đúng chi tiết)
 
