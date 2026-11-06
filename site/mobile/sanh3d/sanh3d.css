@@ -38,3 +38,50 @@
 @keyframes emote { 0% { opacity: 0; margin-top: 10px; scale: .5; } 15% { opacity: 1; scale: 1.2; } 30% { scale: 1; } 100% { opacity: 0; margin-top: -40px; } }
 @keyframes npcBob { 0%, 100% { margin-top: 0; } 50% { margin-top: -5px; } }
 @keyframes npcGlow { 0%, 100% { box-shadow: 0 6px 16px rgba(20, 60, 120, .18), 0 0 0 0 rgba(245, 197, 24, .6); } 50% { box-shadow: 0 6px 16px rgba(20, 60, 120, .18), 0 0 0 7px rgba(245, 197, 24, 0); } }
+
+/* ống xin quẻ – từ src/renderer/lobby.css */
+.fq { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.fq-hint { margin: 0; color: var(--muted); text-align: center; }
+.fq-stage { position: relative; height: 230px; display: flex; justify-content: center; align-items: flex-end; overflow: hidden; border-radius: 18px;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 210, 120, .45), transparent 60%), linear-gradient(180deg, #7a0d0f, #4a0807); }
+.fq-tube { position: relative; width: 96px; height: 170px; margin-bottom: 18px; transform-origin: 50% 100%; }
+.fq-body { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; border-radius: 10px 10px 16px 16px;
+  background: linear-gradient(90deg, #a87a35 0%, #e4bd6b 35%, #f3d68f 50%, #c99a4a 70%, #8a6228 100%);
+  box-shadow: inset 0 -10px 0 rgba(0, 0, 0, .12), 0 10px 24px rgba(0, 0, 0, .35); display: flex; align-items: center; justify-content: center; }
+.fq-body::before, .fq-body::after { content: ""; position: absolute; left: -2px; right: -2px; height: 7px; background: #7a5320; border-radius: 4px; }
+.fq-body::before { top: 14px; }
+.fq-body::after { bottom: 14px; }
+.fq-body span { width: 46px; height: 46px; border-radius: 50%; background: #c8231b; color: #ffd56a; font-size: 26px; font-weight: 900; display: grid; place-items: center; box-shadow: 0 0 0 3px #ffd56a; }
+.fq-sticks { position: absolute; left: 0; right: 0; bottom: 100px; height: 80px; }
+.fq-sticks i { position: absolute; bottom: 0; left: calc(50% + var(--i) * 5px); width: 6px; height: var(--h); border-radius: 3px 3px 1px 1px;
+  background: linear-gradient(180deg, #d22a1f 0 14px, #ecd08c 14px); transform: rotate(calc(var(--i) * 2.2deg)); transform-origin: 50% 100%; }
+.fq-tube.shake { animation: fq-shake .6s ease-in-out; }
+@keyframes fq-shake { 0% { transform: rotate(0) } 20% { transform: rotate(-16deg) translateY(-6px) } 45% { transform: rotate(14deg) translateY(-10px) } 70% { transform: rotate(-9deg) translateY(-4px) } 100% { transform: rotate(0) } }
+.fq-out { position: absolute; left: 50%; bottom: 120px; width: 10px; height: 110px; margin-left: -5px; border-radius: 4px;
+  background: linear-gradient(180deg, #d22a1f 0 20px, #f0d595 20px); box-shadow: 0 4px 10px rgba(0, 0, 0, .35); }
+.fq-out b { position: absolute; top: 28px; left: 50%; transform: translateX(-50%); writing-mode: vertical-rl; font-size: 12px; color: #7a0d0f; font-weight: 900; }
+.fq-out.fall { animation: fq-fall 1s cubic-bezier(.3, .6, .4, 1) forwards; }
+.fq-out.done, .fq-out.fall { transform-origin: 50% 50%; }
+.fq-out.done { transform: translate(110px, 108px) rotate(78deg); }
+@keyframes fq-fall { 0% { transform: translate(0, 0) rotate(0) } 35% { transform: translate(10px, -60px) rotate(-8deg) } 100% { transform: translate(110px, 108px) rotate(78deg) } }
+.fq-count { position: absolute; top: 12px; left: 0; right: 0; text-align: center; color: #ffe3a3; font-weight: 900; font-size: 18px; text-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+.fq-shake { align-self: center; font-size: 16px; padding: 10px 26px; }
+.fq-card { border: 2px solid #e8b84a; border-radius: 18px; padding: 14px 16px; background: linear-gradient(180deg, #fff8e6, #fff2d6); color: #4a2614; animation: fq-in .45s var(--spring, ease-out); }
+@keyframes fq-in { from { opacity: 0; transform: translateY(14px) scale(.97) } to { opacity: 1; transform: none } }
+.fq-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fq-no { font-weight: 900; font-size: 18px; color: #a8191b; }
+.fq-lv { font-weight: 900; padding: 3px 10px; border-radius: 999px; background: #a8191b; color: #ffe3a3; }
+.fq-lv.fq-1 { background: linear-gradient(90deg, #d9a63e, #f5c518); color: #5c120f; }
+.fq-poem { margin: 10px 0 6px; padding: 8px 12px; border-left: 4px solid #d22a1f; font-style: italic; font-size: 15px; line-height: 1.6; background: rgba(210, 42, 31, .06); border-radius: 0 10px 10px 0; }
+.fq-mean { margin: 6px 0 10px; font-weight: 700; }
+.fq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.fq-grid > div { background: #fff; border: 1px solid #f0d9a8; border-radius: 12px; padding: 7px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fq-grid > div.wide { grid-column: 1 / -1; }
+.fq-grid small { color: #8a5a33; font-size: 11.5px; }
+.fq-note { display: block; margin-top: 10px; color: #8a5a33; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .fq-tube.shake, .fq-out.fall, .fq-card { animation: none; } .fq-out.fall { transform: translate(110px, 108px) rotate(78deg); } }
+.fq-msg { font-size: 17px; font-weight: 700; font-style: normal; line-height: 1.55; color: #5c120f; }
+.fq-lv.fq-2 { background: #a8191b; color: #ffe3a3; }
+.fq-lv.fq-3 { background: #2f8a4a; color: #f2ffe9; }
+.fq-big b { font-size: 22px; display: flex; align-items: center; gap: 8px; }
+.fq-dot { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, .15); display: inline-block; flex: none; }

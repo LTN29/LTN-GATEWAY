@@ -211,6 +211,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .getbar { position: fixed; z-index: 30; left: 10px; right: 10px; top: calc(8px + var(--safe-t)); display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--ink); color: var(--card); box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: 13.5px; }
 .getbar a { flex: 1; color: inherit; font-weight: 600; text-decoration: none; } .getbar button { color: inherit; width: 30px; height: 30px; border-radius: 50%; }
 .getapp small { color: var(--sub); font-weight: 400; font-size: 12px; }
+.fq-sheet { --muted: var(--sub); --text: var(--ink); --accent: var(--brand); --accent2: var(--brand); --accentSoft: var(--soft); --line: var(--line); max-height: 92vh; overflow-y: auto; }
+.fq-btns { display: flex; gap: 8px; justify-content: flex-end; padding-top: 6px; } .fq-btns .btn { padding: 11px 18px; border-radius: 12px; background: var(--soft); font-weight: 600; } .fq-btns .btn.primary { background: var(--brand); color: var(--brand-ink); }
+.fq-sheet .btn.primary.fq-shake { background: var(--brand); color: var(--brand-ink); padding: 12px 18px; border-radius: 14px; font-weight: 700; font-size: 16px; }
 /* ---------- Chat AI ---------- */
 .ai-top h2 { display: flex; flex-direction: column; align-items: flex-start; }
 .ai-model { font-size: 12.5px; font-weight: 600; color: var(--brand); padding: 1px 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -862,6 +865,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
         onNpcClick: () => openNpc(),
         onCatClick: () => catMenu(),
         onTableClick: () => toast('🎱 Bida đang chơi được trên máy tính – bản điện thoại sắp có'),
+        onFortune: () => openFortune(),
         onDance: (style, byMove) => { L3.myDance = style; if (!byMove && S.online) post('state', { dance: style }).catch(() => {}); drawOverlay(); },
         onFloor: (on) => { if (on && !L3.myDance && !L3.floorTold) { L3.floorTold = true; toast('🪩 Bạn đang ở sàn nhảy – bấm 😊 rồi chọn điệu nhảy'); } },
         onSlow: () => {},
@@ -875,6 +879,52 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
       sync3D();
     })().catch((e) => { L3.failed = e.message || String(e); });
     await L3.loading;
+  }
+
+  // 🎋 ống xin quẻ cạnh bàn thờ Thần Tài: dùng đúng fortune.js của app máy tính (đóng gói vào /m/sanh3d), AI luận quẻ qua Gateway
+  const FORTUNE_GUIDE = [
+    'Bạn là "thầy quẻ" vui tính của văn phòng SIMI. Mỗi sáng nhân viên rút một quẻ đầu ngày để lấy may.',
+    'Viết một quẻ: thông điệp may mắn, tích cực, đầy năng lượng, tiếng Việt tự nhiên, gọi người rút là "bạn" (có thể nhắc tên họ một lần).',
+    'Không hù doạ, không điềm xấu, không mê tín đáng sợ, không hứa con số tiền cụ thể, không nói về bệnh tật, chính trị, tôn giáo cụ thể.',
+    'Chỉ trả về đúng một đối tượng JSON, không thêm chữ nào khác: {"ten_que": "tên quẻ 2–3 từ, ví dụ Khai Vận", "thong_diep": "2–3 câu, tối đa 60 từ", "nen_lam": "1 việc nên làm hôm nay, tối đa 10 từ"}',
+  ].join('\n');
+  async function askFortune({ name, team, level, n, date }) {
+    const h = headers();
+    const ms = await fetch('/v1/models', { headers: h }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const ids = ((ms && ms.data) || []).map((m) => m.id).filter((id) => !/image|tts|whisper|embed|video|veo|sora|imagen|flux|audio/i.test(id));
+    const model = LS.get('vpm.ai.model', '') && ids.includes(LS.get('vpm.ai.model', '')) ? LS.get('vpm.ai.model', '') : ids.find((i) => /gpt-5|claude-sonnet|gemini/i.test(i)) || ids[0];
+    if (!model) throw new Error('Chưa có model');
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 25000);
+    try {
+      const wd = ['Chủ nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'][new Date().getDay()];
+      const input = `Người rút: ${String(name || '').slice(0, 40) || 'một đồng nghiệp'}${team ? ` (team ${String(team).slice(0, 40)})` : ''}. Hôm nay ${wd} ${date || ''}.\nQuẻ số ${n}, loại quẻ: ${level}. Viết mới, đừng dùng câu sáo rỗng.`;
+      const r = await fetch('/v1/responses', { method: 'POST', signal: ctrl.signal, headers: headers({ 'content-type': 'application/json' }), body: JSON.stringify({ model, instructions: FORTUNE_GUIDE, input, stream: false, store: false, max_output_tokens: 600 }) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error('AI lỗi');
+      const text = typeof (j && j.output_text) === 'string' ? j.output_text : ((j && j.output) || []).flatMap((o) => o.content || []).filter((c) => c.type === 'output_text' || c.type === 'text').map((c) => c.text).join('');
+      const m = /\{[\s\S]*\}/.exec(text || ''); const o = m ? JSON.parse(m[0]) : null;
+      const clean = (v, max) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
+      if (!o || !clean(o.thong_diep, 400)) throw new Error('AI chưa viết được quẻ');
+      return { name: clean(o.ten_que, 30).replace(/^quẻ\s+/i, ''), message: clean(o.thong_diep, 400), do: clean(o.nen_lam, 80) };
+    } finally { clearTimeout(t); }
+  }
+  async function openFortune() {
+    if (!window.VPFortune) { try { await loadJs('/m/sanh3d/fortune.js'); } catch { toast('Chưa mở được ống xin quẻ, thử lại sau nhé'); return; } }
+    let box = null;
+    window.VP = window.VP || {};
+    Object.assign(window.VP, {
+      el,
+      openModal: (title, body, buttons) => {
+        const close = () => { n.remove(); };
+        const n = el('div', { class: 'sheet', onclick: (e) => { if (e.target === n) close(); } },
+          el('div', { class: 'box tall fq-sheet', role: 'dialog', 'aria-label': title }, el('h3', { text: title }), body, el('div', { class: 'fq-btns' }, (buttons || []).filter((b) => !(b.classList && b.classList.contains('left'))))));
+        document.body.append(n); box = n;
+      },
+      closeModal: () => { if (box) box.remove(); },
+    });
+    window.vp = window.vp || {};
+    window.vp.fortune = { ask: askFortune };
+    window.VPFortune.open({ me: S.me, share: (text) => post('messages', { room: 'all', text }).then(() => toast('Đã khoe quẻ lên Sảnh 🎉')).catch((e) => toast(e.message)) });
   }
 
   function sync3D() {

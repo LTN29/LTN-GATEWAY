@@ -109,6 +109,8 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, Sảnh + Chat A
     assert.equal(apk.headers.get("content-type"), "application/vnd.android.package-archive");
     assert.equal((await apk.arrayBuffer()).byteLength > 10000, true);
     assert.match(await (await fetch(`${origin}/m/ai.js`)).text(), /VPMAI/, "tab Chat AI");
+    assert.match(await (await fetch(`${origin}/m/sanh3d/fortune.js`)).text(), /VPFortune/, "ống xin quẻ của Sảnh");
+    assert.match((await (await fetch(`${origin}/m/sanh3d/version.json`)).json()).source, /^[0-9a-f]{16}$/, "dấu phiên bản Sảnh điện thoại");
     assert.equal((await fetch(`${origin}/m/../package.json`)).status, 404);
     const js3d = await fetch(`${origin}/m/sanh3d/sanh3d.js`);
     assert.equal(js3d.status, 200); assert.match(js3d.headers.get("content-type"), /javascript/);
