@@ -206,10 +206,79 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .devs div { display: flex; align-items: center; gap: 10px; background: var(--soft); border-radius: 12px; padding: 10px 12px; }
 .devs div span { flex: 1; min-width: 0; font-size: 14px; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + var(--safe-b)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 14px; font-size: 14px; z-index: 40; max-width: calc(100% - 32px); text-align: center; }
+/* nút tải app Android (trang mở bằng trình duyệt Android) */
+.getapp { display: flex; flex-direction: column; align-items: center; gap: 1px; margin: 14px auto 0; padding: 10px 20px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--brand); font-weight: 700; text-decoration: none; box-shadow: var(--shadow); }
+.getbar { position: fixed; z-index: 30; left: 10px; right: 10px; top: calc(8px + var(--safe-t)); display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 14px; border-radius: 14px; background: var(--ink); color: var(--card); box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: 13.5px; }
+.getbar a { flex: 1; color: inherit; font-weight: 600; text-decoration: none; } .getbar button { color: inherit; width: 30px; height: 30px; border-radius: 50%; }
+.getapp small { color: var(--sub); font-weight: 400; font-size: 12px; }
+/* ---------- Chat AI ---------- */
+.ai-top h2 { display: flex; flex-direction: column; align-items: flex-start; }
+.ai-model { font-size: 12.5px; font-weight: 600; color: var(--brand); padding: 1px 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ai-list { padding: 12px max(12px, env(safe-area-inset-right)) 16px max(12px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 14px; }
+.ai-u { align-self: flex-end; max-width: 86%; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.ai-ub { background: var(--mine); color: var(--mine-ink); border-radius: 18px 18px 4px 18px; padding: 8px 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-imgs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.ai-imgs img { width: 96px; height: 96px; object-fit: cover; border-radius: 12px; }
+.ai-a { align-self: stretch; min-width: 0; overflow-wrap: anywhere; }
+.md p { margin: 0 0 8px; } .md p:last-child { margin-bottom: 0; }
+.md h2, .md h3, .md h4, .md h5 { margin: 12px 0 6px; font-size: 16px; line-height: 1.3; } .md h2 { font-size: 18px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 22px; } .md li { margin: 2px 0; } .md li.sub { margin-left: 16px; list-style: circle; }
+.md code { background: var(--soft); border-radius: 5px; padding: 1px 5px; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.md a { color: var(--brand); }
+.md blockquote { margin: 0 0 8px; padding: 2px 10px; border-left: 3px solid var(--line); color: var(--sub); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md-code { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card); }
+.md-code-h { display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; font-size: 12px; color: var(--sub); background: var(--soft); }
+.md-code-h button { font-size: 12px; color: var(--brand); font-weight: 600; padding: 2px 4px; }
+.md-code pre { margin: 0; padding: 10px; overflow-x: auto; } .md-code pre code { background: none; padding: 0; white-space: pre; }
+.md-table { overflow-x: auto; margin: 0 0 8px; } .md table { border-collapse: collapse; font-size: 13.5px; min-width: 100%; }
+.md th, .md td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; } .md th { background: var(--soft); }
+.ai-typing { display: flex; align-items: center; gap: 4px; color: var(--sub); font-size: 13px; padding: 4px 0; }
+.ai-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: aiDot 1s infinite ease-in-out; } .ai-typing i:nth-child(2) { animation-delay: .15s; } .ai-typing i:nth-child(3) { animation-delay: .3s; }
+.ai-typing span { margin-left: 4px; }
+@keyframes aiDot { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+.ai-err { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: color-mix(in srgb, var(--bad) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--bad) 35%, var(--line)); color: var(--ink); border-radius: 12px; padding: 8px 12px; font-size: 14px; }
+.ai-err button, .ai-meta button { color: var(--brand); font-weight: 600; font-size: 13px; padding: 4px 2px; }
+.ai-meta { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 12px; color: var(--sub); }
+.ai-meta span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-empty { margin: auto 0; text-align: center; padding: 20px 8px; }
+.ai-logo { width: 64px; height: 64px; margin: 0 auto 10px; border-radius: 20px; display: grid; place-items: center; font-size: 30px; background: linear-gradient(135deg, #2563eb, #7c3aed); box-shadow: 0 8px 22px rgba(37,99,235,.3); }
+.ai-empty h3 { margin: 0 0 4px; font-size: 19px; } .ai-empty p { margin: 0 0 14px; color: var(--sub); font-size: 14px; }
+.ai-ideas { display: grid; gap: 8px; } .ai-ideas button { text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 11px 14px; font-size: 14.5px; box-shadow: var(--shadow); }
+.ai-compose .bar { align-items: flex-end; }
+.ai-stop i { width: 14px; height: 14px; border-radius: 3px; background: currentColor; display: block; }
+.ai-pend { display: flex; gap: 6px; padding: 0 4px 8px; } .ai-pend div { position: relative; } .ai-pend img { width: 58px; height: 58px; object-fit: cover; border-radius: 10px; display: block; }
+.ai-pend button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--card); font-size: 14px; line-height: 22px; }
+.ai-models, .ai-hist { display: grid; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.ai-mrow { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 11px 12px; border-radius: 12px; text-align: left; }
+.ai-mrow small { color: var(--sub); font-size: 12px; } .ai-mrow.on { background: var(--soft); color: var(--brand); }
+.ai-hnew { padding: 12px; border-radius: 12px; font-weight: 700; color: var(--brand); text-align: left; }
+.ai-hrow { display: flex; align-items: center; border-radius: 12px; } .ai-hrow.on { background: var(--soft); }
+.ai-hgo { flex: 1; min-width: 0; text-align: left; padding: 10px 12px; display: flex; flex-direction: column; } .ai-hgo b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; } .ai-hgo small { color: var(--sub); font-size: 12px; }
+.ai-hdel { padding: 10px 12px; font-size: 16px; }
+.tabs button { min-width: 0; } .tabs .cnt { white-space: nowrap; }
+
+/* ---------- Sảnh xoay ngang: thanh tab thành cột hẹp bên trái, bỏ thanh trên cho rộng chỗ ---------- */
+.rot { position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); bottom: 18px; padding: 8px 14px; border-radius: 999px; background: rgba(20,24,36,.62); color: #fff; font-size: 13px; font-weight: 600; backdrop-filter: blur(6px); }
+@media (orientation: landscape) and (max-height: 600px) {
+  .app[data-view="lobby"] { flex-direction: row; }
+  .app[data-view="lobby"] > .top { display: none; }
+  .app[data-view="lobby"] > .tabs { order: -1; flex-direction: column; justify-content: center; width: calc(64px + env(safe-area-inset-left, 0px)); padding: 0 0 0 env(safe-area-inset-left, 0px); border-top: 0; border-right: 1px solid var(--line); }
+  .app[data-view="lobby"] > .tabs button { flex: none; padding: 10px 0; font-size: 10.5px; }
+  .app[data-view="lobby"] > .tabs .cnt { font-size: 10px; }
+  .app[data-view="lobby"] .joy { width: 112px; height: 112px; bottom: 14px; }
+  .app[data-view="lobby"] .joy i { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+  .app[data-view="lobby"] .acts { bottom: 12px; gap: 8px; }
+  .app[data-view="lobby"] .acts .fab { width: 46px; height: 46px; font-size: 21px; }
+  .sheet .box { max-height: 92vh; overflow-y: auto; max-width: 560px; margin: 0 auto; }
+  .sheet { justify-content: center; }
+}
 </style>
 </head>
 <body>
 <div class="app" id="app"></div>
+<script src="/m/ai.js"></script>
 <script>
 'use strict';
 (() => {
@@ -245,6 +314,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
     chat: '<path d="M21 12a8 8 0 0 1-11.5 7.2L4 21l1.8-5.2A8 8 0 1 1 21 12z"/>',
     lobby: '<path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9 21v-6h6v6"/><path d="M9 10h.01M15 10h.01"/>',
     people: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 4.8"/>',
+    ai: '<path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/>',
     back: '<path d="M15 18l-6-6 6-6"/>', send: '<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
     out: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/>',
@@ -306,12 +376,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
     $app.replaceChildren(el('div', { class: 'login' },
       el('img', { src: '/m/icon-192.png', alt: '' }),
       el('h1', { text: 'Sảnh Văn Phòng AI' }),
-      el('p', { text: busy || 'Xem ai đang online và nhắn tin với đồng nghiệp ngay trên điện thoại.' }),
+      el('p', { text: busy || 'Sảnh 3D, Chat AI và nhắn tin với đồng nghiệp ngay trên điện thoại.' }),
       err ? el('p', { class: 'err', text: err }) : null,
       busy ? null : el('ol', { class: 'steps' },
         el('li', {}, el('b', { text: '1' }), el('span', {}, 'Mở app ', el('strong', { text: 'Văn Phòng AI' }), ' trên máy tính, vào tab ', el('strong', { text: 'Sảnh' }), ', bấm nút ', el('strong', { text: '📱' }), ' – máy tính hiện mã QR và mã 8 ký tự.')),
         el('li', {}, el('b', { text: '2' }), el('span', { text: standalone() ? 'Gõ mã 8 ký tự vào ô dưới đây.' : 'Quét mã QR bằng Camera điện thoại, hoặc gõ mã 8 ký tự vào ô dưới đây.' }))),
       busy ? null : codeBox(),
+      !busy && os === 'mobile-android' && !window.VPAndroid ? el('a', { class: 'getapp', href: '/m/VanPhongAI.apk', download: 'VanPhongAI.apk' }, '📲 Tải app Android', el('small', { text: 'Sảnh xoay ngang, mở nhanh như app' })) : null,
       el('div', { class: 'credit', text: 'Văn Phòng AI · Tạo bởi LTN' })));
   }
 
@@ -425,12 +496,32 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   }
 
   // ---------- màn hình ----------
+  // xoay màn: Sảnh xoay ngang được (app Android: theo cảm biến / nút 🔄), các tab khác giữ dọc
+  function orient() {
+    const want = S.view === 'lobby' && S.token && S.me ? (S.landscape ? 'landscape' : 'sensor') : 'portrait';
+    if (S.orient === want) return; S.orient = want;
+    try { if (window.VPAndroid && window.VPAndroid.setOrientation) { window.VPAndroid.setOrientation(want); return; } } catch { /* bản app cũ */ }
+    try { if (want === 'landscape' && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); else if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch { /* trình duyệt không hỗ trợ */ }
+  }
+  // mở bằng trình duyệt Android → mời cài app (1 lần, tắt được)
+  function getAppBar() {
+    if (os !== 'mobile-android' || window.VPAndroid || LS.get('vpm.noapp', false) || document.querySelector('.getbar')) return;
+    const n = el('div', { class: 'getbar', role: 'note' },
+      el('a', { href: '/m/VanPhongAI.apk', download: 'VanPhongAI.apk' }, '📲 Cài app Android: Sảnh xoay ngang, mở nhanh'),
+      el('button', { 'aria-label': 'Ẩn', onclick: () => { LS.set('vpm.noapp', true); n.remove(); }, text: '✕' }));
+    document.body.append(n);
+    setTimeout(() => n.remove(), 12000); // tự ẩn, lần sau mở lại vẫn nhắc (tới khi bấm ✕)
+  }
   function render() {
+    $app.dataset.view = S.view || '';
+    orient();
+    if (S.token && S.me) getAppBar();
     if (!S.token) return renderLogin();
     if (!S.me) { $app.replaceChildren(el('div', { class: 'login' }, el('img', { src: '/m/icon-192.png', alt: '' }), el('p', { text: S.netErr || 'Đang vào Sảnh…' }), S.netErr ? el('button', { class: 'more', onclick: () => logout(false), text: 'Đăng xuất' }) : null)); return; }
     if (S.view === 'room' && S.room) { pause3D(true); return renderRoom(); }
     if (S.view === 'lobby') return renderLobby();
     pause3D(true);
+    if (S.view === 'ai' && window.VPMAI) return window.VPMAI.render();
     renderHome();
   }
 
@@ -452,11 +543,13 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
     const go = (v) => () => { S.view = v; S.lastTab = v; LS.set('vpm.tab', v); render(); };
     return el('nav', { class: 'tabs' },
       el('button', { class: S.view === 'lobby' ? 'on' : '', onclick: go('lobby') }, svg(IC.lobby), 'Sảnh'),
+      window.VPMAI ? el('button', { class: S.view === 'ai' ? 'on' : '', onclick: go('ai') }, svg(IC.ai), 'Chat AI') : null,
       el('button', { class: S.view === 'rooms' ? 'on' : '', onclick: go('rooms') }, svg(IC.chat), 'Tin nhắn', el('span', { class: 'dot', hidden: true })),
       el('button', { class: S.view === 'people' ? 'on' : '', onclick: go('people') }, svg(IC.people), el('span', { class: 'cnt', text: `Online (${S.members.size + 1})` })));
   }
   function refreshLists() {
     if (S.view === 'room') { if (S.room) renderHead(); return; }
+    if (S.view === 'ai') { const c = document.querySelector('.tabs .cnt'); if (c) c.textContent = `Online (${S.members.size + 1})`; badge(); return; }
     const c = document.querySelector('.tabs .cnt'); if (c) c.textContent = `Online (${S.members.size + 1})`;
     if (document.getElementById('main')) fillHome();
     badge();
@@ -799,7 +892,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
       el('i', { class: 'net' + (S.online ? ' on' : ''), title: S.online ? 'Đã kết nối' : 'Đang kết nối lại…' }),
       el('button', { class: 'iconbtn', 'aria-label': 'Đăng xuất', title: 'Đăng xuất', onclick: askLogout }, svg(IC.out)));
     const stage = el('div', { class: 'stage', id: 'stage' },
-      el('div', { class: 'ov tl', id: 'ovl' }), el('div', { class: 'ov tr', id: 'ovr' }), el('div', { class: 'acts', id: 'acts' }), joystick());
+      el('div', { class: 'ov tl', id: 'ovl' }), el('div', { class: 'ov tr', id: 'ovr' }), el('div', { class: 'acts', id: 'acts' }), joystick(),
+      canRotate() ? el('button', { class: 'rot', id: 'rotBtn', onclick: () => { S.landscape = !S.landscape; LS.set('vpm.land', S.landscape); orient(); rotLabel(); } }) : null);
+    rotLabel(stage);
     $app.replaceChildren(top, stage, tabBar());
     badge();
     if (L3.root) stage.prepend(L3.root);
@@ -810,6 +905,9 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
       ensure3D().then(() => { wait.remove(); if (S.view === 'lobby') { if (L3.failed) renderLobby(); else { pause3D(false); drawOverlay(); } } });
     } else pause3D(document.visibilityState !== 'visible');
   }
+
+  const canRotate = () => !!(window.VPAndroid && window.VPAndroid.setOrientation);
+  function rotLabel(root) { const b = (root || document).querySelector('#rotBtn'); if (b) b.textContent = S.landscape ? '📱 Màn dọc' : '🔄 Xoay ngang'; }
 
   // cần điều khiển: kéo ra xa tâm = đi nhanh, thả tay = dừng
   function joystick() {
@@ -1018,6 +1116,16 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   }
 
   // ---------- vòng đời ----------
+  // cho tab Chat AI (ai.js) dùng chung tiện ích
+  window.VPM = { el, svg, IC, toast, headers, LS, S, tabBar, askLogout, avatar, bigSheet, sheet, app: $app };
+  S.landscape = LS.get('vpm.land', false);
+  // nút Back của Android: đóng bảng / về tab trước thay vì thoát app
+  window.vpmBack = () => {
+    const sh = document.querySelectorAll('.sheet'); if (sh.length) { sh[sh.length - 1].remove(); return true; }
+    if (S.view === 'room') { closeRoom(); return true; }
+    if (S.view !== 'lobby' && S.token) { S.view = S.lastTab = 'lobby'; LS.set('vpm.tab', 'lobby'); render(); return true; }
+    return false;
+  };
   function start() {
     history.replaceState(null, '', '/m');
     S.view = S.lastTab = LS.get('vpm.tab', 'lobby'); render(); connect();

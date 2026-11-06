@@ -1,13 +1,13 @@
 {
   "name": "Sảnh Văn Phòng AI",
   "short_name": "Sảnh AI",
-  "description": "Xem ai đang online và nhắn tin với đồng nghiệp trong Sảnh Văn Phòng AI.",
+  "description": "Sảnh 3D, Chat AI và nhắn tin với đồng nghiệp – Văn Phòng AI trên điện thoại.",
   "lang": "vi",
   "id": "/m",
   "start_url": "/m",
   "scope": "/m",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#f4f6fb",
   "theme_color": "#2563eb",
   "icons": [

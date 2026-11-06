@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,12 +57,24 @@ function sse(url, headers) {
 
 
 // Sảnh trên điện thoại: máy tính tạo mã QR → điện thoại đổi lấy phiên → cùng 1 người trong Sảnh, chỉ dùng được Sảnh
-test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho Sảnh, đăng xuất / đổi key là hết phiên", async () => {
+test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, Sảnh + Chat AI bằng key mã hoá, đăng xuất / đổi key là hết phiên", async () => {
+  // 9Router giả: ghi lại key + mã máy nhận được, trả danh sách model / câu trả lời SSE
+  const seen = [];
+  const up = createServer((req, res) => {
+    let body = ""; req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      seen.push({ path: req.url, auth: req.headers.authorization, cid: req.headers["x-ltn-client-id"] || "", body });
+      if (req.url.startsWith("/v1/models")) { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ object: "list", data: [{ id: "cx/gpt-5.5", object: "model" }] })); }
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Chào từ AI"}\n\nevent: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"Chào từ AI"}]}]}}\n\n');
+    });
+  });
+  const upUrl = `http://127.0.0.1:${await listen(up)}`;
   const root = await mkdtemp(join(tmpdir(), "ltn-mobile-"));
   const keys = { ltn: "key-ltn", ngoc: "key-ngoc", team: "key-team-it" };
   const CID = "0b5c9a8e-1111-4222-8333-944455556666";
   await writeFile(join(root, "teams.json"), JSON.stringify({ teams: [
-    { code: "IT", displayName: "IT", keyHash: hash(keys.team), enabled: true, memoryFile: "IT.md" },
+    { code: "IT", displayName: "IT", keyHash: hash(keys.team), enabled: true, memoryFile: "IT.md", aiPolicy: { mode: "premium_always", premiumCombo: "SIMI-GPT" } },
     { code: "SALES", displayName: "Sales", keyHash: hash("unused"), enabled: true, memoryFile: "SALES.md" }
   ] }));
   const users = { version: 1, users: {
@@ -71,7 +84,7 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
   await writeFile(join(root, "users.json"), JSON.stringify(users));
   Object.assign(process.env, {
     TEAMS_FILE: join(root, "teams.json"), LTN_USERS_CONFIG_FILE: join(root, "users.json"), MEMORY_DIR: join(root, "memory"),
-    LOBBY_DATA_DIR: join(root, "lobby"), LOBBY_CINEMA_LOOKUP: "false", UPSTREAM_BASE_URL: "http://127.0.0.1:9",
+    LOBBY_DATA_DIR: join(root, "lobby"), LOBBY_CINEMA_LOOKUP: "false", UPSTREAM_BASE_URL: upUrl,
     MOBILE_SESSIONS_FILE: join(root, "mobile", "sessions.json"), LOBBY_MSG_PER_10S: "100", LTN_LEGACY_TEAM_KEYS_ENABLED: "true"
   });
   const { createGatewayServer } = await import(`../src/server.mjs?mobile=${Date.now()}`);
@@ -91,6 +104,11 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     assert.equal((await fetch(`${origin}/m/manifest.webmanifest`)).headers.get("content-type"), "application/manifest+json; charset=utf-8");
     assert.equal((await fetch(`${origin}/m/sw.js`)).headers.get("service-worker-allowed"), "/m");
     assert.equal((await fetch(`${origin}/m/icon-512.png`)).status, 200);
+    const apk = await fetch(`${origin}/m/VanPhongAI.apk`);
+    assert.equal(apk.status, 200, "tải app Android");
+    assert.equal(apk.headers.get("content-type"), "application/vnd.android.package-archive");
+    assert.equal((await apk.arrayBuffer()).byteLength > 10000, true);
+    assert.match(await (await fetch(`${origin}/m/ai.js`)).text(), /VPMAI/, "tab Chat AI");
     assert.equal((await fetch(`${origin}/m/../package.json`)).status, 404);
     const js3d = await fetch(`${origin}/m/sanh3d/sanh3d.js`);
     assert.equal(js3d.status, 200); assert.match(js3d.headers.get("content-type"), /javascript/);
@@ -119,8 +137,29 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     const hm = await mob.next("hello");
     assert.equal(hm.me.id, "u:it-ltn");
     assert.equal(hm.me.devices, 2, "máy tính + điện thoại");
-    assert.equal((await fetch(`${origin}/v1/models`, { headers: bearer(c1.token) })).status, 403, "token điện thoại không gọi được AI");
-    assert.equal((await fetch(`${origin}/v1/responses`, { method: "POST", headers: bearer(c1.token, { "content-type": "application/json" }), body: "{}" })).status, 403);
+    // Chat AI trên điện thoại: Gateway gọi 9Router bằng key THẬT (giải mã từ phiên), điện thoại chỉ có token vpm_
+    assert.equal(c1.ai, true, "phiên mới có Chat AI");
+    const models = await fetch(`${origin}/v1/models`, { headers: bearer(c1.token) });
+    assert.equal(models.status, 200, "điện thoại xem được danh sách model");
+    assert.equal(seen.at(-1).auth, `Bearer ${keys.ltn}`, "9Router nhận đúng key máy tính");
+    const chat = await fetch(`${origin}/v1/responses`, { method: "POST", headers: bearer(c1.token, { "content-type": "application/json", accept: "text/event-stream" }), body: JSON.stringify({ model: "cx/gpt-5.5", stream: true, input: [{ role: "user", content: [{ type: "input_text", text: "Xin chào" }] }] }) });
+    assert.equal(chat.status, 200);
+    assert.match(await chat.text(), /Chào từ AI/);
+    assert.equal(seen.at(-1).auth, `Bearer ${keys.ltn}`);
+    assert.equal((await fetch(`${origin}/v1/embeddings`, { method: "POST", headers: bearer(c1.token, { "content-type": "application/json" }), body: "{}" })).status, 403, "ngoài Chat AI thì vẫn chặn");
+    assert.equal((await fetch(`${origin}/v1/codex/installer-config`, { headers: bearer(c1.token) })).status, 403, "không lấy được cấu hình cài đặt (có key)");
+    const saved2 = await readFile(join(root, "mobile", "sessions.json"), "utf8");
+    assert.ok(!saved2.includes(keys.ltn) && /"keyEnc":"v1\./.test(saved2), "key lưu dạng mã hoá");
+    assert.ok((await readFile(join(root, "mobile", "mobile-key.secret"), "utf8")).trim().length === 64, "khoá mã hoá tự tạo 1 lần");
+    // phiên ghép lúc tắt Chat AI (hoặc trước khi có tính năng) → báo ghép lại
+    process.env.MOBILE_AI = "0";
+    const old = await (await claim((await (await pair(keys.ltn)).json()).code)).json();
+    delete process.env.MOBILE_AI;
+    assert.equal(old.ai, false);
+    const r403 = await fetch(`${origin}/v1/models`, { headers: bearer(old.token) });
+    assert.equal(r403.status, 403);
+    assert.match((await r403.json()).error.message, /ghép lại điện thoại/);
+    await fetch(`${origin}/v1/mobile/logout`, { method: "POST", headers: bearer(old.token) });
     assert.equal((await pair(c1.token)).status, 403, "điện thoại không tự tạo mã QR mới");
 
     // nhắn từ điện thoại → máy tính người khác nhận, máy tính của chính mình cũng thấy
@@ -141,6 +180,8 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     const tmob = await (await fetch(`${base}/members`, { headers: bearer(ct.token, { "x-ltn-client-id": "99999999-8888-4777-8666-555555555555" }) })).json();
     assert.equal(tmob.me.id, tdesk.me.id);
     assert.equal(tmob.me.id, "t:IT:0b5c9a8e");
+    await fetch(`${origin}/v1/models`, { headers: bearer(ct.token) });
+    assert.equal(seen.at(-1).auth, `Bearer ${keys.team}`, "key chung: dùng key team");
 
     // ---- mã ngắn gõ tay (app trên màn hình chính của iPhone không nhận đăng nhập từ Safari) ----
     const ps = await (await pair(keys.ltn)).json();
@@ -184,6 +225,6 @@ test("Sảnh điện thoại: ghép bằng QR, cùng danh tính, chỉ dùng cho
     assert.equal((await fetch(`${base}/members`, { headers: bearer(c1.token, phone) })).status, 401);
   } finally {
     for (const s of streams) s.close();
-    server.close();
+    server.close(); up.close();
   }
 });

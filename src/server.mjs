@@ -47,7 +47,7 @@ import {
 import { handleAdminApi, handleAdminStatic } from "./admin/admin-router.mjs";
 import { handleLobby, isLobbyPath, setLobbyToolsSource } from "./lobby.mjs";
 import { handleRelease, isReleasePath } from "./app-release.mjs";
-import { mobileSessions, isMobileToken, isMobileApiPath, isMobileSitePath, handleMobileClaim, handleMobileApi, serveMobileSite } from "./mobile.mjs";
+import { mobileSessions, isMobileToken, isMobileApiPath, isMobileAiPath, isMobileSitePath, handleMobileClaim, handleMobileApi, serveMobileSite } from "./mobile.mjs";
 import { startReleaseSync } from "./app-release-sync.mjs";
 import {
   sendJson,
@@ -1276,7 +1276,7 @@ export function createGatewayServer() {
   }
 
   try {
-    const rawKey = getBearerToken(req.headers);
+    let rawKey = getBearerToken(req.headers);
 
     if (!rawKey) {
       sendJson(
@@ -1320,8 +1320,17 @@ export function createGatewayServer() {
       return;
     }
 
-    if (principal.mobile && !isLobbyPath(pathname) && pathname !== "/v1/mobile/logout") {
-      sendJson(res, 403, openAiError("Phiên điện thoại chỉ dùng cho Sảnh", "permission_error"));
+    if (principal.mobile && isMobileAiPath(req.method, pathname)) {
+      // Chat AI trên điện thoại: dùng key (đã mã hoá lúc ghép) của chính người đó, như đang ở máy tính
+      const real = mobileSessions().rawKeyFor(principal);
+      if (!real) {
+        sendJson(res, 403, openAiError("Điện thoại này chưa bật Chat AI – trên máy tính mở Sảnh, bấm 📱 rồi ghép lại điện thoại (1 lần).", "permission_error"));
+        return;
+      }
+      rawKey = real;
+      if (principal.principalType === "team" && principal.mobile.clientId) req.headers["x-ltn-client-id"] = principal.mobile.clientId;
+    } else if (principal.mobile && !isLobbyPath(pathname) && pathname !== "/v1/mobile/logout") {
+      sendJson(res, 403, openAiError("Phiên điện thoại chỉ dùng cho Sảnh và Chat AI", "permission_error"));
       return;
     }
     if (isMobileApiPath(pathname)) {

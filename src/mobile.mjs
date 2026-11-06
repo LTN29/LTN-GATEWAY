@@ -2,14 +2,18 @@
 //
 //  1. App máy tính (đã có key) gọi POST /v1/mobile/pair → mã ghép dùng 1 lần, hết hạn sau 5 phút → hiện QR <gateway>/m#pair=<mã>
 //  2. Điện thoại mở link → POST /v1/mobile/claim {code} → nhận token phiên "vpm_…" (lưu trong trình duyệt điện thoại)
-//  3. Điện thoại gọi /v1/lobby/* với token đó; danh tính = đúng người trên máy tính. Token CHỈ dùng được cho Sảnh,
-//     không gọi được AI. Lưu mã băm của token + mã băm key máy tính: đổi / khoá key là phiên điện thoại tự hết hiệu lực.
+//  3. Điện thoại gọi /v1/lobby/* với token đó; danh tính = đúng người trên máy tính. Lưu mã băm của token + mã băm key
+//     máy tính: đổi / khoá key là phiên điện thoại tự hết hiệu lực.
+//  4. Chat AI trên điện thoại (app Android / PWA): lúc ghép, key máy tính được lưu MÃ HOÁ (AES-256-GCM, khoá riêng của
+//     Gateway) cùng phiên → token vpm_ gọi được /v1/models, /v1/codex/config, /v1/responses bằng quota của chính người đó.
+//     Token điện thoại không bao giờ thấy key thật. Tắt bằng MOBILE_AI=0. Phiên ghép trước khi có tính năng → ghép lại.
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { dirname, join, resolve, extname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, createCipheriv, createDecipheriv } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { sendJson, openAiError, readBody } from "./http.mjs";
 import { sha256, jsonLog } from "./utils.mjs";
 import { authenticateKeyHash } from "./auth.mjs";
@@ -30,12 +34,12 @@ const MAX_FAILS = 10;
 const SITE_DIR = fileURLToPath(new URL("../site/mobile/", import.meta.url));
 const SITE_FILES = new Map([
   ["/m", "index.html"], ["/m/", "index.html"], ["/m/index.html", "index.html"],
-  ["/m/manifest.webmanifest", "manifest.webmanifest"], ["/m/sw.js", "sw.js"],
+  ["/m/manifest.webmanifest", "manifest.webmanifest"], ["/m/sw.js", "sw.js"], ["/m/ai.js", "ai.js"], ["/m/VanPhongAI.apk", "VanPhongAI.apk"],
   ["/m/icon-192.png", "icon-192.png"], ["/m/icon-512.png", "icon-512.png"], ["/m/apple-touch-icon.png", "apple-touch-icon.png"]
 ]);
 // Sảnh 3D (dựng từ app bằng build/mobile-lobby.js): /m/sanh3d/sanh3d.js, sanh3d.css, npc-guides.js, brand/*.png|jpg
 const SANH3D = /^\/m\/sanh3d\/((?:sanh3d\.(?:js|css))|npc-guides\.js|brand\/[a-z0-9-]{1,40}\.(?:png|jpg))$/;
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg" };
+const TYPES = { ".apk": "application/vnd.android.package-archive", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg" };
 
 const httpError = (status, message, type = "invalid_request_error") => Object.assign(new Error(message), { statusCode: status, type });
 const b64 = (n) => randomBytes(n).toString("base64url");
@@ -44,8 +48,46 @@ const who = (p) => `${p.principalType}:${p.principalId}`;
 const ownerOf = (w, clientId) => `${w}|${clientId || ""}`;
 
 export const mobileConfig = {
-  get file() { return resolve(process.env.MOBILE_SESSIONS_FILE || "./data/mobile/sessions.json"); }
+  get file() { return resolve(process.env.MOBILE_SESSIONS_FILE || "./data/mobile/sessions.json"); },
+  get ai() { return process.env.MOBILE_AI !== "0"; }
 };
+
+// đường AI mà phiên điện thoại được gọi (quota của chính người đã ghép)
+export const MOBILE_AI_PATHS = new Set(["GET /v1/models", "GET /v1/codex/config", "POST /v1/responses"]);
+export const isMobileAiPath = (method, pathname) => MOBILE_AI_PATHS.has(`${method} ${pathname}`);
+
+// khoá mã hoá key: MOBILE_KEY_SECRET (chuỗi bất kỳ) hoặc tự tạo 1 lần cạnh file phiên (mobile-key.secret, chỉ máy chủ đọc)
+let secretCache = null;
+function secretKey() {
+  const env = process.env.MOBILE_KEY_SECRET;
+  if (env) return createHash("sha256").update(env).digest();
+  const f = join(dirname(mobileConfig.file), "mobile-key.secret");
+  if (secretCache && secretCache.f === f) return secretCache.k;
+  let hex = "";
+  try { hex = readFileSync(f, "utf8").trim(); } catch { hex = ""; }
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    hex = randomBytes(32).toString("hex");
+    mkdirSync(dirname(f), { recursive: true });
+    if (!existsSync(f)) writeFileSync(f, hex + "\n", { mode: 0o600 });
+    else hex = readFileSync(f, "utf8").trim();
+  }
+  secretCache = { f, k: Buffer.from(hex, "hex") };
+  return secretCache.k;
+}
+export function sealKey(raw) {
+  const iv = randomBytes(12);
+  const c = createCipheriv("aes-256-gcm", secretKey(), iv);
+  const body = Buffer.concat([c.update(String(raw), "utf8"), c.final()]);
+  return "v1." + Buffer.concat([iv, c.getAuthTag(), body]).toString("base64url");
+}
+export function openKey(sealed) {
+  try {
+    const b = Buffer.from(String(sealed || "").replace(/^v1\./, ""), "base64url");
+    const d = createDecipheriv("aes-256-gcm", secretKey(), b.subarray(0, 12));
+    d.setAuthTag(b.subarray(12, 28));
+    return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString("utf8");
+  } catch { return null; }
+}
 
 class MobileSessions {
   constructor() { this.file = null; this.sessions = []; this.pairs = new Map(); this.shorts = new Map(); this.fails = new Map(); this.saveTimer = null; }
@@ -74,7 +116,7 @@ class MobileSessions {
     let short;
     do { short = Array.from(randomBytes(8), (x) => SHORT_ABC[x % SHORT_ABC.length]).join(""); } while (this.shorts.has(short));
     const expiresAt = now + PAIR_MS();
-    this.pairs.set(code, { keyHash: sha256(rawKey), who: who(principal), clientId: UUID.test(clientId || "") ? clientId.toLowerCase() : null, name: principal.displayName || "", expiresAt, short });
+    this.pairs.set(code, { keyHash: sha256(rawKey), keyEnc: mobileConfig.ai ? sealKey(rawKey) : null, who: who(principal), clientId: UUID.test(clientId || "") ? clientId.toLowerCase() : null, name: principal.displayName || "", expiresAt, short });
     this.shorts.set(short, code);
     return { code, short: `${short.slice(0, 4)}-${short.slice(4)}`, expiresAt };
   }
@@ -99,13 +141,13 @@ class MobileSessions {
     if (!principal || !principal.enabled || !principal.team?.enabled) throw httpError(403, "Tài khoản trên máy tính không còn hiệu lực", "permission_error");
     if (principal.principalType === "team" && !p.clientId) throw httpError(400, "App trên máy tính chưa có mã máy (X-LTN-Client-ID) – cập nhật app rồi tạo lại mã QR");
     const token = TOKEN_PREFIX + b64(32);
-    const s = { id: b64(9), tokenHash: sha256(token), keyHash: p.keyHash, who: p.who, clientId: p.clientId, device: String(device || "Điện thoại").replace(/[^\p{L}\p{N} ._()/-]/gu, "").slice(0, 60) || "Điện thoại", createdAt: now, lastUsedAt: now };
+    const s = { id: b64(9), tokenHash: sha256(token), keyHash: p.keyHash, ...(p.keyEnc ? { keyEnc: p.keyEnc } : {}), who: p.who, clientId: p.clientId, device: String(device || "Điện thoại").replace(/[^\p{L}\p{N} ._()/-]/gu, "").slice(0, 60) || "Điện thoại", createdAt: now, lastUsedAt: now };
     const mine = this.sessions.filter((x) => ownerOf(x.who, x.clientId) === ownerOf(s.who, s.clientId)).sort((a, b) => a.lastUsedAt - b.lastUsedAt);
     const drop = new Set(mine.slice(0, Math.max(0, mine.length - MAX_SESSIONS + 1)).map((x) => x.id));
     this.sessions = this.sessions.filter((x) => !drop.has(x.id)).concat(s);
     await this.save();
     jsonLog("mobile_paired", { who: s.who, session: s.id });
-    return { token, name: principal.displayName || p.name || "", expiresAt: now + SESSION_DAYS() * 86400_000 };
+    return { token, name: principal.displayName || p.name || "", ai: !!s.keyEnc, expiresAt: now + SESSION_DAYS() * 86400_000 };
   }
 
   // token "vpm_…" → principal của người đã ghép (gắn cờ mobile, chỉ dùng cho Sảnh)
@@ -119,7 +161,15 @@ class MobileSessions {
     const principal = await authenticateKeyHash(s.keyHash);
     if (!principal || who(principal) !== s.who) return null; // key máy tính đã đổi / bị xoá
     if (now - s.lastUsedAt > 3600_000) { s.lastUsedAt = now; this.saveSoon(); }
-    return { ...principal, mobile: { sessionId: s.id, clientId: s.clientId } };
+    return { ...principal, mobile: { sessionId: s.id, clientId: s.clientId, ai: !!s.keyEnc } };
+  }
+
+  // key thật (đã giải mã) để gọi AI thay cho phiên điện thoại; null nếu phiên cũ / tắt Chat AI / key đã đổi
+  rawKeyFor(principal) {
+    if (!mobileConfig.ai || !principal?.mobile) return null;
+    const s = this.sessions.find((x) => x.id === principal.mobile.sessionId);
+    const raw = s && s.keyEnc ? openKey(s.keyEnc) : null;
+    return raw && sha256(raw) === s.keyHash ? raw : null;
   }
 
   // máy tính xem / đăng xuất từ xa các điện thoại đã ghép (đúng chủ: cùng tài khoản, hoặc cùng mã máy nếu key chung)
@@ -210,6 +260,7 @@ export async function serveMobileSite(req, res, pathname) {
     "referrer-policy": "no-referrer"
   };
   if (name === "sw.js") headers["service-worker-allowed"] = "/m";
+  if (name.endsWith(".apk")) headers["content-disposition"] = 'attachment; filename="VanPhongAI.apk"';
   if (name === "index.html") headers["content-security-policy"] = "default-src 'self'; img-src 'self' blob: data: https://i.ytimg.com; frame-src https://www.youtube.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
   if (req.headers["if-none-match"] === etag) { res.writeHead(304, headers); res.end(); return; }
   res.writeHead(200, { ...headers, "content-length": info.size });
