@@ -37,8 +37,8 @@ const SITE_FILES = new Map([
   ["/m/manifest.webmanifest", "manifest.webmanifest"], ["/m/sw.js", "sw.js"], ["/m/ai.js", "ai.js"], ["/m/VanPhongAI.apk", "VanPhongAI.apk"],
   ["/m/icon-192.png", "icon-192.png"], ["/m/icon-512.png", "icon-512.png"], ["/m/apple-touch-icon.png", "apple-touch-icon.png"]
 ]);
-// Sảnh 3D (dựng từ app bằng build/mobile-lobby.js): /m/sanh3d/sanh3d.js, sanh3d.css, npc-guides.js, fortune.js, version.json, brand/*.png|jpg
-const SANH3D = /^\/m\/sanh3d\/((?:sanh3d\.(?:js|css))|npc-guides\.js|fortune\.js|version\.json|brand\/[a-z0-9-]{1,40}\.(?:png|jpg))$/;
+// Sảnh 3D (dựng từ app bằng build/mobile-lobby.js): /m/sanh3d/sanh3d.js, sanh3d.css, npc-guides.js, fortune.js, honor.js, version.json, brand/*.png|jpg
+const SANH3D = /^\/m\/sanh3d\/((?:sanh3d\.(?:js|css))|npc-guides\.js|fortune\.js|honor\.js|version\.json|brand\/[a-z0-9-]{1,40}\.(?:png|jpg))$/;
 const TYPES = { ".json": "application/json; charset=utf-8", ".apk": "application/vnd.android.package-archive", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg" };
 
 const httpError = (status, message, type = "invalid_request_error") => Object.assign(new Error(message), { statusCode: status, type });

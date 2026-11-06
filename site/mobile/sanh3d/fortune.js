@@ -63,7 +63,7 @@
   const drawnToday = (userId) => { const s = store.get(); return !!(s && s.date === today() && s.user === (userId || 'me')); };
 
   let U = null;
-  function open({ me = null, share = null } = {}) {
+  function open({ me = null, share = null, onDrawn = null } = {}) {
     const saved = store.get();
     U = U || window.VP;
     const { el } = U;
@@ -95,7 +95,7 @@
     const shareBtn = share ? el('button', { class: 'btn', text: '📣 Khoe lên Sảnh', onclick: () => { share(`🎋 Quẻ đầu ngày của mình: Quẻ số ${f.n} · ${f.name} – ${f.level} ${LEVEL_TAG[f.level]}\n“${f.message}”\n🔢 Số may mắn ${f.number} · 🎨 Màu ${f.color}`); shareBtn.disabled = true; shareBtn.textContent = '✓ Đã khoe'; } }) : null;
     if (shareBtn && !already) shareBtn.style.display = 'none'; // .btn tự đặt display nên thuộc tính hidden không ăn
     U.openModal('🎋 Xin quẻ đầu ngày', body, [el('div', { class: 'left' }, el('small', { class: 'dim', text: 'Mỗi ngày 1 quẻ · AI luận riêng cho bạn' })), shareBtn, el('button', { class: 'btn primary', text: 'Đóng', onclick: U.closeModal })].filter(Boolean));
-    if (already) { out.hidden = false; out.classList.add('done'); showCard(); return; }
+    if (already) { out.hidden = false; out.classList.add('done'); showCard(); if (onDrawn) { try { onDrawn(f); } catch { /* bỏ qua */ } } return; }
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -117,6 +117,7 @@
       store.set({ date: f.date, user: uid, n: f.n, ai: f.byAi ? { message: f.message, name: f.name, do: f.do, byAi: true } : null });
       btn.remove(); if (shareBtn) shareBtn.style.display = '';
       showCard();
+      if (onDrawn) { try { onDrawn(f); } catch { /* bỏ qua */ } } // báo Bảng vàng (Gateway tự tính mức quẻ)
     });
   }
 

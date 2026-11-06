@@ -14,6 +14,7 @@ import { LobbySettings, PERMS, isAdmin, hhmm } from "./lobby-admin.mjs";
 import { LobbyCat } from "./lobby-cat.mjs";
 import { NpcStore, NpcLog, npcCandidates, askNpc, cleanGuides, npcConfig } from "./lobby-npc.mjs";
 import { LobbyGames } from "./lobby-games.mjs";
+import { LobbyHonor, honorConfig } from "./lobby-honor.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -24,7 +25,7 @@ const MAX_IMAGES = 4;
 const MAX_MENTIONS = 20;
 const EVERYONE_PER_HOUR = 3;
 // tính năng Gateway có – app mới dựa vào đây để hiện nút (Gateway cũ thì ẩn, không lỗi)
-const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games"];
+const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "honor"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
 const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands"]);
@@ -169,7 +170,9 @@ function cleanStatus(s) {
   return {
     activity: ACTIVITIES.has(s.activity) ? s.activity : "idle",
     text: cleanText(s.text, 80),
-    model: cleanText(s.model, 60)
+    model: cleanText(s.model, 60),
+    // bong bóng trên đầu nhân vật: việc AI đang làm (app tự tóm tắt, người dùng tắt được) – chỉ khi đang bận
+    ...(s.task && s.activity && s.activity !== "idle" && s.activity !== "away" ? { task: cleanText(String(s.task).replace(/\s+/g, " "), 70) } : {})
   };
 }
 
@@ -185,6 +188,7 @@ class Lobby {
     this.settings = new LobbySettings(); // phân quyền, cấm chat, thông báo ghim…
     this.today = { day: "", messages: 0, images: 0 };
     this.cat = new LobbyCat({ broadcast: (ev, data) => this.broadcast(ev, data) });
+    this.honor = new LobbyHonor({ nameOf: (id) => { const pm = this.publicMember(id); return pm ? { name: pm.name, teamName: pm.teamName } : null; } });
     this.asks = new Map(); // id -> { id, from, to, kind, style, exp } lời mời đang chờ trả lời
     this.npcStore = new NpcStore(); // hướng dẫn admin sửa thêm cho NPC
     this.npcLog = new NpcLog();     // câu hỏi gần đây gửi Trợ lý (admin xem để cải thiện)
@@ -238,6 +242,7 @@ class Lobby {
     await this.npcStore.init(lobbyConfig.dataDir);
     await this.npcLog.init(lobbyConfig.dataDir);
     await this.games.init(lobbyConfig.dataDir);
+    await this.honor.init(lobbyConfig.dataDir);
   }
 
   // NPC đang dùng tài khoản nào (tên + nhân vật + đã có key để hỏi AI chưa)
@@ -262,6 +267,9 @@ class Lobby {
       hidden: !!p.hidden
     };
   }
+
+  // tên đang hiển thị trong Sảnh (để Bảng vàng nhớ cả người lâu không vào)
+  honorIdent(ident) { const prof = this.profileOf(ident); return { id: ident.id, name: prof.name, teamName: ident.teamName }; }
 
   publicMember(id) {
     const m = this.members.get(id);
@@ -890,6 +898,9 @@ async function routeLobby(req, res, principal, url) {
       return sendJson(res, 200, await L.npcAsk(ident, await json(), `http://${host}:${req.socket.localPort}`));
     }
     case "POST /v1/lobby/cinema": return sendJson(res, 200, await L.cinemaAction(ident, await json()));
+    case "GET /v1/lobby/honor": L.touch(ident); return sendJson(res, 200, await L.honor.view(ident, { period: url.searchParams.get("period"), offset: url.searchParams.get("offset") }));
+    case "POST /v1/lobby/honor/fortune": return sendJson(res, 200, L.honor.fortune(L.honorIdent(ident)));
+    case "POST /v1/lobby/honor/pray": return sendJson(res, 200, L.honor.pray(L.honorIdent(ident)));
     default: sendJson(res, 404, openAiError("Không tìm thấy route Sảnh", "not_found_error"));
   }
 }

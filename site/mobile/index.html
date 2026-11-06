@@ -450,7 +450,9 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
         for (const r of S.rooms) if (r.with) S.names.set(r.with, r.name);
         L3.cinema = d.cinema || null; if (d.cinema && d.cinema.now) L3.skew = d.cinema.now - Date.now();
         L3.cat = d.cat || null; L3.npc = d.npc || null;
+        S.features = new Set(d.features || []);
         setOnline(true); render();
+        loadHonor(true);
         if (S.room) loadMsgs(S.room, true); // vừa nối lại → lấy tin bị lỡ
         sync3D();
         break;
@@ -878,6 +880,8 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
         onCatClick: () => catMenu(),
         onTableClick: () => toast('🎱 Bida đang chơi được trên máy tính – bản điện thoại sắp có'),
         onFortune: () => openFortune(),
+        onHonor: () => openHonor(),
+        onPray: () => honorDo('pray'),
         onDance: (style, byMove) => { L3.myDance = style; if (!byMove && S.online) post('state', { dance: style }).catch(() => {}); drawOverlay(); },
         onFloor: (on) => { if (on && !L3.myDance && !L3.floorTold) { L3.floorTold = true; toast('🪩 Bạn đang ở sàn nhảy – bấm 😊 rồi chọn điệu nhảy'); } },
         onSlow: () => {},
@@ -887,6 +891,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       L3.scene.setSkew(L3.skew || 0);
       if (L3.cat) L3.scene.setCat(L3.cat);
       L3.scene.setNpc(L3.npc || null);
+      if (L3.honor && L3.scene.setHonor) L3.scene.setHonor(L3.honor);
       window.__sanh = L3.scene;
       // iPhone hay thu hồi WebGL khi app xuống nền lâu / thiếu bộ nhớ → màn đen: dựng lại Sảnh khi quay lại
       const cv = L3.root.querySelector('canvas');
@@ -923,13 +928,14 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       return { name: clean(o.ten_que, 30).replace(/^quẻ\s+/i, ''), message: clean(o.thong_diep, 400), do: clean(o.nen_lam, 80) };
     } finally { clearTimeout(t); }
   }
-  async function openFortune() {
-    if (!window.VPFortune) { try { await loadJs('/m/sanh3d/fortune.js'); } catch { toast('Chưa mở được ống xin quẻ, thử lại sau nhé'); return; } }
+  // window.VP tối thiểu cho fortune.js / honor.js của app (el + bảng trượt từ dưới lên)
+  function vpShim() {
     let box = null;
     window.VP = window.VP || {};
     Object.assign(window.VP, {
       el,
       openModal: (title, body, buttons) => {
+        if (box) box.remove();
         const close = () => { n.remove(); };
         const n = el('div', { class: 'sheet', onclick: (e) => { if (e.target === n) close(); } },
           el('div', { class: 'box tall fq-sheet', role: 'dialog', 'aria-label': title }, el('h3', { text: title }), body, el('div', { class: 'fq-btns' }, (buttons || []).filter((b) => !(b.classList && b.classList.contains('left'))))));
@@ -937,9 +943,38 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       },
       closeModal: () => { if (box) box.remove(); },
     });
+  }
+  async function openFortune() {
+    if (!window.VPFortune) { try { await loadJs('/m/sanh3d/fortune.js'); } catch { toast('Chưa mở được ống xin quẻ, thử lại sau nhé'); return; } }
+    vpShim();
     window.vp = window.vp || {};
     window.vp.fortune = { ask: askFortune };
-    window.VPFortune.open({ me: S.me, share: (text) => post('messages', { room: 'all', text }).then(() => toast('Đã khoe quẻ lên Sảnh 🎉')).catch((e) => toast(e.message)) });
+    window.VPFortune.open({ me: S.me, share: (text) => post('messages', { room: 'all', text }).then(() => toast('Đã khoe quẻ lên Sảnh 🎉')).catch((e) => toast(e.message)), onDrawn: () => honorDo('fortune') });
+  }
+
+  // 🏆 Bảng vàng: treo tường cạnh ống quẻ (vẽ trong cảnh 3D) + bảng chi tiết dùng honor.js của app
+  const honorOn = () => !!(S.features && S.features.has('honor') && S.me && S.online);
+  async function loadHonor(force) {
+    if (!honorOn()) return;
+    if (!force && L3.honorAt && Date.now() - L3.honorAt < 4 * 60_000) return;
+    L3.honorAt = Date.now();
+    try { L3.honor = await api(`${API}/honor?period=week`); if (L3.scene && L3.scene.setHonor) L3.scene.setHonor(L3.honor); } catch { /* lần sau tải lại */ }
+  }
+  setInterval(() => { if (!document.hidden && L3.scene) loadHonor(false); }, 60_000);
+  async function honorDo(kind) {
+    if (!honorOn()) return;
+    try {
+      const r = await post(`honor/${kind}`, {});
+      if (kind === 'pray' && r.counted) setTimeout(() => toast(`🙏 +${r.gain || 5} điểm Tài lộc · đã khấn ${r.prays}/${r.max} hôm nay`), 2600);
+      if (kind === 'fortune' && r.first) setTimeout(() => toast(`🏆 +${r.points} điểm Tài lộc vào Bảng vàng tuần này`), 600);
+      if ((kind === 'pray' && r.counted) || (kind === 'fortune' && r.first)) loadHonor(true);
+    } catch { /* không tính điểm được thì thôi */ }
+  }
+  async function openHonor() {
+    if (!S.features || !S.features.has('honor')) { toast('Máy chủ chưa có Bảng vàng'); return; }
+    if (!window.VPHonor) { try { await loadJs('/m/sanh3d/honor.js'); } catch { toast('Chưa mở được Bảng vàng, thử lại sau nhé'); return; } }
+    vpShim();
+    window.VPHonor.open({ me: S.me, load: (q) => api(`${API}/honor?period=${q.period}&offset=${q.offset || 0}`).then((d) => { if (q.period === 'week' && !q.offset) { L3.honor = d; L3.honorAt = Date.now(); if (L3.scene && L3.scene.setHonor) L3.scene.setHonor(d); } return d; }) });
   }
 
   function sync3D() {

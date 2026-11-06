@@ -93,6 +93,13 @@ async function writeStore(path, store) {
   }
 }
 
+// đọc nhanh (có cache theo thời điểm sửa file) cho Bảng vàng Sảnh; lỗi / chưa có file → rỗng
+let snapshotFailedAt = 0;
+export async function readUserAnalyticsSnapshot() {
+  if (Date.now() - snapshotFailedAt < 10 * 60_000) return emptyStore(); // file hỏng: đừng sao lưu liên tục
+  try { return await readStore(config.userAnalyticsFile); } catch { snapshotFailedAt = Date.now(); return emptyStore(); }
+}
+
 export async function recordUserAnalytics({
   date,
   principal,
