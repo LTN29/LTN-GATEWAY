@@ -23,9 +23,12 @@ const SEAT = /^[a-z0-9-]{1,16}$/;
 const MEMBER_ID = /^[a-z]:[A-Za-z0-9_.:@-]{1,120}$/;
 const MAX_IMAGES = 4;
 const MAX_MENTIONS = 20;
+const MAX_REACT_KINDS = 12; // số loại cảm xúc khác nhau trên 1 tin
+// 1 emoji (kể cả có màu da / ghép ZWJ / cờ), không nhận chữ thường
+const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}{2})(?:\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*$/u;
 const EVERYONE_PER_HOUR = 3;
 // tính năng Gateway có – app mới dựa vào đây để hiện nút (Gateway cũ thì ẩn, không lỗi)
-const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "honor"];
+const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "honor", "react"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
 const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands"]);
@@ -73,6 +76,16 @@ class LobbyStore {
     this.index = { rooms: {} };
     this.rooms = new Map(); // room -> [message] (gần nhất)
     this.saveTimer = null;
+    this.queue = new Map(); // room -> chuỗi ghi file (ghi thêm / thu hồi / thả cảm xúc không giẫm lên nhau)
+    this.dirty = new Map(); // room -> Map(id -> tin đã đổi, chờ ghi lại)
+    this.patchTimers = new Map();
+  }
+
+  serial(room, fn) {
+    const prev = this.queue.get(room) || Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    this.queue.set(room, next.finally(() => { if (this.queue.get(room) === next) this.queue.delete(room); }));
+    return next;
   }
 
   async init() {
@@ -93,6 +106,7 @@ class LobbyStore {
 
   async flush() {
     clearTimeout(this.saveTimer);
+    for (const room of [...this.dirty.keys()]) await this.flushPatch(room);
     await writeJsonAtomic(join(this.dir, "profiles.json"), this.profiles);
     await writeJsonAtomic(join(this.dir, "index.json"), this.index);
   }
@@ -118,7 +132,7 @@ class LobbyStore {
     const list = await this.history(msg.room);
     list.push(msg);
     if (list.length > HISTORY_IN_MEMORY) list.splice(0, list.length - HISTORY_IN_MEMORY);
-    await appendFile(this.roomFile(msg.room), JSON.stringify(msg) + "\n", "utf8");
+    await this.serial(msg.room, () => appendFile(this.roomFile(msg.room), JSON.stringify(msg) + "\n", "utf8"));
     this.index.rooms[msg.room] = { ts: msg.ts, from: msg.from, name: msg.name, preview: preview(msg) };
     this.scheduleSave();
   }
@@ -129,12 +143,17 @@ class LobbyStore {
     const i = list.findIndex((m) => m.id === id);
     let msg = i >= 0 ? list[i] : null;
     if (i >= 0) list.splice(i, 1);
-    let lines = [];
-    try { lines = (await readFile(this.roomFile(room), "utf8")).split("\n").filter(Boolean); } catch (e) { if (e.code !== "ENOENT") throw e; }
-    const kept = [];
-    for (const l of lines) { let m; try { m = JSON.parse(l); } catch { continue; } if (m.id === id) { msg = msg || m; continue; } kept.push(m); }
-    if (!msg) return null;
-    await writeFileAtomic(this.roomFile(room), kept.map((m) => JSON.stringify(m) + "\n").join(""));
+    const dirty = this.dirty.get(room); if (dirty) dirty.delete(id);
+    const kept = await this.serial(room, async () => {
+      let lines = [];
+      try { lines = (await readFile(this.roomFile(room), "utf8")).split("\n").filter(Boolean); } catch (e) { if (e.code !== "ENOENT") throw e; }
+      const out = [];
+      for (const l of lines) { let m; try { m = JSON.parse(l); } catch { continue; } if (m.id === id) { msg = msg || m; continue; } out.push(dirty && dirty.get(m.id) || m); }
+      if (!msg) return null;
+      await writeFileAtomic(this.roomFile(room), out.map((m) => JSON.stringify(m) + "\n").join(""));
+      return out;
+    });
+    if (!kept) return null;
     const last = kept[kept.length - 1];
     if (last) this.index.rooms[room] = { ts: last.ts, from: last.from, name: last.name, preview: preview(last) };
     else delete this.index.rooms[room];
@@ -142,6 +161,31 @@ class LobbyStore {
     return msg;
   }
 }
+
+// sửa 1 tin còn trong bộ nhớ (thả cảm xúc…) → ghi lại file phòng sau ít giây (gộp nhiều lần bấm)
+LobbyStore.prototype.patch = async function patch(room, id, fn) {
+  const list = await this.history(room);
+  const msg = list.find((m) => m.id === id);
+  if (!msg) return null;
+  fn(msg);
+  if (!this.dirty.has(room)) this.dirty.set(room, new Map());
+  this.dirty.get(room).set(id, msg);
+  clearTimeout(this.patchTimers.get(room));
+  const t = setTimeout(() => this.flushPatch(room).catch((e) => jsonLog("lobby_save_failed", { error: e.message })), 1500);
+  t.unref?.(); this.patchTimers.set(room, t);
+  return msg;
+};
+LobbyStore.prototype.flushPatch = function flushPatch(room) {
+  clearTimeout(this.patchTimers.get(room)); this.patchTimers.delete(room);
+  return this.serial(room, async () => {
+    const dirty = this.dirty.get(room); this.dirty.delete(room);
+    if (!dirty || !dirty.size) return;
+    let lines = [];
+    try { lines = (await readFile(this.roomFile(room), "utf8")).split("\n").filter(Boolean); } catch (e) { if (e.code !== "ENOENT") throw e; }
+    const out = lines.map((l) => { try { const m = JSON.parse(l); return dirty.has(m.id) ? JSON.stringify(dirty.get(m.id)) : l; } catch { return null; } }).filter(Boolean);
+    await writeFileAtomic(this.roomFile(room), out.map((l) => l + "\n").join(""));
+  });
+};
 
 const preview = (m) => (m.text ? m.text.slice(0, 80) : m.images && m.images.length ? "📷 Ảnh" : "");
 
@@ -256,7 +300,7 @@ class Lobby {
   count(kind, n = 1) {
     const day = new Date().toISOString().slice(0, 10);
     if (this.today.day !== day) this.today = { day, messages: 0, images: 0 };
-    this.today[kind] += n;
+    this.today[kind] = (this.today[kind] || 0) + n;
   }
 
   profileOf(ident) {
@@ -356,10 +400,10 @@ class Lobby {
 
   // giới hạn tốc độ đơn giản (cửa sổ trượt 1 giây / 10 giây)
   allow(m, kind) {
-    const b = kind === "msg" ? m.msgBucket : kind === "upload" ? (m.upBucket ||= { t: Date.now(), n: 0 }) : m.bucket;
+    const b = kind === "msg" ? m.msgBucket : kind === "upload" ? (m.upBucket ||= { t: Date.now(), n: 0 }) : kind === "react" ? (m.reactBucket ||= { t: Date.now(), n: 0 }) : m.bucket;
     const win = kind === "state" ? 1_000 : 10_000;
     // ảnh tách riêng khỏi tin nhắn: gửi 4 ảnh 1 lúc không ăn vào lượt nhắn
-    const max = kind === "msg" ? Number(process.env.LOBBY_MSG_PER_10S || 8) : kind === "upload" ? 16 : 12;
+    const max = kind === "msg" ? Number(process.env.LOBBY_MSG_PER_10S || 8) : kind === "upload" ? 16 : kind === "react" ? 30 : 12;
     if (Date.now() - b.t > win) { b.t = Date.now(); b.n = 0; }
     return ++b.n <= max;
   }
@@ -586,6 +630,38 @@ class Lobby {
     this.broadcast("message-delete", { room, id }, (x) => this.canAccess(x, room));
     if (!own) await this.settings.audit({ id: ident.id, name: this.profileOf(ident).name }, "delete-message", { target: msg.from, targetName: msg.name, room, text: msg.text.slice(0, 120), images: (msg.images || []).length });
     return { ok: true };
+  }
+
+  // thả / bỏ cảm xúc vào 1 tin (bấm lại cùng emoji là bỏ) – ai thấy tin thì thả được
+  async react(ident, body) {
+    const m = this.touch(ident);
+    if (!this.allow(m, "react")) throw httpError(429, "Bạn thả hơi nhanh, đợi chút nhé", "rate_limit_error");
+    this.checkMuted(ident);
+    const room = String(body.room || "");
+    const id = String(body.id || "");
+    const emoji = String(body.emoji || "").trim();
+    if (!emoji || emoji.length > 16 || !EMOJI.test(emoji)) throw httpError(400, "Chỉ thả được 1 emoji");
+    if (!this.canAccess(ident, room)) throw httpError(403, "Không có quyền ở phòng này", "permission_error");
+    const name = this.profileOf(ident).name;
+    let err = null;
+    const msg = await this.store.patch(room, id, (x) => {
+      const r = x.reactions || {};
+      const list = r[emoji] || [];
+      const i = list.findIndex((p) => p.id === ident.id);
+      if (i >= 0) list.splice(i, 1);
+      else {
+        if (!r[emoji] && Object.keys(r).length >= MAX_REACT_KINDS) { err = httpError(400, "Tin này đã đủ loại cảm xúc"); return; }
+        list.push({ id: ident.id, name });
+        if (list.length > 200) list.shift();
+      }
+      if (list.length) r[emoji] = list; else delete r[emoji];
+      if (Object.keys(r).length) x.reactions = r; else delete x.reactions;
+    });
+    if (err) throw err;
+    if (!msg) throw httpError(404, "Tin nhắn đã cũ, không thả được nữa", "not_found_error");
+    this.count("reactions");
+    this.broadcast("message-react", { room, id, reactions: msg.reactions || {} }, (x) => this.canAccess(x, room));
+    return { reactions: msg.reactions || {} };
   }
 
   async upload(req, ident, url) {
@@ -871,6 +947,7 @@ async function routeLobby(req, res, principal, url) {
     case "GET /v1/lobby/messages": return sendJson(res, 200, await L.messages(ident, url));
     case "POST /v1/lobby/messages": return sendJson(res, 201, await L.send(ident, await json()));
     case "POST /v1/lobby/messages/delete": return sendJson(res, 200, await L.deleteMessage(ident, await json()));
+    case "POST /v1/lobby/messages/react": return sendJson(res, 200, await L.react(ident, await json()));
     case "POST /v1/lobby/upload": return sendJson(res, 201, await L.upload(req, ident, url));
     case "GET /v1/lobby/file": return L.file(res, ident, url);
     case "GET /v1/lobby/admin":

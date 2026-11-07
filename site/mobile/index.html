@@ -105,6 +105,15 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .bub .txt a { color: inherit; text-decoration: underline; }
 .bub .tm { font-size: 11px; opacity: .65; text-align: right; margin-top: 2px; }
 .bub.hit { background: var(--mention); }
+.m { flex-wrap: wrap; }
+.reacts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; margin: -2px 0 0 40px; }
+.m.mine .reacts { justify-content: flex-end; margin: -2px 0 0; }
+.react { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--line); background: var(--theirs); color: inherit; border-radius: 999px; padding: 2px 8px 2px 6px; font: inherit; font-size: 12px; min-height: 28px; }
+.react span { font-size: 15px; }
+.react.on { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+.sheet .rq { display: flex; justify-content: space-between; gap: 2px; padding: 4px 2px 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.sheet .box .rq button { flex: 1; text-align: center; min-height: 44px; border: 0; background: none; font-size: 26px; border-radius: 12px; padding: 0; }
+.sheet .box .rq button:active { background: var(--line); }
 .mine .bub.hit { background: var(--mine); }
 .at { font-weight: 700; color: var(--brand); }
 .mine .at { color: inherit; text-decoration: underline; }
@@ -469,6 +478,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       case 'personal': S.perms = d.perms || S.perms; S.mutedUntil = d.mutedUntil || null; if (S.view === 'room') renderCompose(); break;
       case 'me': break;
       case 'message': addMsg(d); if (L3.scene && d.room === 'all' && d.text) L3.scene.say(d.from, d.text); break;
+      case 'message-react': applyReact(d.room, d.id, d.reactions); break;
       case 'message-delete': {
         const list = S.msgs.get(d.room);
         if (list) { const i = list.findIndex((x) => x.id === d.id); if (i >= 0) list.splice(i, 1); }
@@ -605,10 +615,10 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
   function askLogout() {
     sheet([{ text: 'Đăng xuất khỏi điện thoại này', bad: true, run: () => logout(false) }]);
   }
-  function sheet(items) {
+  function sheet(items, head) {
     const close = () => n.remove();
     const n = el('div', { class: 'sheet', onclick: (e) => { if (e.target === n) close(); } },
-      el('div', { class: 'box', role: 'menu' }, items.map((it) => el('button', { class: it.bad ? 'bad' : '', role: 'menuitem', onclick: () => { close(); it.run(); } }, it.text)), el('button', { onclick: close, text: 'Đóng' })));
+      el('div', { class: 'box', role: 'menu' }, head ? head(close) : null, items.map((it) => el('button', { class: it.bad ? 'bad' : '', role: 'menuitem', onclick: () => { close(); it.run(); } }, it.text)), el('button', { onclick: close, text: 'Đóng' })));
     document.body.append(n);
   }
 
@@ -732,7 +742,8 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
             first && S.room === 'all' ? el('div', { class: 'who', text: m.name }) : null,
             m.reply ? el('div', { class: 'quote', text: `${m.reply.name}: ${m.reply.text || (m.reply.image ? '📷 Ảnh' : '')}` }) : null,
             imgs, m.text ? el('div', { class: 'txt' }, richText(m)) : null,
-            el('div', { class: 'tm', text: hhmm(m.ts) }))));
+            el('div', { class: 'tm', text: hhmm(m.ts) })),
+          reactRow(m)));
         prev = m;
       }
     }
@@ -740,11 +751,33 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
     if (toBottom || near) requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
   }
 
+  // 😊 cảm xúc trên tin: hàng chip dưới bong bóng, chạm để thả / bỏ
+  const QUICK_REACTS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
+  function reactRow(m) {
+    const r = m.reactions; if (!r || !Object.keys(r).length) return null;
+    return el('div', { class: 'reacts' }, Object.entries(r).map(([emo, list]) => {
+      const mine = list.some((p) => p.id === S.me.id);
+      return el('button', { class: 'react' + (mine ? ' on' : ''), 'aria-pressed': String(mine), title: list.map((p) => (p.id === S.me.id ? 'Bạn' : p.name)).join(', '), onclick: (e) => { e.stopPropagation(); doReact(m, emo); } }, el('span', { text: emo }), el('b', { text: String(list.length) }));
+    }));
+  }
+  async function doReact(m, emo) {
+    try {
+      const r = await api(`${API}/messages/react`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ room: m.room, id: m.id, emoji: emo }) });
+      applyReact(m.room, m.id, r.reactions);
+    } catch (e) { toast(e.message); }
+  }
+  function applyReact(room, id, reactions) {
+    const list = S.msgs.get(room); const m = list && list.find((x) => x.id === id); if (!m) return;
+    if (reactions && Object.keys(reactions).length) m.reactions = reactions; else delete m.reactions;
+    if (S.view === 'room' && S.room === room) renderMsgs(false);
+  }
+
   function msgMenu(m) {
     const items = [{ text: '↩ Trả lời', run: () => { S.reply = m; renderCompose(); const t = document.querySelector('textarea'); if (t) t.focus(); } }];
     if (m.text) items.push({ text: '📋 Sao chép', run: () => { (navigator.clipboard ? navigator.clipboard.writeText(m.text) : Promise.reject()).then(() => toast('Đã sao chép'), () => toast('Không sao chép được')); } });
     if (m.from === S.me.id) items.push({ text: '🗑 Thu hồi tin nhắn', bad: true, run: async () => { try { await api(`${API}/messages/delete`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ room: m.room, id: m.id }) }); } catch (e) { toast(e.message); } } });
-    sheet(items);
+    const canReact = S.features && S.features.has('react');
+    sheet(items, canReact ? (close) => el('div', { class: 'rq', role: 'group', 'aria-label': 'Thả cảm xúc' }, QUICK_REACTS.map((e) => el('button', { 'aria-label': 'Thả ' + e, onclick: () => { close(); doReact(m, e); } }, e))) : null);
   }
 
   // ---------- gõ & gửi ----------
