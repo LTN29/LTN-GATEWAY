@@ -144,8 +144,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 /* bảng thao tác + xem ảnh */
 .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; z-index: 20; }
 .sheet .box { width: 100%; background: var(--card); border-radius: 18px 18px 0 0; padding: 8px max(10px, env(safe-area-inset-right)) calc(10px + var(--safe-b)) max(10px, env(safe-area-inset-left)); display: grid; gap: 2px; }
-.sheet .box button { padding: 14px; border-radius: 12px; text-align: left; font-size: 16px; }
-.sheet .box button:active { background: var(--soft); }
+.sheet .box button:not(.ib button) { padding: 14px; border-radius: 12px; text-align: left; font-size: 16px; }
+.sheet .box button:not(.ib button):active { background: var(--soft); }
 .sheet .box .bad { color: var(--bad); }
 .viewer { position: fixed; inset: 0; background: #000; z-index: 30; display: grid; place-items: center; }
 .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
@@ -461,7 +461,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
         L3.cat = d.cat || null; L3.npc = d.npc || null;
         S.features = new Set(d.features || []);
         setOnline(true); render();
-        loadHonor(true);
+        loadIdeas().catch(() => {});
         if (S.room) loadMsgs(S.room, true); // vừa nối lại → lấy tin bị lỡ
         sync3D();
         break;
@@ -479,6 +479,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       case 'me': break;
       case 'message': addMsg(d); if (L3.scene && d.room === 'all' && d.text) L3.scene.say(d.from, d.text); break;
       case 'message-react': applyReact(d.room, d.id, d.reactions); break;
+      case 'idea': onIdea(d); break;
       case 'message-delete': {
         const list = S.msgs.get(d.room);
         if (list) { const i = list.findIndex((x) => x.id === d.id); if (i >= 0) list.splice(i, 1); }
@@ -913,8 +914,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
         onCatClick: () => catMenu(),
         onTableClick: () => toast('🎱 Bida đang chơi được trên máy tính – bản điện thoại sắp có'),
         onFortune: () => openFortune(),
-        onHonor: () => openHonor(),
-        onPray: () => honorDo('pray'),
+        onIdeas: () => openIdeas(),
         onDance: (style, byMove) => { L3.myDance = style; if (!byMove && S.online) post('state', { dance: style }).catch(() => {}); drawOverlay(); },
         onFloor: (on) => { if (on && !L3.myDance && !L3.floorTold) { L3.floorTold = true; toast('🪩 Bạn đang ở sàn nhảy – bấm 😊 rồi chọn điệu nhảy'); } },
         onSlow: () => {},
@@ -924,7 +924,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       L3.scene.setSkew(L3.skew || 0);
       if (L3.cat) L3.scene.setCat(L3.cat);
       L3.scene.setNpc(L3.npc || null);
-      if (L3.honor && L3.scene.setHonor) L3.scene.setHonor(L3.honor);
+      if (L3.ideas && L3.scene.setIdeas) L3.scene.setIdeas(L3.ideas.summary);
       window.__sanh = L3.scene;
       // iPhone hay thu hồi WebGL khi app xuống nền lâu / thiếu bộ nhớ → màn đen: dựng lại Sảnh khi quay lại
       const cv = L3.root.querySelector('canvas');
@@ -961,7 +961,7 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
       return { name: clean(o.ten_que, 30).replace(/^quẻ\s+/i, ''), message: clean(o.thong_diep, 400), do: clean(o.nen_lam, 80) };
     } finally { clearTimeout(t); }
   }
-  // window.VP tối thiểu cho fortune.js / honor.js của app (el + bảng trượt từ dưới lên)
+  // window.VP tối thiểu cho fortune.js / ideas.js của app (el + bảng trượt từ dưới lên)
   function vpShim() {
     let box = null;
     window.VP = window.VP || {};
@@ -982,33 +982,43 @@ html.kb .tabs { display: none; } html.kb .compose { padding-bottom: 8px; }
     vpShim();
     window.vp = window.vp || {};
     window.vp.fortune = { ask: askFortune };
-    window.VPFortune.open({ me: S.me, share: (text) => post('messages', { room: 'all', text }).then(() => toast('Đã khoe quẻ lên Sảnh 🎉')).catch((e) => toast(e.message)), onDrawn: () => honorDo('fortune') });
+    window.VPFortune.open({ me: S.me, share: (text) => post('messages', { room: 'all', text }).then(() => toast('Đã khoe quẻ lên Sảnh 🎉')).catch((e) => toast(e.message)) });
   }
 
-  // 🏆 Bảng vàng: treo tường cạnh ống quẻ (vẽ trong cảnh 3D) + bảng chi tiết dùng honor.js của app
-  const honorOn = () => !!(S.features && S.features.has('honor') && S.me && S.online);
-  async function loadHonor(force) {
-    if (!honorOn()) return;
-    if (!force && L3.honorAt && Date.now() - L3.honorAt < 4 * 60_000) return;
-    L3.honorAt = Date.now();
-    try { L3.honor = await api(`${API}/honor?period=week`); if (L3.scene && L3.scene.setHonor) L3.scene.setHonor(L3.honor); } catch { /* lần sau tải lại */ }
+  // 📮 Hòm thư góp ý SIMI: biển hiệu + thùng thư trong Sảnh (vẽ trong cảnh 3D) + bảng gửi / xem dùng ideas.js của app
+  const ideasOn = () => !!(S.features && S.features.has('ideas') && S.me && S.online);
+  async function loadIdeas() {
+    if (!ideasOn()) return null;
+    const d = await api(`${API}/ideas`);
+    L3.ideas = d; if (L3.scene && L3.scene.setIdeas) L3.scene.setIdeas(d.summary);
+    return d;
   }
-  setInterval(() => { if (!document.hidden && L3.scene) loadHonor(false); }, 60_000);
-  async function honorDo(kind) {
-    if (!honorOn()) return;
-    try {
-      const r = await post(`honor/${kind}`, {});
-      if (kind === 'pray' && r.counted) setTimeout(() => toast(`🙏 +${r.gain || 5} điểm Tài lộc · đã khấn ${r.prays}/${r.max} hôm nay`), 2600);
-      if (kind === 'fortune' && r.first) setTimeout(() => toast(`🏆 +${r.points} điểm Tài lộc vào Bảng vàng tuần này`), 600);
-      if ((kind === 'pray' && r.counted) || (kind === 'fortune' && r.first)) loadHonor(true);
-    } catch { /* không tính điểm được thì thôi */ }
-  }
-  async function openHonor() {
-    if (!S.features || !S.features.has('honor')) { toast('Máy chủ chưa có Bảng vàng'); return; }
-    if (!window.VPHonor) { try { await loadJs('/m/sanh3d/honor.js'); } catch { toast('Chưa mở được Bảng vàng, thử lại sau nhé'); return; } }
+  const IDEA_PATH = { create: 'ideas', vote: 'ideas/vote', review: 'ideas/review', delete: 'ideas/delete' };
+  async function openIdeas() {
+    if (!S.features || !S.features.has('ideas')) { toast('Máy chủ chưa có Hòm thư góp ý'); return; }
+    if (!window.VPIdeas) { try { await loadJs('/m/sanh3d/ideas.js'); } catch { toast('Chưa mở được hòm thư, thử lại sau nhé'); return; } }
     vpShim();
-    window.VPHonor.open({ me: S.me, load: (q) => api(`${API}/honor?period=${q.period}&offset=${q.offset || 0}`).then((d) => { if (q.period === 'week' && !q.offset) { L3.honor = d; L3.honorAt = Date.now(); if (L3.scene && L3.scene.setHonor) L3.scene.setHonor(d); } return d; }) });
+    window.VPIdeas.open({
+      load: loadIdeas,
+      act: (action, body) => post(IDEA_PATH[action], body),
+      upload: async (file) => {
+        const { full, thumb } = await encode(file);
+        const qs = new URLSearchParams({ thumbBytes: String(thumb.blob.size), w: String(full.w), h: String(full.h), room: 'all' });
+        return (await api(`${API}/upload?${qs}`, { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: new Blob([thumb.blob, full.blob]) })).id;
+      },
+      img: (im, thumb) => imgUrl(im.id, thumb && im.thumb !== false),
+      view: (im) => view(im.id),
+    });
   }
+  function onIdea(d) {
+    if (d.summary) { if (L3.ideas) L3.ideas.summary = d.summary; if (L3.scene && L3.scene.setIdeas) L3.scene.setIdeas(d.summary); }
+    if (window.VPIdeas) window.VPIdeas.refresh();
+    if (d.action === 'update' && S.me && d.owner === S.me.id && d.status && d.status !== 'new') {
+      const st = (window.VPIdeas && window.VPIdeas.STATUS[d.status]) || d.status;
+      toast(`📮 IT đã cập nhật góp ý của bạn: ${st}`);
+    }
+  }
+
 
   function sync3D() {
     if (!L3.scene || !S.me) return;

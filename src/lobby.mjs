@@ -14,7 +14,7 @@ import { LobbySettings, PERMS, isAdmin, hhmm } from "./lobby-admin.mjs";
 import { LobbyCat } from "./lobby-cat.mjs";
 import { NpcStore, NpcLog, npcCandidates, askNpc, cleanGuides, npcConfig } from "./lobby-npc.mjs";
 import { LobbyGames } from "./lobby-games.mjs";
-import { LobbyHonor, honorConfig } from "./lobby-honor.mjs";
+import { LobbyIdeas } from "./lobby-ideas.mjs";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLOR = /^#[0-9a-f]{6}$/i;
@@ -28,7 +28,7 @@ const MAX_REACT_KINDS = 12; // số loại cảm xúc khác nhau trên 1 tin
 const EMOJI = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}{2})(?:\uFE0F|\u20E3|[\u{1F3FB}-\u{1F3FF}]|\u200D\p{Extended_Pictographic}\uFE0F?)*$/u;
 const EVERYONE_PER_HOUR = 3;
 // tính năng Gateway có – app mới dựa vào đây để hiện nút (Gateway cũ thì ẩn, không lỗi)
-const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "honor", "react"];
+const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "react", "ideas"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
 const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands"]);
@@ -232,7 +232,7 @@ class Lobby {
     this.settings = new LobbySettings(); // phân quyền, cấm chat, thông báo ghim…
     this.today = { day: "", messages: 0, images: 0 };
     this.cat = new LobbyCat({ broadcast: (ev, data) => this.broadcast(ev, data) });
-    this.honor = new LobbyHonor({ nameOf: (id) => { const pm = this.publicMember(id); return pm ? { name: pm.name, teamName: pm.teamName } : null; } });
+    this.ideas = new LobbyIdeas({ broadcast: (ev, data) => this.broadcast(ev, data), isAdmin });
     this.asks = new Map(); // id -> { id, from, to, kind, style, exp } lời mời đang chờ trả lời
     this.npcStore = new NpcStore(); // hướng dẫn admin sửa thêm cho NPC
     this.npcLog = new NpcLog();     // câu hỏi gần đây gửi Trợ lý (admin xem để cải thiện)
@@ -286,7 +286,7 @@ class Lobby {
     await this.npcStore.init(lobbyConfig.dataDir);
     await this.npcLog.init(lobbyConfig.dataDir);
     await this.games.init(lobbyConfig.dataDir);
-    await this.honor.init(lobbyConfig.dataDir);
+    await this.ideas.init(lobbyConfig.dataDir);
   }
 
   // NPC đang dùng tài khoản nào (tên + nhân vật + đã có key để hỏi AI chưa)
@@ -312,8 +312,21 @@ class Lobby {
     };
   }
 
-  // tên đang hiển thị trong Sảnh (để Bảng vàng nhớ cả người lâu không vào)
-  honorIdent(ident) { const prof = this.profileOf(ident); return { id: ident.id, name: prof.name, teamName: ident.teamName }; }
+  // 📮 gửi góp ý (kèm tối đa 3 ảnh chụp màn hình đã tải lên phòng chung)
+  async ideaCreate(ident, body) {
+    const m = this.touch(ident);
+    if (!this.allow(m, "msg")) throw httpError(429, "Bạn gửi hơi nhanh, đợi vài giây nhé", "rate_limit_error");
+    const ids = Array.isArray(body.images) ? body.images.map(String).slice(0, 4) : [];
+    if (ids.length > 3) throw httpError(400, "Mỗi góp ý kèm tối đa 3 ảnh");
+    const pre = randomUUID();
+    const images = ids.length ? await this.files.attach(ids, { by: ident.id, room: "all", msgId: "idea:" + pre }) : [];
+    return this.ideas.create(ident, this.profileOf(ident), body, images, pre);
+  }
+  async ideaRemove(ident, body) {
+    const r = this.ideas.remove(ident, body);
+    for (const img of r.images) await this.files.remove(img.id);
+    return { ok: true };
+  }
 
   publicMember(id) {
     const m = this.members.get(id);
@@ -975,9 +988,11 @@ async function routeLobby(req, res, principal, url) {
       return sendJson(res, 200, await L.npcAsk(ident, await json(), `http://${host}:${req.socket.localPort}`));
     }
     case "POST /v1/lobby/cinema": return sendJson(res, 200, await L.cinemaAction(ident, await json()));
-    case "GET /v1/lobby/honor": L.touch(ident); return sendJson(res, 200, await L.honor.view(ident, { period: url.searchParams.get("period"), offset: url.searchParams.get("offset") }));
-    case "POST /v1/lobby/honor/fortune": return sendJson(res, 200, L.honor.fortune(L.honorIdent(ident)));
-    case "POST /v1/lobby/honor/pray": return sendJson(res, 200, L.honor.pray(L.honorIdent(ident)));
+    case "GET /v1/lobby/ideas": return sendJson(res, 200, L.ideas.list(ident));
+    case "POST /v1/lobby/ideas": return sendJson(res, 201, await L.ideaCreate(ident, await json()));
+    case "POST /v1/lobby/ideas/vote": return sendJson(res, 200, L.ideas.vote(ident, await json()));
+    case "POST /v1/lobby/ideas/review": return sendJson(res, 200, L.ideas.review(ident, L.profileOf(ident), await json()));
+    case "POST /v1/lobby/ideas/delete": return sendJson(res, 200, await L.ideaRemove(ident, await json()));
     default: sendJson(res, 404, openAiError("Không tìm thấy route Sảnh", "not_found_error"));
   }
 }
