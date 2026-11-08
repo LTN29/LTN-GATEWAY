@@ -274,11 +274,12 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.equal(unixInstaller.headers["x-content-type-options"], "nosniff");
     assert.equal(
       unixInstaller.body,
-      await readFile(
+      (await readFile(
         new URL("../scripts/install-codex-unix-bootstrap.sh", import.meta.url),
         "utf8"
-      )
+      )).replace(/\r\n?/g, "\n")
     );
+    assert.ok(!unixInstaller.body.includes("\r"), "script .sh luôn xuống dòng kiểu Linux (bash trên Ubuntu không đọc được CRLF)");
     assert.match(unixInstaller.body, /https:\/\/ai\.simi\.vn\/install\/codex-full\.sh/);
     assert.match(unixInstaller.body, /url_effective/);
     assert.match(unixInstaller.body, /trap cleanup EXIT HUP INT TERM/);
@@ -295,10 +296,10 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     );
     assert.equal(
       unixFullInstaller.body,
-      await readFile(
+      (await readFile(
         new URL("../scripts/install-codex-unix.sh", import.meta.url),
         "utf8"
-      )
+      )).replace(/\r\n?/g, "\n")
     );
     assert.match(unixFullInstaller.body, /uname -s/);
     assert.match(unixFullInstaller.body, /Darwin/);

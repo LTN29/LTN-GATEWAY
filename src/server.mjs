@@ -649,7 +649,9 @@ async function installerConfigForPrincipal(rawKey, principal, id) {
 }
 
 async function serveInstallerFile(res, path, contentType = "text/plain; charset=utf-8") {
-  const body = await readFile(path);
+  let body = await readFile(path);
+  // Gateway chạy trên Windows: git / trình soạn thảo có thể đổi .sh sang CRLF → bash trên Ubuntu / macOS báo lỗi "\r".
+  if (/shellscript/.test(contentType) && body.includes(13)) body = Buffer.from(body.toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
   res.writeHead(200, {
     "content-type": contentType,
     "content-length": body.length,

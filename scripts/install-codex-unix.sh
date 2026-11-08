@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+# With set -e a failing command ends the installer; say where instead of exiting silently.
+trap 'ltn_status=$?; if [ "${BASH_SUBSHELL}" -eq 0 ]; then echo "Loi: installer dung o dong ${LINENO} (ma ${ltn_status}): ${BASH_COMMAND}" >&2; echo "Chup man hinh nay gui IT." >&2; fi' ERR
 
 GATEWAY_BASE_URL="${LTN_GATEWAY_BASE_URL:-https://ai.simi.vn/v1}"
 CODEX_HOME="${CODEX_HOME:-${HOME}/.codex}"
@@ -615,7 +617,11 @@ merge_config() {
     # model is no longer in the user's Combo.
     local last_default_path current_model last_default
     last_default_path="${CODEX_HOME}/ltn-default-model"
-    current_model="$(sed -n 's/^[[:space:]]*model[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${CONFIG_PATH}" 2>/dev/null | head -n 1)"
+    # Root-level model only (stop at the first [table]); a missing config.toml is a fresh install.
+    current_model=""
+    if [ -f "${CONFIG_PATH}" ]; then
+      current_model="$(awk '/^[[:space:]]*\[/ { exit } /^[[:space:]]*model[[:space:]]*=[[:space:]]*"/ { v = $0; sub(/^[[:space:]]*model[[:space:]]*=[[:space:]]*"/, "", v); sub(/".*$/, "", v); print v; exit }' "${CONFIG_PATH}" 2>/dev/null || true)"
+    fi
     last_default="$(cat "${last_default_path}" 2>/dev/null || true)"
     if [ -n "${current_model}" ] && [ -n "${last_default}" ] && [ "${current_model}" != "${last_default}" ] &&
        "${RUNTIME_NODE_CMD:-node}" -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.exit(x.models.some(m=>m.slug===process.argv[2])?0:1)' "${catalog_path}" "${current_model}"; then
@@ -1037,13 +1043,28 @@ runtime_node_major() {
 }
 
 install_macos_node_runtime() {
-  local node_arch node_line dist_base sums_file filename expected actual archive staging extracted
+  install_ltn_node_runtime
+}
+
+sha256_of() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    sha256sum "$1" | awk '{print $1}'
+  fi
+}
+
+# Per-user Node.js LTS from nodejs.org (checksum verified), used on macOS and on
+# Linux when the distro package is older than Node 20 (Ubuntu 24.04 ships 18).
+install_ltn_node_runtime() {
+  local node_arch node_os node_line dist_base sums_file filename expected actual archive staging extracted
   node_line="${LTN_NODE_MAJOR:-22}"
+  if [ "${OS_NAME}" = "macos" ]; then node_os="darwin"; else node_os="linux"; fi
 
   case "$(uname -m)" in
     arm64|aarch64) node_arch="arm64" ;;
     x86_64|amd64) node_arch="x64" ;;
-    *) die_code 12 "Kien truc macOS khong ho tro Node runtime: $(uname -m)" ;;
+    *) die_code 12 "Kien truc CPU khong ho tro Node runtime: $(uname -m)" ;;
   esac
 
   if [ -x "${LTN_NODE_RUNTIME_DIR}/bin/node" ] && \
@@ -1051,25 +1072,26 @@ install_macos_node_runtime() {
     return 0
   fi
 
-  command -v shasum >/dev/null 2>&1 || die_code 12 "macOS thieu shasum; khong the xac minh Node runtime."
-  command -v tar >/dev/null 2>&1 || die_code 12 "macOS thieu tar; khong the giai nen Node runtime."
+  command -v shasum >/dev/null 2>&1 || command -v sha256sum >/dev/null 2>&1 ||
+    die_code 12 "Thieu shasum/sha256sum; khong the xac minh Node runtime."
+  command -v tar >/dev/null 2>&1 || die_code 12 "Thieu tar; khong the giai nen Node runtime."
 
   dist_base="https://nodejs.org/dist/latest-v${node_line}.x"
   sums_file="$(mktemp "${TMPDIR:-/tmp}/ltn-node-shasums.XXXXXX")"
   archive="$(mktemp "${TMPDIR:-/tmp}/ltn-node.XXXXXX")"
   staging="${LTN_NODE_RUNTIME_DIR}.new.$$"
 
-  echo "Dang cai Node.js ${node_line} LTS runtime rieng cho LTN (khong dung Homebrew)..."
+  echo "Dang cai Node.js ${node_line} LTS runtime rieng cho LTN vao ${LTN_NODE_RUNTIME_DIR}..."
   if ! curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --silent --show-error --location \
     --output "${sums_file}" "${dist_base}/SHASUMS256.txt"; then
     rm -f "${sums_file}" "${archive}"
     die_code 12 "Khong tai duoc danh sach checksum Node.js. Kiem tra mang roi chay Repair."
   fi
 
-  filename="$(awk -v arch="${node_arch}" '$2 ~ ("^node-v[0-9.]+-darwin-" arch "\\.tar\\.gz$") {print $2; exit}' "${sums_file}")"
+  filename="$(awk -v os="${node_os}" -v arch="${node_arch}" '$2 ~ ("^node-v[0-9.]+-" os "-" arch "\\.tar\\.gz$") {print $2; exit}' "${sums_file}")"
   [ -n "${filename}" ] || {
     rm -f "${sums_file}" "${archive}"
-    die_code 12 "Node.js ${node_line} khong co binary macOS ${node_arch} phu hop."
+    die_code 12 "Node.js ${node_line} khong co binary ${node_os} ${node_arch} phu hop."
   }
   expected="$(awk -v file="${filename}" '$2 == file {print $1; exit}' "${sums_file}")"
 
@@ -1078,7 +1100,7 @@ install_macos_node_runtime() {
     rm -f "${sums_file}" "${archive}"
     die_code 12 "Khong tai duoc Node.js runtime. Kiem tra mang roi chay Repair."
   fi
-  actual="$(shasum -a 256 "${archive}" | awk '{print $1}')"
+  actual="$(sha256_of "${archive}")"
   if [ -z "${expected}" ] || [ "${actual}" != "${expected}" ]; then
     rm -f "${sums_file}" "${archive}"
     die_code 12 "Checksum Node.js khong hop le; da huy cai dat runtime."
@@ -1280,6 +1302,21 @@ ensure_runtime_dependencies() {
       echo "Canh bao: khong tu dong cai duoc Node.js/Python. Hay cai thu cong roi chay Repair." >&2
     fi
     resolve_runtime_commands
+  fi
+
+  if [ "${OS_NAME}" = "linux" ] && [ "${LTN_SKIP_RUNTIME_INSTALL:-0}" != "1" ]; then
+    node_major=0
+    if [ -n "${RUNTIME_NODE_CMD}" ]; then
+      node_major="$(runtime_node_major "${RUNTIME_NODE_CMD}")"
+    fi
+    if [ -z "${RUNTIME_NODE_CMD}" ] || [ "${node_major}" -lt 20 ]; then
+      # Distro Node is too old; install a private copy (no sudo, does not touch apt).
+      if ( install_ltn_node_runtime ); then
+        resolve_runtime_commands
+      else
+        echo "Canh bao: khong cai duoc Node.js 22 rieng cho LTN; tiep tuc voi Node hien co." >&2
+      fi
+    fi
   fi
 
   if [ "${OS_NAME}" = "macos" ]; then
