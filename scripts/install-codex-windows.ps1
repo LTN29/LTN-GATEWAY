@@ -9,6 +9,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# chạy ẩn trong app: thanh tiến trình bị ghi ra thành XML rác + làm Invoke-WebRequest chậm hẳn trên PowerShell 5.1
+$ProgressPreference = "SilentlyContinue"
 Set-StrictMode -Version Latest
 
 try {
@@ -877,6 +879,40 @@ function Test-PythonCode {
   }
 }
 
+# Chạy lệnh ngoài mà KHÔNG để chữ ghi ra stderr (pip / venv hay in cảnh báo) biến thành lỗi dừng cả bộ cài:
+# Windows PowerShell 5.1 + $ErrorActionPreference = "Stop" + stderr bị chuyển hướng (app Văn Phòng AI chạy ẩn) → mỗi dòng stderr là lỗi.
+function Invoke-NativeQuiet {
+  param([string]$FilePath, [string[]]$Arguments)
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $FilePath @Arguments 2>&1 | ForEach-Object { Write-Host ([string]$_) }
+    return $LASTEXITCODE
+  } catch {
+    Write-Warning $_.Exception.Message
+    return 1
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
+# pip cho venv: ensurepip có sẵn trong Python; máy nào ensurepip lỗi (diệt virus chặn file tạm, pip.ini lạ…) thì tải get-pip.py
+function Install-VenvPip {
+  param([string]$VenvPython, [string]$RuntimeDir)
+  if ((Invoke-NativeQuiet -FilePath $VenvPython -Arguments @('-m', 'ensurepip', '--upgrade', '--default-pip')) -eq 0 -and
+      (Test-PythonCode -Python $VenvPython -Code 'import pip')) { return $true }
+  Write-Warning "ensurepip lỗi – thử tải pip trực tiếp..."
+  try {
+    $getPip = Join-Path $RuntimeDir "get-pip.py"
+    Invoke-WebRequest -UseBasicParsing -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip -TimeoutSec 120
+    $null = Invoke-NativeQuiet -FilePath $VenvPython -Arguments @($getPip, '--disable-pip-version-check', '--no-warn-script-location')
+    Remove-Item -LiteralPath $getPip -Force -ErrorAction SilentlyContinue
+  } catch {
+    Write-Warning "Không tải được get-pip.py: $($_.Exception.Message)"
+  }
+  return (Test-PythonCode -Python $VenvPython -Code 'import pip')
+}
+
 function Ensure-PdfRuntime {
   param([string]$CodexHome)
 
@@ -911,14 +947,21 @@ function Ensure-PdfRuntime {
     Remove-Item -LiteralPath $runtimeDir -Recurse -Force -ErrorAction SilentlyContinue
   }
   if (-not (Test-Path -LiteralPath $venvPython)) {
+    # thư mục dở dang của lần cài trước (khác bản Python) làm ensurepip lỗi → xoá sạch rồi tạo mới
+    Remove-Item -LiteralPath $runtimeDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-    if ($python.Name -match '^py(\.exe)?$') {
-      & $python.Source -3 -m venv $runtimeDir | Out-Host
-    } else {
-      & $python.Source -m venv $runtimeDir | Out-Host
-    }
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $venvPython)) {
+    # --without-pip: tự cài pip ở bước sau để lỗi ensurepip không làm hỏng cả venv
+    $venvArgs = @('-m', 'venv', '--without-pip', $runtimeDir)
+    if ($python.Name -match '^py(\.exe)?$') { $venvArgs = @('-3') + $venvArgs }
+    $null = Invoke-NativeQuiet -FilePath $python.Source -Arguments $venvArgs
+    if (-not (Test-Path -LiteralPath $venvPython)) {
       Write-Warning "Không tạo được Python venv cho PDF."
+      return $false
+    }
+  }
+  if (-not (Test-PythonCode -Python $venvPython -Code 'import pip')) {
+    if (-not (Install-VenvPip -VenvPython $venvPython -RuntimeDir $runtimeDir)) {
+      Write-Warning "Không cài được pip cho Python runtime (Word/Excel/PDF). Các phần khác của SIMI vẫn dùng bình thường; chạy Repair sau để thử lại."
       return $false
     }
   }
@@ -928,8 +971,8 @@ function Ensure-PdfRuntime {
   if (-not (Test-Path -LiteralPath $marker) -or -not $depsReady) {
     Write-Host "Đang cài thư viện Word/Excel/PDF..."
     # pymupdf 2.x pulls onnxruntime/numpy/networkx (~100 MB) that text extraction does not need.
-    & $venvPython -m pip install --disable-pip-version-check --upgrade pypdf pdfplumber "pymupdf>=1.26,<2" openpyxl python-docx tomli | Out-Host
-    if ($LASTEXITCODE -ne 0) {
+    $pipCode = Invoke-NativeQuiet -FilePath $venvPython -Arguments @('-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'pypdf', 'pdfplumber', 'pymupdf>=1.26,<2', 'openpyxl', 'python-docx', 'tomli')
+    if ($pipCode -ne 0) {
       Write-Warning "Không tải được thư viện PDF. Kiểm tra mạng rồi chạy Repair."
       return $false
     }
@@ -1414,7 +1457,11 @@ if (-not $SkipCodexInstall) {
 New-Item -ItemType Directory -Force -Path $codexHome, $binDir | Out-Null
 $browserBridgeToken = Get-OrCreateBrowserBridgeToken
 $nodeRuntimeReady = Ensure-NodeRuntime
-$pdfRuntimeReady = Ensure-PdfRuntime -CodexHome $codexHome
+# runtime Word/Excel/PDF là phần phụ: lỗi gì cũng không được làm dừng cả bộ cài SIMI
+$pdfRuntimeReady = $false
+try { $pdfRuntimeReady = [bool](Ensure-PdfRuntime -CodexHome $codexHome | Select-Object -Last 1) } catch {
+  Write-Warning "Chưa tạo được Python runtime cho Word/Excel/PDF: $($_.Exception.Message). Chạy Repair sau để thử lại."
+}
 Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
 Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -BridgeToken $browserBridgeToken
 Install-SimiChromeShortcut -CodexHome $codexHome

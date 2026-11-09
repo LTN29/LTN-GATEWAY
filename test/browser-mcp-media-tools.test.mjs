@@ -201,3 +201,24 @@ test("image_generate: lấy model người dùng ĐANG chọn trong app (không 
   const { r } = await firstImageModel("cx/gpt-6.1-sol", { appModel: "ag/gemini-3-pro" });
   assert.equal(r.model, "gg/gemini-3-pro-image");
 });
+
+test("image_generate: lỗi 5xx / mất kết nối không đánh dấu model hỏng; model bị đánh dấu vẫn được thử sau cùng", async () => {
+  let fail = true;
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2" }, { id: "gg/gemini-3-pro-image" }] });
+    if (url === "/v1/images/generations") return fail ? send(502, { error: { message: "upstream connection error" } }) : send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const first = JSON.parse(t.text(await t.call("image_generate", { prompt: "rồng con dễ thương", output_path: join(t.home, "o", "a.png") })));
+    assert.equal(first.ok, false);
+    assert.match(first.errors[0].error, /upstream connection error/, "trả đúng câu lỗi cho AI báo lại");
+    const badFile = join(t.home, "simi-image-bad.json");
+    assert.ok(!existsSync(badFile) || !JSON.parse(readFileSync(badFile, "utf8"))["cx/gpt-image-2"], "502 không bị nhớ là model hỏng");
+    writeFileSync(badFile, JSON.stringify({ "cx/gpt-image-2": Math.floor(Date.now() / 1000), "gg/gemini-3-pro-image": Math.floor(Date.now() / 1000) }));
+    fail = false; t.seen.length = 0;
+    const second = JSON.parse(t.text(await t.call("image_generate", { prompt: "rồng con dễ thương", output_path: join(t.home, "o", "b.png") })));
+    assert.equal(second.ok, true, "mọi model đều bị đánh dấu thì vẫn thử, không báo hết model");
+    assert.equal(t.seen.find((s) => s.url === "/v1/images/generations").body.model, "cx/gpt-image-2");
+  } finally { t.stop(); }
+});

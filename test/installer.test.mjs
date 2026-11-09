@@ -256,3 +256,18 @@ test("installers disable OpenAI Work browser plugins for Gateway API-key logins"
   assert.match(windows, /tool_timeout_sec = 600\$workBrowserConfig\r?\n# END LTN CODEX MANAGED TABLES/);
   assert.match(unix, /tool_timeout_sec = 600\$\{work_browser_config\}\r?\n# END LTN CODEX MANAGED TABLES/);
 });
+
+test("Windows installer: lỗi ensurepip / pip không làm dừng cả bộ cài SIMI", async () => {
+  const windows = await readFile(installerUrl, "utf8");
+  const fn = windows.slice(windows.indexOf("function Ensure-PdfRuntime"), windows.indexOf("function Test-TomlConfigContent"));
+  // venv tạo không kèm pip, pip cài riêng (ensurepip → get-pip.py) để lỗi ensurepip không hỏng cả venv
+  assert.match(fn, /'venv', '--without-pip'/);
+  assert.match(fn, /Install-VenvPip/);
+  assert.match(windows, /bootstrap\.pypa\.io\/get-pip\.py/);
+  // stderr của python/pip không được thành lỗi dừng (PowerShell 5.1 + Stop + chạy ẩn trong app)
+  assert.doesNotMatch(fn, /& \$venvPython -m pip install[^\n]*\| Out-Host/);
+  assert.doesNotMatch(fn, /-m venv \$runtimeDir \| Out-Host/);
+  assert.match(windows, /function Invoke-NativeQuiet[\s\S]*?\$ErrorActionPreference = "Continue"/);
+  // gọi trong try: runtime Word/Excel/PDF là phần phụ
+  assert.match(windows, /try \{ \$pdfRuntimeReady = \[bool\]\(Ensure-PdfRuntime -CodexHome \$codexHome/);
+});

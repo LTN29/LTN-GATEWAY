@@ -910,7 +910,9 @@ async function imageGenerate(args = {}) {
   if (args.model && ids.includes(args.model)) order = [args.model, ...order];
   if (!order.length) return { ok: false, error: "Chưa có model ảnh nào ngoài Muse cho tài khoản này.", advice: "Muốn dùng Muse thì người dùng chọn skill Muse (muse-tao-anh). Không tự gọi muse_image." };
   const bad = await readBadModels();
-  order = [...new Set(order)].filter((id) => !bad[id]);
+  // model bị đánh dấu lỗi gần đây xếp xuống cuối (không bỏ hẳn) → lỗi thoáng qua không làm "hết model" suốt 30 phút
+  order = [...new Set(order)];
+  order = [...order.filter((id) => !bad[id]), ...order.filter((id) => bad[id])];
   if (mode === "edit") {
     // kiểm tra khả năng sửa ảnh của nhiều model CÙNG LÚC (trước đây hỏi lần lượt, mỗi model chờ tới 20 giây)
     const checked = await Promise.all(order.slice(0, 6).map(async (id) => {
@@ -945,7 +947,8 @@ async function imageGenerate(args = {}) {
       if (error.status === -1) throw error;
       errors.push({ model, error: error.message.slice(0, 200) });
       if ([401, 403, 429].includes(error.status)) { error.fatal = true; throw error; }
-      if (!(error.status === 0 && /không trả lời/.test(error.message))) {
+      // chỉ nhớ model hỏng khi Gateway trả lời rõ là model không dùng được (4xx); mất mạng / hết giờ / 5xx là lỗi thoáng qua
+      if (error.status >= 400 && error.status < 500) {
         bad[model] = Math.floor(Date.now() / 1000);
         if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
           const prefix = model.split("/")[0] + "/";
@@ -958,7 +961,14 @@ async function imageGenerate(args = {}) {
   };
   try {
     // model đầu chưa xong sau IMAGE_HEDGE_MS thì chạy luôn model kế tiếp song song, lấy ảnh nào xong trước
-    const { model, bytes } = await hedged(order.slice(0, 3), attempt, IMAGE_HEDGE_MS);
+    const { model, bytes } = await hedged(order.slice(0, 3), async (id) => {
+      try { return await attempt(id); } catch (error) {
+        // không kết nối được Gateway (mạng chập chờn) → thử lại model đó 1 lần sau 3 giây
+        if (error.status !== 0 || /không trả lời/.test(error.message)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        return attempt(id);
+      }
+    }, IMAGE_HEDGE_MS);
     for (const [other, ac] of controllers) if (other !== model) ac.abort();
     let finalPath = outPath;
     if (bytes[0] === 0xff && bytes[1] === 0xd8) finalPath = outPath.replace(/\.(png|webp)$/i, ".jpg");
@@ -970,7 +980,7 @@ async function imageGenerate(args = {}) {
     return {
       ok: false, error: "Các model ảnh đều lỗi", tried, errors,
       next: "",
-      advice: "Báo người dùng lý do ngắn gọn (từ errors) và gợi ý thử lại sau ít phút; không tự viết script / thử tiếp nhiều cách khác."
+      advice: "Báo người dùng đúng lý do lấy từ errors (ghi tên model + câu lỗi, đừng nói chung chung 'lỗi kết nối') và gợi ý thử lại sau ít phút hoặc đổi model chat; không tự viết script / thử tiếp nhiều cách khác, không tự chuyển sang Muse."
     };
   }
 }
