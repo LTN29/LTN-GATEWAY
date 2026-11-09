@@ -154,3 +154,50 @@ print(json.dumps({"corner_same": a.getpixel((30, 170)) == b.getpixel((30, 170)),
     assert.match(t.text(await t.call("image_retouch", { source_path: src, output_path: src, ops: [{ op: "sharpen" }] })), /Không ghi đè ảnh gốc/);
   } finally { t.stop(); }
 });
+
+// Ảnh theo model chat đang chọn: GPT → gpt-image, Gemini → Gemini, Muse → Muse; không tự rơi vào Muse
+const IMG_IDS = ["muse2api/muse-image-chat", "gg/gemini-3-pro-image", "cx/gpt-image-2", "pf/flux-2-pro"];
+async function firstImageModel(chat, { fail = [], appModel = null } = {}) {
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: IMG_IDS.map((id) => ({ id })) });
+    if (url === "/v1/images/generations") return fail.includes(body.model) ? send(500, { error: { message: "upstream lỗi" } }) : send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    send(404, {});
+  }, chat);
+  if (appModel) writeFileSync(join(t.home, "ltn-chat-model.json"), JSON.stringify({ model: appModel, at: Date.now() }));
+  try {
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "A cute baby dragon", output_path: join(t.home, "out", "rong.png") })));
+    return { r, tried: t.seen.filter((s) => s.url === "/v1/images/generations").map((s) => s.body.model) };
+  } finally { t.stop(); }
+}
+
+test("image_generate theo model chat: GPT → gpt-image, Gemini → Gemini; Muse chỉ khi gọi đích danh (skill Muse)", async () => {
+  assert.equal((await firstImageModel("cx/gpt-6.1-sol")).r.model, "cx/gpt-image-2");
+  assert.equal((await firstImageModel("ag/gemini-3-pro")).r.model, "gg/gemini-3-pro-image");
+  assert.ok(!/muse/.test((await firstImageModel("muse2api/muse-spark-1.3")).r.model), "chat bằng Muse cũng không tự vẽ bằng Muse");
+  assert.equal((await firstImageModel("SIMI-GPT")).r.model, "cx/gpt-image-2", "Combo tên GPT cũng tính là GPT");
+});
+
+test("image_generate: đang chat GPT mà gpt-image lỗi thì dự phòng model khác, KHÔNG tự chuyển sang Muse", async () => {
+  const { r, tried } = await firstImageModel("cx/gpt-6.1-sol", { fail: ["cx/gpt-image-2"] });
+  assert.equal(r.ok !== false, true);
+  assert.ok(!tried.some((m) => /muse/i.test(m)), "không thử Muse: " + tried.join(", "));
+  const claude = await firstImageModel("cc/claude-opus-5-5", { fail: ["cx/gpt-image-2", "gg/gemini-3-pro-image", "pf/flux-2-pro"] });
+  assert.ok(!claude.tried.some((m) => /muse/i.test(m)), "Claude cũng không tự dùng Muse");
+});
+
+test("image_generate: gọi đích danh model Muse thì mới dùng Muse", async () => {
+  const t = await start(({ url }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: IMG_IDS.map((id) => ({ id })) });
+    if (url === "/v1/images/generations") return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "dragon", model: "muse2api/muse-image-chat", output_path: join(t.home, "out", "m.png") })));
+    assert.equal(r.model, "muse2api/muse-image-chat");
+  } finally { t.stop(); }
+});
+
+test("image_generate: lấy model người dùng ĐANG chọn trong app (không theo config.toml / AI tự điền)", async () => {
+  const { r } = await firstImageModel("cx/gpt-6.1-sol", { appModel: "ag/gemini-3-pro" });
+  assert.equal(r.model, "gg/gemini-3-pro-image");
+});

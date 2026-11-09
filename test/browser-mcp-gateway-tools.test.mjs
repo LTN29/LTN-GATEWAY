@@ -34,7 +34,7 @@ test("web_search, web_fetch, image_generate gọi Gateway 1 lần, có dự phò
   });
   await new Promise((resolve) => gateway.listen(0, "127.0.0.1", resolve));
   const home = mkdtempSync(join(tmpdir(), "simi-gw-tools-"));
-  writeFileSync(join(home, "config.toml"), 'model = "cc/claude-sonnet-5-5"\n');
+  writeFileSync(join(home, "config.toml"), 'model = "ag/gemini-3-pro"\n');
   const mcp = spawn(process.execPath, [join(import.meta.dirname, "..", "scripts", "browser-mcp.mjs")], {
     env: { ...process.env, CODEX_HOME: home, LTN_GATEWAY_BASE_URL: `http://127.0.0.1:${gateway.address().port}/v1`, LTN_TEAM_API_KEY: "k-test-secret", LTN_CLIENT_ID: "client-abc-123", TMPDIR: home, TEMP: home, TMP: home },
     stdio: ["pipe", "pipe", "inherit"]
@@ -65,7 +65,7 @@ test("web_search, web_fetch, image_generate gọi Gateway 1 lần, có dự phò
     assert.equal(result.ok, true, text(made));
     assert.equal(result.model, "cx/gpt-image-2", "model Gemini lỗi → tự chuyển sang model kế tiếp");
     assert.ok(existsSync(result.path) && readFileSync(result.path).length === PNG.length);
-    assert.deepEqual(seen.filter((s) => s.url === "/v1/images/generations").map((s) => s.body.model), ["gg/gemini-3-pro-image", "cx/gpt-image-2"], "chat Claude → Gemini image trước");
+    assert.deepEqual(seen.filter((s) => s.url === "/v1/images/generations").map((s) => s.body.model), ["gg/gemini-3-pro-image", "cx/gpt-image-2"], "chat Gemini → Gemini image trước");
     const again = JSON.parse(text(await call("image_generate", { prompt: "Banner Tết", output_path: out })));
     assert.notEqual(again.path, result.path, "không ghi đè ảnh cũ");
 

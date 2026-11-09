@@ -41,11 +41,14 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
   `prompt` (viết theo mục "Viết prompt"), `output_path` (đường dẫn tuyệt đối
   `<thư mục làm việc>/outputs/<ten-ngan-khong-dau>.png`), `mode` = `generate` /
   `edit`, `source_path` khi sửa ảnh, `size` nếu cần, `chat_model` = model chat
-  đang dùng. Công cụ tự chọn model ảnh cùng hãng, tự dự phòng, lưu file – không
-  cần quyền mạng của sandbox, không phải chạy khối lệnh dài.
+  đang dùng. Công cụ tự chọn model ảnh **theo model chat người dùng đang chọn**
+  (GPT → gpt-image, Gemini → Gemini/Imagen; Claude và model khác → model ảnh tốt
+  nhất), tự dự phòng, lưu file – không cần quyền mạng của sandbox.
+- **Không bao giờ tự dùng Muse** (`muse_image`, skill `muse-tao-anh`): chỉ khi người
+  dùng chọn skill Muse hoặc ghi đích danh "Muse". Ảnh lỗi thì báo người dùng, không chuyển sang Muse.
 - Gọi **một lần** cho mỗi yêu cầu. Kết quả `ok:true` → hiển thị ảnh bằng giá trị
   `show` (`![](đường dẫn)`) và kết thúc lượt. `next:"muse_image"` → chuyển sang
-  công cụ `muse_image` với ảnh gốc làm `refs`, đúng một lần.
+  công cụ `muse_image` với ảnh gốc làm `refs`, đúng một lần (công cụ chỉ trả `next` này khi người dùng đã chọn Muse).
 - Chỉ khi phiên KHÔNG có công cụ `image_generate` mới dùng "Khối lệnh" bên dưới.
 
 Dựa trên skill `9router-image` của 9Router, chỉnh cho SIMI: mọi request đi qua
@@ -80,8 +83,10 @@ Model chat không tự vẽ ảnh; ảnh do model ảnh tạo qua Gateway, chọ
 | `Chat` | ID model chat của phiên (ví dụ `cx/gpt-5.5`, `ag/gemini-3-pro`, `cc/claude-opus-5-5`); không rõ thì đọc dòng `model = "..."` trong `config.toml` của Codex |
 | `Want` | model ảnh user chỉ định đích danh; thường để trống |
 
-Công cụ `image_generate` tự xếp model ảnh theo chất lượng (bản mới / pro trước,
-bản mini / miễn phí sau). Khối lệnh dự phòng: chat GPT (`cx/`, `gpt`, `openai/`) →
+Công cụ `image_generate` lấy model ảnh cùng hãng với model chat đang chọn trước,
+rồi mới tới model ảnh tốt nhất khác (bản mới / pro trước, bản mini / miễn phí sau),
+không bao giờ tự dùng Muse. Khối lệnh dự phòng: chat GPT (`cx/`,
+`gpt`, `openai/`) →
 model ảnh `cx/` trước; Gemini, Claude và model khác → model Gemini image trước. Mỗi yêu cầu thử tối đa
 2 model. Sửa ảnh chỉ dùng model có khả năng `edit` theo `/models/info` (model chỉ
 tạo ảnh từ chữ sẽ bỏ qua ảnh gốc nên không dùng). Model lỗi phía provider bị bỏ

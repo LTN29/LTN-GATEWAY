@@ -284,7 +284,7 @@ const tools = [
 
 tools.push({
   name: "muse_image",
-  description: "Create or edit an image with Muse through the SIMI Gateway and save it on this computer. Runs outside the Codex sandbox, so it needs no network approval. Call it ONCE per user request and wait (up to about 3 minutes); never call it again automatically after an error. Returns ok, images[].path (absolute local file to show the user), images[].download_url, meta, or error.",
+  description: "ONLY when the user selected the Muse skill (muse-tao-anh / simi-tao-video) or explicitly writes \"Muse\". Never for an ordinary image request – use image_generate, which follows the user's chosen chat model. Create or edit an image with Muse through the SIMI Gateway and save it on this computer. Runs outside the Codex sandbox, so it needs no network approval. Call it ONCE per user request and wait (up to about 3 minutes); never call it again automatically after an error. Returns ok, images[].path (absolute local file to show the user), images[].download_url, meta, or error.",
   inputSchema: {
     type: "object",
     properties: {
@@ -833,6 +833,16 @@ async function readBadModels() {
   } catch { return {}; }
 }
 
+// model chat người dùng ĐANG chọn trong Văn Phòng AI (app ghi mỗi lượt chat) – đúng hơn chat_model do AI tự điền
+// hay model mặc định trong config.toml (app đổi model theo từng đoạn chat mà không sửa config).
+function chatModelFromApp() {
+  try {
+    const raw = JSON.parse(readFileSync(join(codexHome, "ltn-chat-model.json"), "utf8"));
+    if (raw && typeof raw.model === "string" && raw.model && Date.now() - Number(raw.at || 0) < 6 * 3600_000) return raw.model;
+  } catch { /* chưa có: dùng nguồn khác */ }
+  return "";
+}
+
 function chatModelFromConfig() {
   try {
     const text = readFileSync(join(codexHome, "config.toml"), "utf8");
@@ -851,13 +861,29 @@ const IMAGE_TIERS = [
   [65, /gpt-image-1-mini|dall-?e-?3|imagen-?3|flux[\w.-]*dev/i]
 ];
 const IMAGE_WEAK = /schnell|sdxl|sd-?1\.5|sd-?2|stable-?diffusion(?!-3\.5-large)|dall-?e-?2|lite|tiny|turbo|lightning|free|preview-?low/i;
-function rankImageModels(ids, chat = "") {
-  const family = /^(cx\/|gpt|openai\/)/i.test(chat) ? /^cx\/|gpt-image|openai/i : /gemini|imagen|nano-?banana/i;
+// Ảnh đi THEO MODEL CHAT người dùng chọn: GPT → gpt-image, Gemini → Gemini / Imagen.
+// Claude (không có model ảnh riêng) và model khác → model ảnh tốt nhất đang có.
+// Muse KHÔNG BAO GIỜ được chọn tự động: chỉ dùng khi người dùng chọn skill Muse (muse-tao-anh → công cụ muse_image)
+// hoặc gọi đích danh model Muse (tham số model).
+export function imageFamily(chat = "") {
+  const c = String(chat).toLowerCase();
+  if (/muse/.test(c)) return "muse";
+  if (/gemini|^ag\/|^gc\/|google|nano-?banana|imagen/.test(c)) return "gemini";
+  if (/claude|^cc\/|opus|sonnet|haiku|anthropic/.test(c)) return "claude";
+  if (/^cx\/|gpt|openai|codex|(^|\/)o\d/.test(c)) return "gpt";
+  return "";
+}
+const FAMILY_IMAGE = { gpt: /gpt-image|^cx\/|openai|dall-?e/i, gemini: /gemini|imagen|nano-?banana/i, muse: /muse/i };
+export function rankImageModels(ids, chat = "", wanted = "") {
+  const fam = imageFamily(chat);
+  const own = fam === "muse" ? null : FAMILY_IMAGE[fam];
   const score = (id) => {
     const tier = IMAGE_TIERS.find(([, re]) => re.test(id));
-    return (tier ? tier[0] : 60) - (IMAGE_WEAK.test(id) ? 40 : 0) + (family.test(id) ? 15 : 0) + (/combo/i.test(id) ? 3 : 0);
+    return (tier ? tier[0] : 60) - (IMAGE_WEAK.test(id) ? 40 : 0) + (own && own.test(id) ? 1000 : 0) + (/combo/i.test(id) ? 3 : 0);
   };
-  return [...new Set(ids)].map((id, index) => ({ id, index, score: score(id) }))
+  let list = [...new Set(ids)];
+  list = list.filter((id) => !/muse/i.test(id) || id === wanted);
+  return list.map((id, index) => ({ id, index, score: score(id) }))
     .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);
 }
 
@@ -879,9 +905,10 @@ async function imageGenerate(args = {}) {
   }
   const ids = (await discover("/models/image")).map((item) => item.id);
   if (!ids.length) throw new Error("Gateway chưa có model ảnh nào cho tài khoản này.");
-  const chat = String(args.chat_model || chatModelFromConfig());
-  let order = rankImageModels(ids, chat);
+  const chat = String(chatModelFromApp() || args.chat_model || chatModelFromConfig());
+  let order = rankImageModels(ids, chat, args.model);
   if (args.model && ids.includes(args.model)) order = [args.model, ...order];
+  if (!order.length) return { ok: false, error: "Chưa có model ảnh nào ngoài Muse cho tài khoản này.", advice: "Muốn dùng Muse thì người dùng chọn skill Muse (muse-tao-anh). Không tự gọi muse_image." };
   const bad = await readBadModels();
   order = [...new Set(order)].filter((id) => !bad[id]);
   if (mode === "edit") {
@@ -891,7 +918,9 @@ async function imageGenerate(args = {}) {
       return caps === null ? (EDIT_HINT.test(id) ? id : null) : caps.includes("edit") ? id : null;
     }));
     order = checked.filter(Boolean);
-    if (!order.length) return { ok: false, error: "Chưa có model sửa ảnh dùng được – dùng công cụ muse_image với ảnh gốc làm refs.", next: "muse_image" };
+    if (!order.length) {
+      return { ok: false, error: "Model ảnh hiện có chưa sửa được ảnh này.", advice: "Chỉnh chi tiết nhỏ thì dùng image_retouch; còn lại báo người dùng đổi model chat (vd GPT / Gemini) rồi thử lại. Không tự chuyển sang Muse – Muse chỉ dùng khi người dùng chọn skill Muse." };
+    }
   }
   await mkdir(dirname(outPath), { recursive: true });
   const startedAt = Date.now();
@@ -940,7 +969,7 @@ async function imageGenerate(args = {}) {
     if (error.fatal) return { ok: false, status: error.status, error: error.message };
     return {
       ok: false, error: "Các model ảnh đều lỗi", tried, errors,
-      next: mode === "edit" ? "muse_image" : "",
+      next: "",
       advice: "Báo người dùng lý do ngắn gọn (từ errors) và gợi ý thử lại sau ít phút; không tự viết script / thử tiếp nhiều cách khác."
     };
   }

@@ -1,9 +1,13 @@
 ---
 name: muse-tao-anh
-description: Tạo ảnh và sửa ảnh nhiều lượt bằng Muse (model muse2api/muse-image-chat) qua Gateway Simi; ảnh được tải về máy và hiện ngay trong chat Codex. Dùng khi user muốn tạo ảnh bằng Muse hoặc chỉnh tiếp ảnh Muse vừa tạo cho đúng ý.
+description: Tạo / sửa ảnh nhiều lượt bằng Muse (muse2api/muse-image-chat). CHỈ dùng khi người dùng chọn skill này (muse-tao-anh) hoặc ghi đích danh chữ "Muse", hoặc chỉnh tiếp ảnh Muse vừa tạo. Yêu cầu tạo ảnh thông thường dùng simi-tao-anh (ảnh theo model chat đang chọn), không dùng skill này.
 ---
 
 # Muse - Tạo ảnh và sửa nhiều lượt
+
+**Chỉ dùng khi người dùng chọn skill Muse hoặc ghi đích danh "Muse".** Yêu cầu "tạo ảnh",
+"vẽ", "làm poster"… bình thường → skill `simi-tao-anh` / công cụ `image_generate`
+(model ảnh theo model chat người dùng đang chọn). Không tự chuyển sang Muse khi model khác lỗi.
 
 App Codex không hiện ảnh từ link ngoài, nên luôn tải ảnh về máy rồi hiển thị bằng
 đường dẫn tuyệt đối. Không hỏi user key, không đọc/in key, không gọi `router.simi.vn`.
