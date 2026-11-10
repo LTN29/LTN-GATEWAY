@@ -383,13 +383,41 @@ function usageFromResponsePayload(payload) {
   return payload?.usage || payload?.response?.usage || null;
 }
 
+// Model suy nghĩ lâu (ngữ cảnh lớn, đọc file / trang web dài) có thể im lặng hàng chục giây giữa các sự kiện SSE →
+// Cloudflare / proxy cắt kết nối im lặng ~100 giây → Codex báo "stream disconnected before completion".
+// Im lặng quá SSE_HEARTBEAT_MS thì gửi dòng chú thích SSE (": keepalive") – client bỏ qua, kết nối được giữ.
+const SSE_HEARTBEAT_MS = Math.max(200, Number(process.env.SSE_HEARTBEAT_MS || 15000));
+function heartbeatReader(reader, res, isSse) {
+  let pending = null;
+  let atBoundary = true; // chỉ chèn chú thích giữa 2 sự kiện, không chèn giữa 1 sự kiện đang gửi dở
+  return {
+    async read() {
+      pending ||= reader.read();
+      while (true) {
+        let timer;
+        const tick = new Promise((resolve) => { timer = setTimeout(() => resolve("tick"), SSE_HEARTBEAT_MS); });
+        const r = await Promise.race([pending, tick]);
+        clearTimeout(timer);
+        if (r === "tick") {
+          if (isSse && atBoundary && !res.writableEnded) res.write(": keepalive\n\n");
+          continue;
+        }
+        pending = null;
+        return r;
+      }
+    },
+    sent(text) { if (text.length) atBoundary = /\n\r?\n$/.test(text); }
+  };
+}
+
 async function pipeAndCapture(upstream, res, toolMap = null, onChunk = null) {
   if (!upstream.body) {
     res.end();
     return Buffer.alloc(0);
   }
 
-  const reader = upstream.body.getReader();
+  const isSse = /text\/event-stream/i.test(String(upstream.headers.get("content-type") || ""));
+  const reader = heartbeatReader(upstream.body.getReader(), res, isSse);
   const captured = [];
   let capturedBytes = 0;
   const contentType = String(upstream.headers.get("content-type") || "");
@@ -420,6 +448,7 @@ async function pipeAndCapture(upstream, res, toolMap = null, onChunk = null) {
       if (text) {
         const chunk = Buffer.from(text);
         res.write(chunk);
+        reader.sent(text);
         if (onChunk) onChunk(chunk);
         capture(chunk);
       }
@@ -449,6 +478,7 @@ async function pipeAndCapture(upstream, res, toolMap = null, onChunk = null) {
 
     const chunk = Buffer.from(value);
     res.write(chunk);
+    if (isSse) reader.sent(chunk.subarray(-4).toString("latin1"));
     if (onChunk) onChunk(chunk);
 
     if (capturedBytes < config.maxCaptureBytes) {
