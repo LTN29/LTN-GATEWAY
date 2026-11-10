@@ -379,6 +379,7 @@ test("9Router: gpt-image qua tài khoản ChatGPT tạo ảnh mới không gửi
     assert.match(gen[0].body.prompt, /Output aspect ratio: portrait 2:3/);
     assert.equal(gen[1].body.size, "1536x1024");
     assert.equal(gen[1].body.images.length, 1);
+    assert.equal(gen[1].body.host_model, "gpt-6.1-sol", "báo 9Router dùng chính model chat đang chọn làm model nền");
     assert.match(gen[1].body.image, /^data:image\/png/);
   } finally { t.stop(); }
 });

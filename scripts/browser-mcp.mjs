@@ -971,7 +971,7 @@ const SOURCE_MAX_SIDE = 2400;
 const IMAGE_TIMEOUT_MS = Number(process.env.LTN_IMAGE_TIMEOUT_MS) || 240_000;
 const IMAGE_QUALITY = /^(high|medium|low|auto)$/.test(process.env.LTN_IMAGE_QUALITY || "") ? process.env.LTN_IMAGE_QUALITY : "high";
 // provider không nhận tham số chất lượng → bỏ tham số rồi gọi lại, không coi là model hỏng
-const PARAM_REJECTED = /quality|input_fidelity|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
+const PARAM_REJECTED = /quality|input_fidelity|host_model|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
 
 // đọc ảnh gốc / ảnh tham chiếu thành data URL; ảnh chụp điện thoại (4000px, 5–10 MB) gửi nguyên cỡ làm tải lên chậm gấp
 // nhiều lần mà model vẫn tự thu về ~1500px → thu nhỏ trước còn cạnh dài 2048px (cần Pillow; không có thì gửi ảnh gốc)
@@ -1069,7 +1069,10 @@ async function imageGenerate(args = {}) {
       }
     }
     // gpt-image: chất lượng cao như giao diện gốc của ChatGPT; sửa ảnh thêm input_fidelity để giữ đúng mặt người / logo / chữ của ảnh gốc
-    const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}) } : {};
+    // host_model: báo cho 9Router dùng CHÍNH model chat người dùng đang chọn làm model nền chạy công cụ vẽ ảnh
+    // (9Router gốc cố định 1 tên model nền → model đó ngừng là hỏng mọi ảnh). 9Router chưa hỗ trợ thì bỏ qua trường này.
+    const host = /^cx\//i.test(model) && /^cx\/[\w.-]+$/i.test(chat) && imageFamily(chat) === "gpt" && !/image/i.test(chat) ? chat.slice(3) : "";
+    const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}), ...(host ? { host_model: host } : {}) } : {};
     // 9Router: gpt-image qua tài khoản ChatGPT (cx/) tạo ảnh MỚI nhanh và ổn định nhất bằng đường Images gốc, nhưng chỉ khi
     // không kèm size (kèm size là rơi về đường vòng qua model chat nền – chậm, hay lỗi) → đưa tỉ lệ khung vào prompt
     const viaNative = !source && size && /^cx\//i.test(model);
