@@ -74,8 +74,15 @@ tài khoản bật `combo_members`: Gateway chuyển thẳng sang 9Router như c
 `combo`, không kiểm tra Combo và không parse body multipart/binary.
 
 Với `limited_daily`, danh sách bao gồm cả nhóm Premium và Free, nhưng request
-chỉ chấp nhận model thuộc tier hiện tại. Khi hết quota Premium, model Premium
-trả 403; user cần chọn model Free. Request bị từ chối không tiêu hao quota.
+chỉ chạy model thuộc tier hiện tại. Khi hết quota Premium mà user vẫn chọn model
+Premium, Gateway **tự chạy bằng Combo Free** (header `X-LTN-Model-Routed`, log
+`codex_model_auto_combo`) thay vì trả 403. Model ngoài mọi Combo được cấp vẫn trả 403
+và request bị từ chối không tiêu hao quota.
+
+Tự chuyển về Combo (không báo lỗi) cũng áp dụng khi: model trống / `auto` / tên Combo
+(config cũ của chế độ `combo`), model vừa bị bỏ khỏi Combo hiện tại nhưng còn trong Combo
+khác được cấp, hoặc tạm không đọc được danh sách Combo từ 9Router (khi đó `/v1/models`
+vẫn trả 503 để không lộ danh sách model ngoài Combo).
 Các tài khoản này chỉ được inference qua `/v1/responses` để tránh vượt quota
 bằng Chat Completions hoặc Messages. Muốn user luôn chọn model trong một nhóm
 chức vụ, dùng `premium_always`, `free_only` hoặc `test_only` thay vì limited daily.
@@ -109,7 +116,8 @@ gán policy cho một key pilot rồi Repair trên máy pilot. Xác minh:
 
 - Key pilot chỉ lấy được thành viên Combo được cấp.
 - Model đã chọn đến 9Router nguyên ID và dùng được tool calls.
-- ID model ngoài nhóm trả 403, dashboard không đọc được trả 503.
+- ID model ngoài mọi nhóm được cấp trả 403; dashboard không đọc được thì `/v1/models` trả 503,
+  còn lượt chat tự chạy bằng Combo được cấp.
 - Menu desktop và mức reasoning trên phiên bản Codex của user.
 
 ## Common plugins installed with model setup

@@ -200,12 +200,20 @@ test("key-scoped model list, direct routing, live membership, quota and API bypa
   assert.equal((await call("/v1/responses", "key-daily", { model: "cc/claude", input: "hi" })).status, 403);
   // A denied request releases its reservation, preserving the one Premium slot.
   assert.equal((await call("/v1/responses", "key-daily", { model: "cx/gpt", input: "hi" })).status, 200);
-  assert.equal((await call("/v1/responses", "key-daily", { model: "cx/gpt", input: "hi" })).status, 403);
+  // Hết lượt Premium mà vẫn chọn model Premium (model thuộc Combo được cấp) → tự chạy bằng Combo Free, không báo lỗi
+  const autoFree = await call("/v1/responses", "key-daily", { model: "cx/gpt", input: "hi" });
+  assert.equal(autoFree.status, 200);
+  assert.equal(autoFree.headers.get("x-ltn-model-routed"), "SIMI-FREE");
+  assert.equal(forwarded.at(-1).payload.model, "SIMI-FREE");
   assert.equal((await call("/v1/responses", "key-daily", { model: "oc/free", input: "hi" })).status, 200);
+  assert.equal(forwarded.at(-1).payload.model, "oc/free");
   assert.equal((await call("/v1/chat/completions", "key-daily", { model: "cx/gpt", messages: [] })).status, 403);
   combos[0].models = ["cx/gpt"];
   assert.equal((await call("/v1/responses", "key-alpha", { model: "ag/gemini", input: "hi" })).status, 403);
   dashboardUnavailable = true;
   assert.equal((await call("/v1/models")).status, 503);
-  assert.equal((await call("/v1/responses", "key-alpha", { model: "cx/gpt", input: "hi" })).status, 503);
+  // Tạm không đọc được Combo từ 9Router → chạy bằng Combo được cấp (không kiểm được model) thay vì báo lỗi
+  const offline = await call("/v1/responses", "key-alpha", { model: "cx/gpt", input: "hi" });
+  assert.equal(offline.status, 200);
+  assert.equal(forwarded.at(-1).payload.model, offline.headers.get("x-ltn-model-routed"));
 });

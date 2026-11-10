@@ -13,7 +13,7 @@ import {
   injectMemory
 } from "./memory.mjs";
 import { upstreamFetch } from "./upstream.mjs";
-import { memberSelectionEnabled, comboModelList, assertComboModelAllowed, preferredDefaultModel } from "./combo-model-access.mjs";
+import { memberSelectionEnabled, comboModelList, assertComboModelAllowed, preferredDefaultModel, allowedComboModels, comboIdsForPolicy } from "./combo-model-access.mjs";
 import { recordModelSpeed, withModelSpeed } from "./model-speed.mjs";
 import { scheduleMemoryExtraction } from "./extractor.mjs";
 import {
@@ -29,6 +29,7 @@ import {
 } from "./response-parser.mjs";
 import {
   codexConfigForPrincipal,
+  resolvePrincipalCodexPolicy,
   selectCodexRoute,
   validateClientId
 } from "./codex-routing.mjs";
@@ -705,11 +706,29 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   });
   shouldReleaseRoute = true;
   if (memberSelectionEnabled(principal)) {
-    try {
-      await assertComboModelAllowed(principal, payload.model, id, [route.selectedCombo]);
-    } catch (error) {
-      await route.release();
-      throw error;
+    // Người dùng chọn model trong Combo. Model không thuộc Combo đang tới lượt (chọn model Premium khi đã hết lượt Premium,
+    // config cũ ghi tên Combo / "auto", model vừa bị bỏ khỏi Combo) hoặc tạm không đọc được Combo từ 9Router
+    // → tự chạy bằng chính Combo đó (9Router tự chọn model còn dùng được) thay vì báo lỗi 403 / 503 cho người dùng.
+    // Model ngoài mọi Combo được cấp vẫn bị từ chối (403) như trước.
+    let allowed = null; let reason = "";
+    try { allowed = await allowedComboModels(principal, id, [route.selectedCombo]); } catch (error) { reason = error.message; }
+    if (allowed && !allowed.includes(payload.model)) {
+      const requested = String(payload.model || "");
+      const policyCombos = comboIdsForPolicy(resolvePrincipalCodexPolicy(principal));
+      let entitled = !requested || requested === "auto" || policyCombos.includes(requested);
+      if (!entitled) {
+        try { entitled = (await allowedComboModels(principal, id, policyCombos)).includes(requested); } catch { entitled = false; }
+      }
+      if (!entitled) {
+        await route.release();
+        await assertComboModelAllowed(principal, payload.model, id, [route.selectedCombo]); // ném lỗi 403 kèm danh sách model được dùng
+      }
+      reason = "not_in_current_combo";
+    }
+    if (!allowed || reason) {
+      upstreamPayload.model = route.selectedCombo;
+      res.setHeader("x-ltn-model-routed", route.selectedCombo);
+      jsonLog("codex_model_auto_combo", { requestId: id, userId: principal.userId, requested: String(payload.model || "").slice(0, 120), combo: route.selectedCombo, reason: reason || "not_in_combo" });
     }
   } else {
     upstreamPayload.model = route.selectedCombo;
