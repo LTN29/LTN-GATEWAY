@@ -24,6 +24,19 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
 - Xuất xong **nhìn ảnh xem trước + đọc cảnh báo** (chữ tràn, bị cắt, bị khối khác
   đè) → sửa → xuất lại cùng `path`, tối đa 3 vòng.
 
+## Chọn đúng công cụ ngay từ đầu (không thử cách khác trước)
+
+| Yêu cầu | Công cụ |
+|---|---|
+| Đổi màu chữ / logo, xoá nền logo / chữ ký / con dấu / sản phẩm trên nền trơn, làm nét, cắt, xoay, chỉnh sáng, xoá chữ trên nền phẳng, chèn logo | `image_retouch` – 1 lần gọi, vài giây |
+| Đổi nền thành cảnh khác, thêm / bớt vật thể, tách nền ảnh chụp người / vật trên nền phức tạp, đổi phong cách, ghép nhiều ảnh | `image_generate` mode `edit` (tách nền: `transparent_background: true`) |
+| Poster, banner, bài đăng, ảnh có chữ tiếng Việt | tự thiết kế HTML → `design_render` |
+| Ảnh chụp / tranh mới | `image_generate` |
+
+Không tự viết script Python / Node / PowerShell để xử lý ảnh khi đã có các công cụ trên.
+Logo chữ đen nền màu → chữ trắng nền trong suốt:
+`ops: [{op:"transparent", mode:"all"}, {op:"recolor", to:"#ffffff"}]`, `output_path` đuôi `.png`.
+
 ## Chỉnh ảnh có sẵn: dùng `image_retouch` trước (nhanh, giữ đúng chi tiết)
 
 - Làm nét, phóng to, chỉnh sáng / màu, khử nhiễu, cắt, xoay, xoá chữ / vết, viết lại

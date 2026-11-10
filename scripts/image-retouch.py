@@ -15,7 +15,7 @@ import os
 import sys
 
 try:
-    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps, ImageStat
+    from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps, ImageStat
 except ImportError:  # pragma: no cover
     print(json.dumps({"error": {"message": "Máy chưa có Pillow – chạy Cập nhật SIMI (Repair) để cài lại bộ Python của SIMI."}}))
     sys.exit(1)
@@ -104,6 +104,47 @@ def load_font(kind, size):
     return ImageFont.load_default()
 
 
+def distance_map(img, color):
+    """Ảnh xám: mỗi điểm = độ lệch màu lớn nhất (0–255) so với `color`."""
+    rgb = img.convert("RGB")
+    diff = ImageChops.difference(rgb, Image.new("RGB", rgb.size, tuple(color[:3])))
+    r, g, b = diff.split()
+    return ImageChops.lighter(ImageChops.lighter(r, g), b)
+
+
+def ramp(dist, tolerance, soften):
+    """0 khi lệch ≤ tolerance, 255 khi lệch ≥ tolerance + soften, chuyển dần ở giữa (mép chữ không bị răng cưa)."""
+    soften = max(1, int(soften))
+    return dist.point([0 if d <= tolerance else 255 if d >= tolerance + soften else int(255 * (d - tolerance) / soften) for d in range(256)])
+
+
+def corner_color(img):
+    """Màu nền: trung vị 4 góc ảnh."""
+    rgb = img.convert("RGB")
+    k = max(2, min(rgb.width, rgb.height) // 40)
+    meds = [ImageStat.Stat(rgb.crop(b)).median for b in ((0, 0, k, k), (rgb.width - k, 0, rgb.width, k), (0, rgb.height - k, k, rgb.height), (rgb.width - k, rgb.height - k, rgb.width, rgb.height))]
+    return tuple(int(sorted(m[i] for m in meds)[1]) for i in range(3))
+
+
+def main_color(img, skip):
+    """Màu chiếm nhiều nhất không phải nền (vd màu chữ của logo); bỏ qua điểm trong suốt."""
+    small = img.convert("RGBA")
+    small.thumbnail((160, 160))
+    counts = {}
+    raw = small.tobytes()
+    for i in range(0, len(raw), 4):
+        r, g, b, a = raw[i], raw[i + 1], raw[i + 2], raw[i + 3]
+        if a < 128 or max(abs(r - skip[0]), abs(g - skip[1]), abs(b - skip[2])) <= 40:
+            continue
+        key = (r // 24, g // 24, b // 24)
+        n, sr, sg, sb = counts.get(key, (0, 0, 0, 0))
+        counts[key] = (n + 1, sr + r, sg + g, sb + b)
+    if not counts:
+        fail("Không tìm thấy màu nào khác màu nền để đổi – nêu rõ màu cần đổi ở `from`")
+    n, sr, sg, sb = max(counts.values())
+    return (sr // n, sg // n, sb // n)
+
+
 def apply(img, op):
     kind = str(op.get("op", "")).lower()
     region = op.get("box")
@@ -171,6 +212,40 @@ def apply(img, op):
             ImageDraw.Draw(edge).rectangle(fb, fill=255)
             ImageDraw.Draw(edge).rectangle((b[0] + pad, b[1] + pad, b[2] - pad, b[3] - pad), fill=0)
             out = Image.composite(blurred, out, edge.filter(ImageFilter.GaussianBlur(feather)))
+        return out
+    if kind == "transparent":
+        # xoá nền theo màu (logo, chữ ký, con dấu, ảnh sản phẩm nền trơn): mode "edge" chỉ xoá vùng nền nối với mép ảnh
+        # (giữ mảng cùng màu nằm trong vật thể), "all" xoá mọi điểm cùng màu nền
+        out = img.convert("RGBA")
+        bg = corner_color(out) if op.get("color") in (None, "auto") else color_of(op.get("color"))
+        tol = int(op.get("tolerance", 24))
+        keep = ramp(distance_map(out, bg), tol, op.get("soften", 16))  # 255 = giữ
+        if str(op.get("mode", "edge")).lower() != "all":
+            scale = max(1, max(out.size) // 700)
+            small = keep.resize((max(1, out.width // scale), max(1, out.height // scale)), Image.BILINEAR).point(lambda v: 0 if v < 128 else 255)
+            w, h = small.size
+            px = small.load()
+            for x, y in [(x, y) for x in range(0, w, 2) for y in (0, h - 1)] + [(x, y) for y in range(0, h, 2) for x in (0, w - 1)]:
+                if px[x, y] == 0:
+                    ImageDraw.floodfill(small, (x, y), 100)
+            outside = small.point(lambda v: 255 if v == 100 else 0).resize(out.size, Image.BILINEAR).filter(ImageFilter.MaxFilter(3))
+            keep = ImageChops.lighter(keep, ImageChops.invert(outside))  # ngoài vùng nối mép: giữ nguyên
+        out.putalpha(ImageChops.darker(out.getchannel("A"), keep))
+        return out
+    if kind == "recolor":
+        # đổi 1 màu thành màu khác, giữ mép mượt và độ trong suốt (vd chữ logo đen → trắng)
+        out = img.convert("RGBA")
+        source = main_color(out, corner_color(out)) if op.get("from") in (None, "auto") else color_of(op.get("from"))
+        target = color_of(op.get("to") or op.get("color"), (255, 255, 255))
+        weight = ImageChops.invert(ramp(distance_map(out, source), int(op.get("tolerance", 40)), op.get("soften", 40)))  # 255 = đổi hẳn
+        region = op.get("box")
+        if region is not None:
+            only = Image.new("L", out.size, 0)
+            ImageDraw.Draw(only).rectangle(box_of(out, region), fill=255)
+            weight = ImageChops.darker(weight, only)
+        alpha = out.getchannel("A")
+        out = Image.composite(Image.new("RGBA", out.size, tuple(target[:3]) + (255,)), out, weight)
+        out.putalpha(alpha)
         return out
     if kind == "text":
         text = str(op.get("text", ""))

@@ -50,7 +50,7 @@ const GATEWAY_TOOLS = [
   },
   {
     name: "image_generate",
-    description: "Tạo ảnh mới hoặc sửa ảnh (xoá chữ, đổi màu, đổi nền, outpaint, ghép) bằng model ảnh qua SIMI Gateway, tự chọn model và dự phòng, lưu file ảnh về máy. Chất lượng cao theo mặc định; sửa ảnh tự giữ đúng tỉ lệ khung và chi tiết ảnh gốc. Gọi MỘT lần cho mỗi yêu cầu; ok:true thì hiển thị ảnh bằng giá trị show và trả lời 1–2 câu rồi kết thúc – không tạo lại, không kể prompt / model / tham số.",
+    description: "Tạo ảnh mới, hoặc sửa ảnh khi phải VẼ nội dung mới (đổi nền / bối cảnh, thêm bớt vật thể, tách nền ảnh chụp người / sản phẩm, đổi phong cách, outpaint, ghép nhiều ảnh) bằng model ảnh qua SIMI Gateway – tự chọn model theo model chat đang dùng, tự dự phòng, lưu file về máy. Chỉnh có quy tắc trên ảnh có sẵn (đổi màu chữ / logo, xoá nền logo nền trơn, làm nét, cắt, xoay, chỉnh sáng) thì dùng image_retouch – nhanh và giữ đúng chi tiết hơn. Chất lượng cao theo mặc định; sửa ảnh tự giữ đúng tỉ lệ khung và chi tiết ảnh gốc. Gọi MỘT lần cho mỗi yêu cầu, gọi ngay không thử cách khác trước; ok:true thì hiển thị ảnh bằng giá trị show và trả lời 1–2 câu rồi kết thúc – không tạo lại, không kể prompt / model / tham số.",
     annotations: { readOnlyHint: false, openWorldHint: true, title: "Tạo ảnh" },
     inputSchema: {
       type: "object",
@@ -61,6 +61,7 @@ const GATEWAY_TOOLS = [
         ref_paths: { type: "array", items: { type: "string" }, maxItems: 3, description: "edit: ảnh tham chiếu thêm (tối đa 3) – vd ảnh sản phẩm / logo phải giữ đúng, ảnh người mẫu, ảnh phong cách. Prompt nói rõ mỗi ảnh dùng để làm gì." },
         output_path: { type: "string", description: "Nơi lưu ảnh: đường dẫn tuyệt đối trong thư mục làm việc của đoạn chat, ví dụ <thư mục làm việc>/outputs/banner-tet.png. Tên mới cho mỗi lần, không ghi đè." },
         size: { type: "string", enum: ["1024x1024", "1024x1536", "1536x1024"], description: "Vuông / dọc / ngang theo mục đích (bài đăng vuông, poster / story dọc, banner / slide ngang). Sửa ảnh: bỏ trống – tự lấy theo tỉ lệ ảnh gốc." },
+        transparent_background: { type: "boolean", description: "edit: true khi cần kết quả nền trong suốt (tách nền ảnh chụp người / sản phẩm). Chỉ model gpt-image hỗ trợ; output_path đuôi .png." },
         quality: { type: "string", enum: ["high", "medium"], description: "Bỏ trống = high (đẹp, chi tiết – dùng cho ảnh giao người dùng). medium: nhanh hơn, chỉ khi người dùng cần bản nháp / cần gấp." },
         chat_model: { type: "string", description: "ID model chat đang dùng (để chọn model ảnh cùng hãng)." },
         model: { type: "string", description: "Model ảnh người dùng chỉ định đích danh (thường bỏ trống)." }
@@ -88,7 +89,7 @@ const GATEWAY_TOOLS = [
   },
   {
     name: "image_retouch",
-    description: "Sửa ảnh CHÍNH XÁC ngay trên máy, giữ nguyên mọi chi tiết ảnh gốc, vài giây là xong: làm nét (cả ảnh hoặc 1 vùng), phóng to, chỉnh sáng / tương phản / màu, khử nhiễu, cắt, xoay, đổi cỡ, xoá chữ / vết bẩn bằng màu nền, viết lại chữ đúng vị trí (vd làm rõ logo / chữ bị mờ), làm mờ / che vùng, chèn logo. DÙNG TRƯỚC image_generate cho mọi yêu cầu chỉnh ảnh có sẵn mà phải giữ đúng chi tiết; image_generate (vẽ lại cả ảnh, chậm) chỉ khi cần vẽ nội dung mới. Xem ảnh kết quả rồi chỉnh thêm 1–2 lần nếu cần.",
+    description: "Sửa ảnh CHÍNH XÁC ngay trên máy trong vài giây, giữ nguyên mọi chi tiết khác của ảnh gốc. DÙNG NGAY công cụ này (không tự viết script Python / Node, không gọi image_generate) cho: xoá nền / tách nền theo màu thành PNG trong suốt (logo, chữ ký, con dấu, sản phẩm trên nền trơn – op transparent), đổi màu chữ / logo / mảng màu (op recolor), làm nét, phóng to, chỉnh sáng / tương phản / màu, khử nhiễu, cắt, xoay, lật, đổi cỡ, xoá chữ / vết bẩn trên nền phẳng, viết lại chữ đúng vị trí, làm mờ / che vùng, chèn logo. KHÔNG dùng cho việc phải VẼ nội dung mới (đổi bối cảnh / nền thành cảnh khác, thêm bớt vật thể, tách nền ảnh chụp người / vật trên nền phức tạp, đổi phong cách) – các việc đó gọi thẳng image_generate mode edit. Gộp mọi bước vào 1 lần gọi; xem ảnh kết quả, chỉ gọi lại khi sai thấy rõ (tối đa 2 lần).",
     annotations: { readOnlyHint: false, openWorldHint: false, title: "Chỉnh ảnh" },
     inputSchema: {
       type: "object",
@@ -98,11 +99,15 @@ const GATEWAY_TOOLS = [
         inspect: { type: "boolean", description: "true: chỉ trả kích thước ảnh, không sửa." },
         ops: {
           type: "array", maxItems: 40,
-          description: "Các bước theo thứ tự. box = [x0,y0,x1,y1] theo pixel hoặc theo tỉ lệ 0–1 của ảnh (vd [0.42,0.31,0.58,0.36]). Ví dụ làm rõ chữ mờ: [{op:'erase',box},{op:'text',text:'UNIQ',box,color:'#5a5a5a',font:'bold'},{op:'sharpen',amount:120}].",
+          description: "Các bước theo thứ tự. box = [x0,y0,x1,y1] theo pixel hoặc theo tỉ lệ 0–1 của ảnh (vd [0.42,0.31,0.58,0.36]). Ví dụ logo chữ đen nền màu → chữ trắng nền trong suốt: [{op:'transparent',mode:'all'},{op:'recolor',to:'#ffffff'}] (output_path đuôi .png). Ví dụ làm rõ chữ mờ: [{op:'erase',box},{op:'text',text:'UNIQ',box,color:'#5a5a5a',font:'bold'},{op:'sharpen',amount:120}].",
           items: {
             type: "object",
             properties: {
-              op: { type: "string", enum: ["sharpen", "upscale", "denoise", "enhance", "autocontrast", "blur", "crop", "resize", "rotate", "flip", "erase", "text", "overlay"] },
+              op: { type: "string", enum: ["transparent", "recolor", "sharpen", "upscale", "denoise", "enhance", "autocontrast", "blur", "crop", "resize", "rotate", "flip", "erase", "text", "overlay"] },
+              mode: { type: "string", enum: ["edge", "all"], description: "transparent: edge (mặc định) chỉ xoá nền nối với mép ảnh, giữ mảng cùng màu bên trong vật thể; all xoá mọi điểm cùng màu nền (vd lỗ trong chữ O, A)." },
+              from: { type: "string", description: "recolor: màu cần đổi #hex, hoặc 'auto' (mặc định) = màu chính của chữ / logo." },
+              to: { type: "string", description: "recolor: màu mới #hex (vd #ffffff)." },
+              tolerance: { type: "number", description: "transparent / recolor: độ lệch màu được coi là cùng màu, 0–255 (mặc định 24 / 40). Còn sót viền nền → tăng; ăn vào vật thể → giảm." },
               box: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 },
               amount: { type: "number", description: "sharpen: độ nét 50–300 (mặc định 160)." },
               radius: { type: "number", description: "sharpen / blur: bán kính." },
@@ -110,7 +115,7 @@ const GATEWAY_TOOLS = [
               brightness: { type: "number" }, contrast: { type: "number" }, saturation: { type: "number" }, sharpness: { type: "number" },
               width: { type: "integer" }, height: { type: "integer" }, degrees: { type: "number" },
               direction: { type: "string", enum: ["horizontal", "vertical"] },
-              color: { type: "string", description: "erase: 'auto' (màu nền xung quanh) hoặc #hex; text: màu chữ #hex." },
+              color: { type: "string", description: "erase: 'auto' (màu nền xung quanh) hoặc #hex; text: màu chữ #hex; transparent: màu nền cần xoá, 'auto' (mặc định) = màu 4 góc ảnh." },
               text: { type: "string" },
               font: { type: "string", description: "text: bold | regular | serif | đường dẫn file .ttf." },
               align: { type: "string", enum: ["left", "center", "right"] },
@@ -989,7 +994,7 @@ const SOURCE_MAX_SIDE = 2400;
 const IMAGE_TIMEOUT_MS = Number(process.env.LTN_IMAGE_TIMEOUT_MS) || 240_000;
 const IMAGE_QUALITY = /^(high|medium|low|auto)$/.test(process.env.LTN_IMAGE_QUALITY || "") ? process.env.LTN_IMAGE_QUALITY : "high";
 // provider không nhận tham số chất lượng → bỏ tham số rồi gọi lại, không coi là model hỏng
-const PARAM_REJECTED = /quality|input_fidelity|host_model|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
+const PARAM_REJECTED = /quality|input_fidelity|host_model|background|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
 
 // đọc ảnh gốc / ảnh tham chiếu thành data URL; ảnh chụp điện thoại (4000px, 5–10 MB) gửi nguyên cỡ làm tải lên chậm gấp
 // nhiều lần mà model vẫn tự thu về ~1500px → thu nhỏ trước còn cạnh dài 2048px (cần Pillow; không có thì gửi ảnh gốc)
@@ -1094,7 +1099,7 @@ async function imageGenerate(args = {}) {
     // host_model: báo cho 9Router dùng CHÍNH model chat người dùng đang chọn làm model nền chạy công cụ vẽ ảnh
     // (9Router gốc cố định 1 tên model nền → model đó ngừng là hỏng mọi ảnh). 9Router chưa hỗ trợ thì bỏ qua trường này.
     const host = /^cx\//i.test(model) && /^cx\/[\w.-]+$/i.test(chat) && imageFamily(chat) === "gpt" && !/image/i.test(chat) ? chat.slice(3) : "";
-    const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}), ...(host ? { host_model: host } : {}) } : {};
+    const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}), ...(source && args.transparent_background === true ? { background: "transparent" } : {}), ...(host ? { host_model: host } : {}) } : {};
     // 9Router: gpt-image qua tài khoản ChatGPT (cx/) tạo ảnh MỚI nhanh và ổn định nhất bằng đường Images gốc, nhưng chỉ khi
     // không kèm size (kèm size là rơi về đường vòng qua model chat nền – chậm, hay lỗi) → đưa tỉ lệ khung vào prompt
     const viaNative = !source && size && /^cx\//i.test(model);
@@ -1216,6 +1221,7 @@ function hedged(candidates, run, hedgeMs) {
 
 // ---------- chỉnh ảnh chính xác trên máy (Pillow) ----------
 const retouchScriptPath = process.env.LTN_IMAGE_RETOUCH_PATH || join(codexHome, "tools", "image-retouch.py");
+let pillowTried = false;
 async function imageRetouch(args = {}) {
   const src = String(args.source_path || "").trim();
   if (!src || !existsSync(src)) throw new Error("Không thấy ảnh gốc – cần source_path là đường dẫn tuyệt đối.");
@@ -1228,12 +1234,17 @@ async function imageRetouch(args = {}) {
     if (!/\.(png|jpe?g|webp)$/i.test(out)) out += extname(src).match(/\.(png|jpe?g|webp)$/i) ? extname(src) : ".png";
     if (resolvePath(out) === resolvePath(src)) throw new Error("Không ghi đè ảnh gốc – chọn output_path khác.");
     for (let n = 2; existsSync(out); n += 1) out = out.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
-    request.output = out;
     request.ops = Array.isArray(args.ops) ? args.ops : [];
+    // nền trong suốt cần PNG / WebP (JPEG không có kênh trong suốt)
+    if (request.ops.some((op) => op && op.op === "transparent") && /\.jpe?g$/i.test(out)) {
+      out = out.replace(/\.jpe?g$/i, ".png");
+      for (let n = 2; existsSync(out); n += 1) out = out.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
+    }
+    request.output = out;
   }
   const python = await findPython();
   const startedAt = Date.now();
-  const result = await new Promise((resolve, reject) => {
+  const runRetouch = () => new Promise((resolve, reject) => {
     const child = spawn(python.command, [...python.prefix, retouchScriptPath], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"], env: process.env });
     let stdout = ""; let stderr = "";
     const timer = setTimeout(() => { child.kill(); reject(new Error("Chỉnh ảnh quá 2 phút – ảnh quá lớn?")); }, 120_000);
@@ -1248,6 +1259,19 @@ async function imageRetouch(args = {}) {
     });
     child.stdin.end(JSON.stringify(request));
   });
+  let result;
+  try { result = await runRetouch(); } catch (error) {
+    // máy thiếu thư viện ảnh Pillow (bộ cài cũ không cài tường minh) → tự cài 1 lần vào bộ Python của SIMI rồi làm lại
+    if (!/Pillow/i.test(error.message) || pillowTried) throw error;
+    pillowTried = true;
+    await new Promise((resolve) => {
+      const pip = spawn(python.command, [...python.prefix, "-m", "pip", "install", "--disable-pip-version-check", "--quiet", "pillow"], { windowsHide: true, stdio: "ignore", env: process.env });
+      const timer = setTimeout(() => { pip.kill(); resolve(); }, 150_000);
+      pip.once("error", () => { clearTimeout(timer); resolve(); });
+      pip.once("close", () => { clearTimeout(timer); resolve(); });
+    });
+    result = await runRetouch();
+  }
   if (args.inspect) return { __content: [{ type: "text", text: JSON.stringify(result) }] };
   return { __content: [{ type: "text", text: JSON.stringify({ ...result, seconds: Math.round((Date.now() - startedAt) / 100) / 10, show: `![](${String(result.path).replace(/\\/g, "/")})`, note: "Xem ảnh kết quả; chưa đạt thì chỉnh box / thông số và gọi lại (tối đa 1–2 lần)." }) }] };
 }

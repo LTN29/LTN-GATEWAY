@@ -429,3 +429,26 @@ test("chat Gemini: sửa ảnh bằng model ảnh Gemini dù 9Router chỉ khai 
     assert.match(body.image, /^data:image\/png/);
   } finally { t.stop(); }
 });
+
+test("image_retouch: logo chữ đen nền màu → chữ trắng nền trong suốt trong 1 lần gọi (không cần model ảnh, không cần script)", async () => {
+  const py = (() => { for (const c of ["python3", "python"]) { try { execFileSync(c, ["-c", "import PIL"]); return c; } catch {} } return null; })();
+  if (!py) return;
+  const t = await start((_e, send) => send(404, {}), "cc/claude-sonnet-5-5", { LTN_PYTHON_PATH: execFileSync(py, ["-c", "import sys; print(sys.executable)"]).toString().trim(), LTN_IMAGE_RETOUCH_PATH: join(import.meta.dirname, "..", "scripts", "image-retouch.py") });
+  try {
+    const src = join(t.home, "logo.jpg");
+    execFileSync(py, ["-c", `from PIL import Image, ImageDraw
+im = Image.new("RGB", (400, 160), (40, 130, 250)); d = ImageDraw.Draw(im)
+d.rectangle((60, 40, 200, 120), fill=(10, 10, 10)); d.rectangle((100, 70, 160, 90), fill=(40, 130, 250)); d.ellipse((230, 90, 260, 120), fill=(255, 190, 0))
+im.save(${JSON.stringify(src)}, quality=95)`]);
+    const r = JSON.parse(t.text(await t.call("image_retouch", { source_path: src, output_path: join(t.home, "outputs", "logo-trang.jpg"), ops: [{ op: "transparent", mode: "all" }, { op: "recolor", to: "#ffffff" }] })));
+    assert.match(r.path, /logo-trang\.png$/, "nền trong suốt → tự lưu PNG");
+    const px = JSON.parse(execFileSync(py, ["-c", `from PIL import Image
+import json
+im = Image.open(${JSON.stringify(r.path)}); print(json.dumps([im.mode, im.getpixel((5, 5)), im.getpixel((75, 55)), im.getpixel((130, 80)), im.getpixel((245, 105))]))`]).toString());
+    assert.equal(px[0], "RGBA");
+    assert.equal(px[1][3], 0, "nền ngoài trong suốt");
+    assert.ok(px[2][0] > 240 && px[2][1] > 240 && px[2][2] > 240 && px[2][3] === 255, "chữ đen → trắng, không trong suốt");
+    assert.equal(px[3][3], 0, "mode all: lỗ cùng màu nền bên trong chữ cũng trong suốt");
+    assert.ok(px[4][0] > 230 && px[4][2] < 60 && px[4][3] === 255, "mảng màu khác (chấm vàng) giữ nguyên");
+  } finally { t.stop(); }
+});
