@@ -843,6 +843,14 @@ async function webFetch(args = {}) {
 
 // ---------- tạo / sửa ảnh ----------
 const BAD_IMAGE_FILE = join(tmpdir(), "simi-image-bad.json");
+// Nhà cung cấp đang KHÔNG sửa ảnh được (vd OpenAI từ chối mọi model ảnh qua tài khoản ChatGPT với "Complexity 'medium' is
+// not supported"): nhớ 2 giờ để không gửi thử lại mỗi lần – mỗi lần lỗi 9Router khoá model đó 30 giây, làm người khác
+// không tạo ảnh mới được. Tạo ảnh mới không bị ảnh hưởng.
+const EDIT_BROKEN_FILE = join(tmpdir(), "simi-image-edit-broken.json");
+const EDIT_BROKEN_MS = Number(process.env.LTN_IMAGE_EDIT_BROKEN_MS) || 2 * 3600_000;
+async function readEditBroken() {
+  try { return Object.fromEntries(Object.entries(JSON.parse(await readFile(EDIT_BROKEN_FILE, "utf8"))).filter(([, at]) => Date.now() - Number(at) < EDIT_BROKEN_MS)); } catch { return {}; }
+}
 async function readBadModels() {
   try {
     const now = Date.now() / 1000;
@@ -870,6 +878,8 @@ function chatModelFromConfig() {
 // Xếp model ảnh theo chất lượng thực tế (model đời mới / bản "pro" trước, bản rút gọn / miễn phí / tốc độ sau),
 // cùng hãng với model chat được cộng thêm chút điểm. Trước đây chỉ xếp theo hãng nên hay rơi vào model ảnh yếu.
 const IMAGE_TIERS = [
+  // gpt-image 2.6 trở lên xếp trước 2.5: bản 2.5 qua tài khoản ChatGPT đang bị OpenAI từ chối khi SỬA ảnh ("Complexity 'medium' is not supported")
+  [102, /gpt-image-(2\.[6-9]|[3-9])/i],
   [100, /gpt-image-2|gpt-image-1\.5/i],
   [96, /gemini-3[\w.-]*image|nano-?banana-?(pro|2)|imagen-?4[\w-]*ultra/i],
   [92, /gpt-image-1(?!-mini)|imagen-?4/i],
@@ -913,14 +923,22 @@ export function rankImageModels(ids, chat = "", wanted = "") {
 // Tạo / sửa ảnh bằng CHÍNH model chat GPT – cách ChatGPT / Codex gốc làm: model chat nhìn thấy ảnh gốc + lời nhắn rồi tự gọi
 // công cụ image_generation có sẵn của OpenAI. Dùng khi các model ảnh riêng (gpt-image qua tài khoản) lỗi hoặc không có.
 const NATIVE = "native:";
-async function nativeGptImage(chat, { prompt, source, size, quality, signal }) {
-  const tool = { type: "image_generation", ...(size ? { size } : {}), quality, ...(source ? { input_fidelity: "high" } : {}) };
-  const text = await gatewayCall("/responses", { method: "POST", raw: true, timeoutMs: IMAGE_TIMEOUT_MS, signal, body: {
+async function nativeGptImage(chat, { prompt, source, refs = [], size, signal }) {
+  // Công cụ image_generation để TRỐNG tham số (không model, size, quality…): model chat tự dùng model ảnh mặc định của nó,
+  // đúng như ChatGPT / Codex gốc – các tham số riêng là thứ hay bị backend từ chối. Khổ ảnh đưa vào lời nhắn.
+  const images = [...refs, ...(source ? [source] : [])];
+  const ask = (images.length ? "Edit the attached image. Keep everything not mentioned exactly as it is. " : "Generate an image. ") + prompt + (size ? `\n\nOutput aspect ratio: ${SIZE_HINT[size] || size}.` : "");
+  const call = (toolChoice) => gatewayCall("/responses", { method: "POST", raw: true, timeoutMs: IMAGE_TIMEOUT_MS, signal, body: {
     model: chat, stream: true, store: false,
     instructions: "You are an image generation assistant. Call the image_generation tool exactly once for the user's request, then stop. Do not ask questions.",
-    input: [{ role: "user", content: [{ type: "input_text", text: (source ? "Edit the attached image. " : "Generate an image. ") + prompt }, ...(source ? [{ type: "input_image", image_url: source }] : [])] }],
-    tools: [tool], tool_choice: { type: "image_generation" }
+    input: [{ role: "user", content: [...images.map((url) => ({ type: "input_image", image_url: url })), { type: "input_text", text: ask }] }],
+    tools: [{ type: "image_generation" }], tool_choice: toolChoice
   } });
+  let text;
+  try { text = await call({ type: "image_generation" }); } catch (error) {
+    if (error.status === -1 || error.status === 0 || [401, 403, 429].includes(error.status)) throw error;
+    text = await call("auto"); // có bản backend không nhận ép gọi công cụ → để model tự gọi
+  }
   let b64 = ""; let failure = "";
   const take = (item) => { if (item && item.type === "image_generation_call" && typeof item.result === "string" && item.result.length > 1000) b64 = item.result; };
   const read = (event) => {
@@ -1034,6 +1052,8 @@ async function imageGenerate(args = {}) {
       return caps === null ? (EDIT_HINT.test(id) ? id : null) : caps.includes("edit") ? id : null;
     }));
     order = checked.filter(Boolean);
+    const broken = await readEditBroken();
+    order = order.filter((id) => !broken[id.includes("/") ? id.split("/")[0] + "/" : id] || id === args.model);
     if (!order.length && !(imageFamily(chat) === "gpt" && chat)) {
       return { ok: false, error: "Model ảnh hiện có chưa sửa được ảnh này.", advice: "Chỉnh chi tiết nhỏ thì dùng image_retouch; còn lại báo người dùng đổi model chat (vd GPT / Gemini) rồi thử lại. Không tự chuyển sang Muse – Muse chỉ dùng khi người dùng chọn skill Muse." };
     }
@@ -1062,7 +1082,7 @@ async function imageGenerate(args = {}) {
     tried.push(model);
     const ac = new AbortController(); controllers.set(model, ac);
     if (model.startsWith(NATIVE)) {
-      try { return { model: `${chat} (model chat tự tạo ảnh)`, bytes: await nativeGptImage(chat, { prompt, source, size, quality, signal: ac.signal }) }; } catch (error) {
+      try { return { model: `${chat} (model chat tự tạo ảnh)`, bytes: await nativeGptImage(chat, { prompt, source, refs, size, signal: ac.signal }) }; } catch (error) {
         if (error.status === -1) throw error;
         errors.push({ model, error: String(error.message).slice(0, 200) });
         throw error;
@@ -1097,10 +1117,17 @@ async function imageGenerate(args = {}) {
       if (error.status === -1) throw error;
       errors.push({ model, error: error.message.slice(0, 200) });
       if ([401, 403, 429].includes(error.status)) { error.fatal = true; throw error; }
+      // 9Router trả 502 cho lỗi này; không đánh dấu model hỏng (tạo ảnh mới vẫn chạy), chỉ nhớ là nhà cung cấp này chưa sửa ảnh được
+      if (source && /complexity/i.test(error.message)) {
+        skipPrefix.add(prefixOf(model));
+        await writeFile(EDIT_BROKEN_FILE, JSON.stringify({ ...(await readEditBroken()), [prefixOf(model)]: Date.now() })).catch(() => {});
+        throw error;
+      }
       // chỉ nhớ model hỏng khi Gateway trả lời rõ là model không dùng được (4xx); mất mạng / hết giờ / 5xx là lỗi thoáng qua
       if (error.status >= 400 && error.status < 500) {
         bad[model] = Math.floor(Date.now() / 1000);
-        if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
+        // lỗi tham số của riêng model này (vd Complexity 'medium' is not supported for this image model) ≠ lỗi tài khoản
+        if (/not supported|unsupported|account|quota|reset after/i.test(error.message) && !/complexity|parameter|param\b|for this image model/i.test(error.message)) {
           skipPrefix.add(prefixOf(model));
           const prefix = model.split("/")[0] + "/";
           for (const id of ids) if (id.startsWith(prefix)) bad[id] = bad[model];

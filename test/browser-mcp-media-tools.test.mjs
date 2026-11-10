@@ -328,9 +328,8 @@ test("tài khoản gpt-image lỗi (như 'gpt-5.5 is not supported'): bỏ qua m
     }
     if (url === "/v1/responses") {
       assert.equal(body.model, "cx/gpt-6.1-sol");
-      assert.equal(body.tools[0].type, "image_generation");
-      assert.equal(body.tools[0].input_fidelity, "high");
-      assert.match(body.input[0].content[1].image_url, /^data:image\/png;base64,/);
+      assert.deepEqual(body.tools, [{ type: "image_generation" }], "công cụ để trống tham số như ChatGPT gốc");
+      assert.match(body.input[0].content[0].image_url, /^data:image\/png;base64,/);
       return send(200, { output: [{ type: "image_generation_call", status: "completed", result: pngOf(1024, 1024).toString("base64") }] });
     }
     send(404, {});
@@ -381,5 +380,34 @@ test("9Router: gpt-image qua tài khoản ChatGPT tạo ảnh mới không gửi
     assert.equal(gen[1].body.images.length, 1);
     assert.equal(gen[1].body.host_model, "gpt-6.1-sol", "báo 9Router dùng chính model chat đang chọn làm model nền");
     assert.match(gen[1].body.image, /^data:image\/png/);
+  } finally { t.stop(); }
+});
+
+test("sửa ảnh: gpt-image 2.6 đi trước 2.5; mọi model ảnh GPT báo \"Complexity 'medium' is not supported\" → chuyển ngay sang model chat tự vẽ / hãng khác và nhớ lại, lần sau không gửi thử nữa (tránh 9Router khoá model 30 giây)", async () => {
+  let fail = false;
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: ["cx/gpt-image-2.5", "cx/gpt-image-2.6-flare", "gg/gemini-3-pro-image"].map((id) => ({ id })) });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["text2img", "edit"] });
+    if (url === "/v1/images/generations") {
+      if (fail && body.model.startsWith("cx/") && body.image) return send(502, { error: { message: "[codex/x] Complexity 'medium' is not supported for this image model. (reset after 30s)" } });
+      return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    }
+    send(404, {});
+  }, "SIMI-GPT", { TMPDIR: mkdtempSync(join(tmpdir(), "simi-edit-broken-")) });
+  try {
+    const src = join(t.home, "den.png"); writeFileSync(src, pngOf(800, 800));
+    const edit = async (name) => JSON.parse(t.text(await t.call("image_generate", { prompt: "Replace the background", mode: "edit", source_path: src, output_path: join(t.home, "out", name) })));
+    const models = () => t.seen.filter((s) => s.url === "/v1/images/generations").map((s) => s.body.model);
+    assert.equal((await edit("a.png")).model, "cx/gpt-image-2.6-flare", "2.6 được thử trước");
+    fail = true; t.seen.length = 0;
+    const b = await edit("b.png");
+    assert.equal(b.model, "gg/gemini-3-pro-image");
+    assert.deepEqual(models(), ["cx/gpt-image-2.6-flare", "gg/gemini-3-pro-image"], "1 model GPT báo complexity → không thử model GPT thứ 2");
+    t.seen.length = 0;
+    assert.equal((await edit("c.png")).model, "gg/gemini-3-pro-image");
+    assert.deepEqual(models(), ["gg/gemini-3-pro-image"], "lần sau đi thẳng hãng khác");
+    t.seen.length = 0;
+    const g = JSON.parse(t.text(await t.call("image_generate", { prompt: "A lamp", output_path: join(t.home, "out", "moi.png") })));
+    assert.match(g.model, /^cx\/gpt-image/, "tạo ảnh mới vẫn dùng gpt-image");
   } finally { t.stop(); }
 });
