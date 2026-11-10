@@ -844,10 +844,10 @@ async function webFetch(args = {}) {
 // ---------- tạo / sửa ảnh ----------
 const BAD_IMAGE_FILE = join(tmpdir(), "simi-image-bad.json");
 // Nhà cung cấp đang KHÔNG sửa ảnh được (vd OpenAI từ chối mọi model ảnh qua tài khoản ChatGPT với "Complexity 'medium' is
-// not supported"): nhớ 2 giờ để không gửi thử lại mỗi lần – mỗi lần lỗi 9Router khoá model đó 30 giây, làm người khác
+// not supported"): nhớ 20 phút để không gửi thử lại mỗi lần – mỗi lần lỗi 9Router khoá model đó 30 giây, làm người khác
 // không tạo ảnh mới được. Tạo ảnh mới không bị ảnh hưởng.
 const EDIT_BROKEN_FILE = join(tmpdir(), "simi-image-edit-broken.json");
-const EDIT_BROKEN_MS = Number(process.env.LTN_IMAGE_EDIT_BROKEN_MS) || 2 * 3600_000;
+const EDIT_BROKEN_MS = Number(process.env.LTN_IMAGE_EDIT_BROKEN_MS) || 20 * 60_000;
 async function readEditBroken() {
   try { return Object.fromEntries(Object.entries(JSON.parse(await readFile(EDIT_BROKEN_FILE, "utf8"))).filter(([, at]) => Date.now() - Number(at) < EDIT_BROKEN_MS)); } catch { return {}; }
 }
