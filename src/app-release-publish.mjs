@@ -74,16 +74,19 @@ export async function publishFolder(src, { notes = "", keep = 2, force = false, 
   for (const [kind, file] of Object.entries(found)) {
     const name = basename(file);
     const target = join(out, name);
-    await copyFile(file, target + ".tmp");
-    await rename(target + ".tmp", target);
+    // tên tạm riêng từng tiến trình: dịch vụ Gateway và lệnh sync chạy tay cùng đăng 1 bản không ghi đè file tạm của nhau
+    const tmp = `${target}.${process.pid}.tmp`;
+    await copyFile(file, tmp);
+    await rename(tmp, target);
     const info = await stat(target);
     files[kind] = { name, size: info.size, sha256: await sha256File(target) };
     log(`  ${kind.padEnd(15)} ${name} … ${Math.round(info.size / 1048576)} MB ✓`);
   }
 
   const manifest = { app: "vanphong-ai", version, date: new Date().toISOString(), notes: String(notes || "").trim(), files };
-  await writeFile(join(out, "latest.json.tmp"), JSON.stringify(manifest, null, 2));
-  await rename(join(out, "latest.json.tmp"), join(out, "latest.json"));
+  const tmpManifest = join(out, `latest.json.${process.pid}.tmp`);
+  await writeFile(tmpManifest, JSON.stringify(manifest, null, 2));
+  await rename(tmpManifest, join(out, "latest.json"));
 
   // giữ file của vài bản gần nhất (máy đang tải dở vẫn tải xong), xoá bản cũ hơn
   const versions = new Set();
