@@ -283,3 +283,37 @@ test("image_generate: quality medium khi cần bản nháp nhanh; ảnh gốc d�
     assert.equal(gen[1].body.size, undefined);
   } finally { t.stop(); }
 });
+
+test("image_generate xin Gateway giữ kết nối (không bị cắt sau 100 giây); lỗi gói trong __ltn_status vẫn đọc đúng; ảnh gốc quá lớn được thu nhỏ trước khi gửi", async () => {
+  const py = (() => { for (const c of ["python3", "python"]) { try { execFileSync(c, ["-c", "import PIL"]); return c; } catch {} } return null; })();
+  let n = 0;
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2" }, { id: "gg/gemini-3-pro-image" }] });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["generate", "edit"] });
+    if (url === "/v1/images/generations") {
+      n += 1;
+      // Gateway ở chế độ giữ kết nối: luôn 200, lỗi upstream nằm trong __ltn_status
+      if (body.model === "cx/gpt-image-2") return send(200, { __ltn_status: 500, __ltn_body: JSON.stringify({ error: { message: "upstream overloaded" } }) });
+      return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    }
+    send(404, {});
+  }, "cx/gpt-6.1-sol", py ? { LTN_PYTHON_PATH: execFileSync(py, ["-c", "import sys; print(sys.executable)"]).toString().trim(), LTN_IMAGE_RETOUCH_PATH: join(import.meta.dirname, "..", "scripts", "image-retouch.py") } : {});
+  try {
+    const src = join(t.home, "anh-dien-thoai.jpg");
+    if (py) execFileSync(py, ["-c", `from PIL import Image
+import os
+im = Image.frombytes("RGB", (4000, 3000), os.urandom(4000 * 3000 * 3)); im.save(${JSON.stringify(src)}, quality=90)`]);
+    else writeFileSync(src, pngOf(300, 200));
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "Change the background", mode: "edit", source_path: src, output_path: join(t.home, "out", "nen-moi.png") })));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.model, "gg/gemini-3-pro-image", "model đầu lỗi (gói trong __ltn_status) → dùng model dự phòng");
+    const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
+    assert.ok(gen.length >= 2 && n >= 2);
+    if (py) {
+      const sent = Buffer.from(gen[0].body.image.split(",")[1], "base64");
+      assert.ok(sent.length < readFileSync(src).length / 2, "ảnh gửi đi nhỏ hơn hẳn ảnh gốc");
+      assert.match(gen[0].body.image, /^data:image\/jpeg/);
+      assert.equal(gen[0].body.size, "1536x1024");
+    }
+  } finally { t.stop(); }
+});

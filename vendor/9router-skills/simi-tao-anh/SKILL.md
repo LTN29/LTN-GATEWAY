@@ -330,6 +330,14 @@ mặt, logo, chữ không yêu cầu xóa, hình dạng sản phẩm, bố cục
 phong cách). Xóa chữ: nêu vùng/chữ cần xóa và yêu cầu lấp nền tự nhiên. Outpaint:
 nêu hướng mở rộng và nội dung vùng mới.
 
+Ảnh bán hàng / ảnh có sản phẩm thật, logo, bao bì phải giữ ĐÚNG từng chi tiết: model
+ảnh vẽ lại cả khung nên dễ biến sản phẩm thành mẫu khác. Làm theo thứ tự: (1) đổi nền
+/ bối cảnh mà sản phẩm đứng yên → `image_generate` mode `edit` với ảnh gốc, prompt ghi
+"keep the product exactly as in the source image: same shape, parts, colors, logo text";
+(2) cần người / phòng mới hoàn toàn → tạo ảnh nền không có sản phẩm, rồi ghép sản phẩm
+cắt từ ảnh gốc bằng `image_retouch` / `design_render` (sản phẩm là ảnh thật 100 %).
+Kết quả sai sản phẩm thì nói ngắn 1–2 câu và làm luôn cách (2), không viết báo cáo dài.
+
 Ảnh kết quả không giữ y hệt ảnh gốc thì nói rõ với user, không tự chạy lại. Không
 gọi ảnh tạo ra là ảnh thật, tài sản thương hiệu chính thức hay tài liệu đã xác minh.
 

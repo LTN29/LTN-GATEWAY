@@ -522,6 +522,8 @@ async function proxyModels(req, res, rawKey, principal, id) {
   });
 }
 
+const CAPABILITY_KEEPALIVE_MS = Math.max(200, Number(process.env.CAPABILITY_KEEPALIVE_MS) || 15000);
+
 async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
   // Combo membership only restricts conversational APIs. Other capability APIs
   // (media, web, embeddings, model lists) are forwarded unchanged to 9Router.
@@ -564,22 +566,55 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
     throw error;
   }
 
-  const upstream = await upstreamFetch(upstreamPath, {
-    method: req.method,
-    rawKey,
-    requestId: id,
-    accept: req.headers.accept || "*/*",
-    contentType: req.method === "GET"
-      ? null
-      : String(req.headers["content-type"] || "application/json"),
-    extraHeaders: connectionId ? { "x-connection-id": connectionId } : {},
-    signal,
-    body
-  });
+  // Ảnh / video chất lượng cao thường mất hơn 100 giây mà không trả byte nào → Cloudflare cắt kết nối (lỗi 524)
+  // dù model vẫn đang vẽ. Client gửi "X-LTN-Keepalive: 1" thì Gateway trả 200 ngay, cứ vài giây gửi 1 dấu cách
+  // (JSON cho phép khoảng trắng ở đầu) để giữ kết nối, xong mới gửi JSON kết quả; lỗi upstream gói trong __ltn_status.
+  const keepAlive = req.method === "POST" && req.headers["x-ltn-keepalive"] === "1" &&
+    /^\/v1\/(images|videos)\//.test(upstreamPath.split("?")[0]);
+  let beat = null;
+  if (keepAlive) {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-accel-buffering": "no", "x-ltn-keepalive": "1" });
+    res.write(" ");
+    beat = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(" "); }, CAPABILITY_KEEPALIVE_MS);
+  }
+  const endKeepAlive = (status, payload) => {
+    clearInterval(beat);
+    if (!res.writableEnded && !res.destroyed) res.end(typeof payload === "string" || Buffer.isBuffer(payload) ? payload : JSON.stringify({ __ltn_status: status, ...payload }));
+  };
 
-  copyHeaders(upstream, res);
-  res.statusCode = upstream.status;
-  const captured = await pipeAndCapture(upstream, res);
+  let upstream;
+  try {
+    upstream = await upstreamFetch(upstreamPath, {
+      method: req.method,
+      rawKey,
+      requestId: id,
+      accept: req.headers.accept || "*/*",
+      contentType: req.method === "GET"
+        ? null
+        : String(req.headers["content-type"] || "application/json"),
+      extraHeaders: connectionId ? { "x-connection-id": connectionId } : {},
+      signal,
+      body
+    });
+  } catch (error) {
+    if (!keepAlive) throw error;
+    endKeepAlive(error.statusCode || (error.code === "UPSTREAM_TIMEOUT" ? 504 : 502), { error: { message: String(error.message || error).slice(0, 500) } });
+    return;
+  }
+
+  let captured;
+  if (keepAlive) {
+    try { captured = Buffer.from(await upstream.arrayBuffer()); } catch (error) {
+      endKeepAlive(502, { error: { message: "Mất kết nối tới dịch vụ ảnh khi đang nhận kết quả: " + String(error.message || error).slice(0, 300) } });
+      return;
+    }
+    if (upstream.ok) endKeepAlive(200, captured);
+    else endKeepAlive(upstream.status, { __ltn_body: captured.toString("utf8").slice(0, 4000) });
+  } else {
+    copyHeaders(upstream, res);
+    res.statusCode = upstream.status;
+    captured = await pipeAndCapture(upstream, res);
+  }
   let responseUsage = null;
   if ((upstream.headers.get("content-type") || "").includes("application/json") && captured.length) {
     try {

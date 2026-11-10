@@ -721,11 +721,13 @@ async function clientId() {
   try { return readFileSync(join(codexHome, "ltn-client-id"), "utf8").trim(); } catch { return ""; }
 }
 
-async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000, signal } = {}) {
+async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000, signal, keepalive = false } = {}) {
   const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: "application/json", "user-agent": "simi-browser-mcp/1.0" };
   const cid = await clientId();
   if (cid) headers["x-ltn-client-id"] = cid;
   if (body !== undefined) headers["content-type"] = "application/json";
+  // việc lâu (tạo / sửa ảnh): xin Gateway giữ kết nối bằng khoảng trắng để Cloudflare không cắt sau 100 giây (Gateway cũ bỏ qua header này)
+  if (keepalive) headers["x-ltn-keepalive"] = "1";
   let response;
   try {
     // form (multipart, ví dụ file audio): để fetch tự đặt Content-Type có boundary
@@ -737,13 +739,26 @@ async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_00
     failure.status = 0;
     throw failure;
   }
-  const text = await response.text();
+  let text;
+  try { text = await response.text(); } catch (error) {
+    if (signal?.aborted) { const stopped = new Error("đã dừng (model khác xong trước)"); stopped.status = -1; throw stopped; }
+    const failure = new Error(`Mất kết nối Gateway khi đang chờ kết quả: ${error?.cause?.code || error?.message}`);
+    failure.status = 0;
+    throw failure;
+  }
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-  if (!response.ok) {
-    const message = json?.error?.message || json?.message || text.slice(0, 300) || `HTTP ${response.status}`;
-    const failure = new Error(response.status === 403 ? `Tính năng chưa được mở cho tài khoản này (${message}).` : response.status === 401 ? "Key Gateway không hợp lệ hoặc đã bị thu hồi." : message);
-    failure.status = response.status;
+  // chế độ giữ kết nối: Gateway đã trả 200 từ đầu, lỗi thật nằm trong __ltn_status
+  let status = response.status;
+  if (response.ok && json && Number(json.__ltn_status) >= 400) {
+    status = Number(json.__ltn_status);
+    text = typeof json.__ltn_body === "string" ? json.__ltn_body : JSON.stringify(json);
+    try { json = JSON.parse(text); } catch { /* giữ nguyên */ }
+  }
+  if (status >= 400 || !response.ok) {
+    const message = json?.error?.message || (typeof json?.error === "string" ? json.error : "") || json?.message || text.slice(0, 300) || `HTTP ${status}`;
+    const failure = new Error(status === 403 ? `Tính năng chưa được mở cho tài khoản này (${message}).` : status === 401 ? "Key Gateway không hợp lệ hoặc đã bị thu hồi." : message);
+    failure.status = status;
     throw failure;
   }
   return json ?? text;
@@ -872,9 +887,15 @@ export function imageFamily(chat = "") {
   if (/gemini|^ag\/|^gc\/|google|nano-?banana|imagen/.test(c)) return "gemini";
   if (/claude|^cc\/|opus|sonnet|haiku|anthropic/.test(c)) return "claude";
   if (/^cx\/|gpt|openai|codex|(^|\/)o\d/.test(c)) return "gpt";
+  // hãng khác có model ảnh riêng: chat bằng model hãng nào thì vẽ bằng model ảnh hãng đó (nếu tài khoản có)
+  if (/grok|xai/.test(c)) return "grok";
+  if (/qwen|qwq|tongyi|dashscope/.test(c)) return "qwen";
+  if (/doubao|seed|volc|bytedance/.test(c)) return "doubao";
+  if (/glm|zhipu|z-?ai/.test(c)) return "glm";
+  if (/minimax|abab/.test(c)) return "minimax";
   return "";
 }
-const FAMILY_IMAGE = { gpt: /gpt-image|^cx\/|openai|dall-?e/i, gemini: /gemini|imagen|nano-?banana/i, muse: /muse/i };
+const FAMILY_IMAGE = { gpt: /gpt-image|^cx\/|openai|dall-?e/i, gemini: /gemini|imagen|nano-?banana/i, muse: /muse/i, grok: /grok|xai|aurora/i, qwen: /qwen|wan[\d.-]|tongyi/i, doubao: /seedream|doubao|seededit/i, glm: /cogview|glm[\w.-]*image/i, minimax: /minimax|image-01/i };
 export function rankImageModels(ids, chat = "", wanted = "") {
   const fam = imageFamily(chat);
   const own = fam === "muse" ? null : FAMILY_IMAGE[fam];
@@ -918,6 +939,9 @@ export function sizeForRatio(width, height) {
   const ratio = width / height;
   return ratio > 1.2 ? "1536x1024" : ratio < 0.83 ? "1024x1536" : "1024x1024";
 }
+const SOURCE_MAX_BYTES = 3_000_000;
+const SOURCE_MAX_SIDE = 2400;
+const IMAGE_TIMEOUT_MS = Number(process.env.LTN_IMAGE_TIMEOUT_MS) || 240_000;
 const IMAGE_QUALITY = /^(high|medium|low|auto)$/.test(process.env.LTN_IMAGE_QUALITY || "") ? process.env.LTN_IMAGE_QUALITY : "high";
 // provider không nhận tham số chất lượng → bỏ tham số rồi gọi lại, không coi là model hỏng
 const PARAM_REJECTED = /quality|input_fidelity|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
@@ -936,9 +960,23 @@ async function imageGenerate(args = {}) {
     if (!src || !existsSync(src)) throw new Error("Sửa ảnh cần source_path là ảnh có trên máy.");
     const ext = extname(src).toLowerCase();
     const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
-    const srcBytes = await readFile(src);
-    source = `data:${mime};base64,${srcBytes.toString("base64")}`;
-    const dim = imageSize(srcBytes);
+    let srcBytes = await readFile(src);
+    let srcMime = mime;
+    let dim = imageSize(srcBytes);
+    // ảnh chụp điện thoại (4000px, 5–10 MB) gửi nguyên cỡ làm tải lên chậm gấp nhiều lần mà model vẫn tự thu về ~1500px
+    // → thu nhỏ trước còn cạnh dài 2048px (cần Pillow; không có thì gửi ảnh gốc như cũ)
+    if (srcBytes.length > SOURCE_MAX_BYTES || (dim && Math.max(dim.width, dim.height) > SOURCE_MAX_SIDE)) {
+      try {
+        const alpha = ext === ".png" || ext === ".webp";
+        const small = join(tmpdir(), `simi-image-src-${process.pid}-${Date.now()}${alpha ? ".png" : ".jpg"}`);
+        const wide = !dim || dim.width >= dim.height;
+        await imageRetouch({ source_path: src, output_path: small, ops: [{ op: "resize", [wide ? "width" : "height"]: Math.min(2048, dim ? Math.max(dim.width, dim.height) : 2048) }] });
+        const smallBytes = await readFile(small);
+        await unlink(small).catch(() => {});
+        if (smallBytes.length > 1000 && smallBytes.length < srcBytes.length) { srcBytes = smallBytes; srcMime = alpha ? "image/png" : "image/jpeg"; dim = imageSize(srcBytes) || dim; }
+      } catch { /* không thu nhỏ được → gửi ảnh gốc */ }
+    }
+    source = `data:${srcMime};base64,${srcBytes.toString("base64")}`;
     if (!args.size && dim) autoSize = sizeForRatio(dim.width, dim.height);
   }
   const size = args.size || autoSize;
@@ -977,10 +1015,10 @@ async function imageGenerate(args = {}) {
     try {
       let payload;
       try {
-        payload = await gatewayCall("/images/generations", { method: "POST", body: { ...base, ...extras }, timeoutMs: 180_000, signal: ac.signal });
+        payload = await gatewayCall("/images/generations", { method: "POST", body: { ...base, ...extras }, timeoutMs: IMAGE_TIMEOUT_MS, keepalive: true, signal: ac.signal });
       } catch (error) {
         if (!(error.status === 400 && Object.keys(extras).length && PARAM_REJECTED.test(error.message))) throw error;
-        payload = await gatewayCall("/images/generations", { method: "POST", body: base, timeoutMs: 180_000, signal: ac.signal });
+        payload = await gatewayCall("/images/generations", { method: "POST", body: base, timeoutMs: IMAGE_TIMEOUT_MS, keepalive: true, signal: ac.signal });
       }
       const item = [...(payload?.data || [])].reverse().find((entry) => entry?.b64_json || entry?.url) || {};
       let bytes = item.b64_json ? Buffer.from(String(item.b64_json).replace(/^data:[^,]+,/, ""), "base64") : null;
