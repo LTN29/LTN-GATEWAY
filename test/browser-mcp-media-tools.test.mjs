@@ -317,3 +317,68 @@ im = Image.frombytes("RGB", (4000, 3000), os.urandom(4000 * 3000 * 3)); im.save(
     }
   } finally { t.stop(); }
 });
+
+test("tài khoản gpt-image lỗi (như 'gpt-5.5 is not supported'): bỏ qua model cùng tài khoản, để CHÍNH model chat GPT tự tạo ảnh như ChatGPT gốc", async () => {
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: ["cx/gpt-image-2.5", "cx/gpt-image-2.5-flare", "cx/gpt-image-2.5-sunburst", "gg/gemini-3-pro-image"].map((id) => ({ id })) });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["generate", "edit"] });
+    if (url === "/v1/images/generations") {
+      if (body.model.startsWith("cx/")) return send(400, { error: { message: "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account." } });
+      return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    }
+    if (url === "/v1/responses") {
+      assert.equal(body.model, "cx/gpt-6.1-sol");
+      assert.equal(body.tools[0].type, "image_generation");
+      assert.equal(body.tools[0].input_fidelity, "high");
+      assert.match(body.input[0].content[1].image_url, /^data:image\/png;base64,/);
+      return send(200, { output: [{ type: "image_generation_call", status: "completed", result: pngOf(1024, 1024).toString("base64") }] });
+    }
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const src = join(t.home, "den.png"); writeFileSync(src, pngOf(800, 800));
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "Keep the lamp exactly, replace the background with a bright study desk", mode: "edit", source_path: src, output_path: join(t.home, "out", "den-nen-moi.png") })));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.match(r.model, /gpt-6\.1-sol/);
+    const gen = t.seen.filter((s) => s.url === "/v1/images/generations").map((s) => s.body.model);
+    assert.deepEqual(gen, ["cx/gpt-image-2.5"], "model thứ 2 cùng tài khoản không bị gọi nữa, không rơi sang Gemini");
+  } finally { t.stop(); }
+});
+
+test("chat GPT nhưng model chat chưa tự tạo ảnh được → dùng model ảnh hãng khác thay vì báo lỗi", async () => {
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: ["cx/gpt-image-2.5", "gg/gemini-3-pro-image"].map((id) => ({ id })) });
+    if (url === "/v1/images/generations") {
+      if (body.model.startsWith("cx/")) return send(400, { error: { message: "account not supported" } });
+      return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    }
+    if (url === "/v1/responses") return send(200, { output: [{ type: "message", content: [{ type: "output_text", text: "I cannot create images." }] }] });
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "A lamp on a desk", output_path: join(t.home, "out", "den.png") })));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.model, "gg/gemini-3-pro-image");
+  } finally { t.stop(); }
+});
+
+test("9Router: gpt-image qua tài khoản ChatGPT tạo ảnh mới không gửi size (đi đường Images gốc, không lệ thuộc model chat nền); sửa ảnh gửi được ảnh tham chiếu", async () => {
+  const t = await start(({ url }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2.5" }] });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["text2img", "edit", "multiImage"] });
+    if (url === "/v1/images/generations") return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    await t.call("image_generate", { prompt: "A poster of a desk lamp", size: "1024x1536", output_path: join(t.home, "out", "poster.png") });
+    const src = join(t.home, "phong.png"); writeFileSync(src, pngOf(900, 600));
+    const sp = join(t.home, "xe.png"); writeFileSync(sp, pngOf(500, 500));
+    await t.call("image_generate", { prompt: "Put the bike from image1 into the room", mode: "edit", source_path: src, ref_paths: [sp], output_path: join(t.home, "out", "ghep.png") });
+    const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
+    assert.equal(gen[0].body.size, undefined);
+    assert.match(gen[0].body.prompt, /Output aspect ratio: portrait 2:3/);
+    assert.equal(gen[1].body.size, "1536x1024");
+    assert.equal(gen[1].body.images.length, 1);
+    assert.match(gen[1].body.image, /^data:image\/png/);
+  } finally { t.stop(); }
+});

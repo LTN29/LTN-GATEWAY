@@ -49,6 +49,8 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
 - Sửa ảnh: bỏ trống `size` – công cụ tự lấy khổ theo tỉ lệ ảnh gốc và yêu cầu model
   giữ đúng chi tiết ảnh gốc (mặt người, logo, chữ). Chỉ điền `size` khi người dùng
   muốn đổi khổ.
+- Ghép / giữ đúng sản phẩm, logo, người mẫu: đưa thêm ảnh tham chiếu qua `ref_paths`
+  (tối đa 3 ảnh) và ghi trong prompt mỗi ảnh dùng làm gì.
 - **Không bao giờ tự dùng Muse** (`muse_image`, skill `muse-tao-anh`): chỉ khi người
   dùng chọn skill Muse hoặc ghi đích danh "Muse". Ảnh lỗi thì báo người dùng, không chuyển sang Muse.
 - Gọi **một lần** cho mỗi yêu cầu. Kết quả `ok:true` → hiển thị ảnh bằng giá trị

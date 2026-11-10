@@ -58,6 +58,7 @@ const GATEWAY_TOOLS = [
         prompt: { type: "string", description: "Prompt chi tiết, viết bằng tiếng Anh cho model ảnh hiểu tốt nhất: chủ thể + hành động, bối cảnh, bố cục / góc máy, phong cách (ảnh chụp thật, 3D, minh hoạ phẳng…), ánh sáng, bảng màu, chất lượng (sharp, high detail), điều cần tránh. Chữ cần in trong ảnh: giữ nguyên tiếng Việt có dấu, đặt trong ngoặc kép, càng ngắn càng tốt. Sửa ảnh: nói rõ giữ nguyên gì, đổi gì." },
         mode: { type: "string", enum: ["generate", "edit"], default: "generate" },
         source_path: { type: "string", description: "edit: đường dẫn ảnh gốc cần sửa." },
+        ref_paths: { type: "array", items: { type: "string" }, maxItems: 3, description: "edit: ảnh tham chiếu thêm (tối đa 3) – vd ảnh sản phẩm / logo phải giữ đúng, ảnh người mẫu, ảnh phong cách. Prompt nói rõ mỗi ảnh dùng để làm gì." },
         output_path: { type: "string", description: "Nơi lưu ảnh: đường dẫn tuyệt đối trong thư mục làm việc của đoạn chat, ví dụ <thư mục làm việc>/outputs/banner-tet.png. Tên mới cho mỗi lần, không ghi đè." },
         size: { type: "string", enum: ["1024x1024", "1024x1536", "1536x1024"], description: "Vuông / dọc / ngang theo mục đích (bài đăng vuông, poster / story dọc, banner / slide ngang). Sửa ảnh: bỏ trống – tự lấy theo tỉ lệ ảnh gốc." },
         quality: { type: "string", enum: ["high", "medium"], description: "Bỏ trống = high (đẹp, chi tiết – dùng cho ảnh giao người dùng). medium: nhanh hơn, chỉ khi người dùng cần bản nháp / cần gấp." },
@@ -721,8 +722,8 @@ async function clientId() {
   try { return readFileSync(join(codexHome, "ltn-client-id"), "utf8").trim(); } catch { return ""; }
 }
 
-async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000, signal, keepalive = false } = {}) {
-  const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: "application/json", "user-agent": "simi-browser-mcp/1.0" };
+async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_000, signal, keepalive = false, raw = false } = {}) {
+  const headers = { authorization: `Bearer ${await gatewayKey()}`, accept: raw ? "text/event-stream" : "application/json", "user-agent": "simi-browser-mcp/1.0" };
   const cid = await clientId();
   if (cid) headers["x-ltn-client-id"] = cid;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -761,7 +762,7 @@ async function gatewayCall(path, { method = "GET", body, form, timeoutMs = 60_00
     failure.status = status;
     throw failure;
   }
-  return json ?? text;
+  return raw ? text : (json ?? text);
 }
 
 // danh sách model web / ảnh (giữ 10 phút)
@@ -909,6 +910,31 @@ export function rankImageModels(ids, chat = "", wanted = "") {
     .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);
 }
 
+// Tạo / sửa ảnh bằng CHÍNH model chat GPT – cách ChatGPT / Codex gốc làm: model chat nhìn thấy ảnh gốc + lời nhắn rồi tự gọi
+// công cụ image_generation có sẵn của OpenAI. Dùng khi các model ảnh riêng (gpt-image qua tài khoản) lỗi hoặc không có.
+const NATIVE = "native:";
+async function nativeGptImage(chat, { prompt, source, size, quality, signal }) {
+  const tool = { type: "image_generation", ...(size ? { size } : {}), quality, ...(source ? { input_fidelity: "high" } : {}) };
+  const text = await gatewayCall("/responses", { method: "POST", raw: true, timeoutMs: IMAGE_TIMEOUT_MS, signal, body: {
+    model: chat, stream: true, store: false,
+    instructions: "You are an image generation assistant. Call the image_generation tool exactly once for the user's request, then stop. Do not ask questions.",
+    input: [{ role: "user", content: [{ type: "input_text", text: (source ? "Edit the attached image. " : "Generate an image. ") + prompt }, ...(source ? [{ type: "input_image", image_url: source }] : [])] }],
+    tools: [tool], tool_choice: { type: "image_generation" }
+  } });
+  let b64 = ""; let failure = "";
+  const take = (item) => { if (item && item.type === "image_generation_call" && typeof item.result === "string" && item.result.length > 1000) b64 = item.result; };
+  const read = (event) => {
+    if (!event || typeof event !== "object") return;
+    take(event.item);
+    for (const item of event.response?.output || event.output || []) take(item);
+    if (event.type === "response.failed" || event.type === "error") failure = event.response?.error?.message || event.error?.message || event.message || "model báo lỗi";
+  };
+  if (/^\s*\{/.test(text)) { try { read(JSON.parse(text)); } catch { /* không phải JSON */ } }
+  else for (const line of String(text).split(/\r?\n/)) { if (line.startsWith("data:")) { try { read(JSON.parse(line.slice(5))); } catch { /* dòng [DONE] */ } } }
+  if (!b64) throw Object.assign(new Error(failure || "model chat không trả ảnh (chưa hỗ trợ tạo ảnh trực tiếp)"), { status: 502 });
+  return Buffer.from(b64, "base64");
+}
+
 // kích thước ảnh từ phần đầu file (PNG / JPEG / WebP) – không cần thư viện; không đọc được thì null
 export function imageSize(buf) {
   try {
@@ -939,12 +965,34 @@ export function sizeForRatio(width, height) {
   const ratio = width / height;
   return ratio > 1.2 ? "1536x1024" : ratio < 0.83 ? "1024x1536" : "1024x1024";
 }
+const SIZE_HINT = { "1024x1024": "square 1:1", "1024x1536": "portrait 2:3 (vertical)", "1536x1024": "landscape 3:2 (horizontal)" };
 const SOURCE_MAX_BYTES = 3_000_000;
 const SOURCE_MAX_SIDE = 2400;
 const IMAGE_TIMEOUT_MS = Number(process.env.LTN_IMAGE_TIMEOUT_MS) || 240_000;
 const IMAGE_QUALITY = /^(high|medium|low|auto)$/.test(process.env.LTN_IMAGE_QUALITY || "") ? process.env.LTN_IMAGE_QUALITY : "high";
 // provider không nhận tham số chất lượng → bỏ tham số rồi gọi lại, không coi là model hỏng
 const PARAM_REJECTED = /quality|input_fidelity|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
+
+// đọc ảnh gốc / ảnh tham chiếu thành data URL; ảnh chụp điện thoại (4000px, 5–10 MB) gửi nguyên cỡ làm tải lên chậm gấp
+// nhiều lần mà model vẫn tự thu về ~1500px → thu nhỏ trước còn cạnh dài 2048px (cần Pillow; không có thì gửi ảnh gốc)
+async function loadImageSource(src) {
+  const ext = extname(src).toLowerCase();
+  let mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
+  let bytes = await readFile(src);
+  let dim = imageSize(bytes);
+  if (bytes.length > SOURCE_MAX_BYTES || (dim && Math.max(dim.width, dim.height) > SOURCE_MAX_SIDE)) {
+    try {
+      const alpha = ext === ".png" || ext === ".webp";
+      const small = join(tmpdir(), `simi-image-src-${process.pid}-${Date.now()}-${Math.round(Math.random() * 1e6)}${alpha ? ".png" : ".jpg"}`);
+      const wide = !dim || dim.width >= dim.height;
+      await imageRetouch({ source_path: src, output_path: small, ops: [{ op: "resize", [wide ? "width" : "height"]: Math.min(2048, dim ? Math.max(dim.width, dim.height) : 2048) }] });
+      const smallBytes = await readFile(small);
+      await unlink(small).catch(() => {});
+      if (smallBytes.length > 1000 && smallBytes.length < bytes.length) { bytes = smallBytes; mime = alpha ? "image/png" : "image/jpeg"; dim = imageSize(bytes) || dim; }
+    } catch { /* không thu nhỏ được → gửi ảnh gốc */ }
+  }
+  return { url: `data:${mime};base64,${bytes.toString("base64")}`, dim };
+}
 
 async function imageGenerate(args = {}) {
   const prompt = String(args.prompt || "").trim();
@@ -954,29 +1002,17 @@ async function imageGenerate(args = {}) {
   if (!output) throw new Error("Thiếu output_path (nơi lưu ảnh).");
   let outPath = isAbsolute(output) ? output : resolvePath(process.cwd(), output);
   if (!/\.(png|jpe?g|webp)$/i.test(outPath)) outPath += ".png";
-  let source = null; let autoSize = "";
+  let source = null; let autoSize = ""; const refs = [];
   if (mode === "edit") {
     const src = String(args.source_path || "").trim();
     if (!src || !existsSync(src)) throw new Error("Sửa ảnh cần source_path là ảnh có trên máy.");
-    const ext = extname(src).toLowerCase();
-    const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
-    let srcBytes = await readFile(src);
-    let srcMime = mime;
-    let dim = imageSize(srcBytes);
-    // ảnh chụp điện thoại (4000px, 5–10 MB) gửi nguyên cỡ làm tải lên chậm gấp nhiều lần mà model vẫn tự thu về ~1500px
-    // → thu nhỏ trước còn cạnh dài 2048px (cần Pillow; không có thì gửi ảnh gốc như cũ)
-    if (srcBytes.length > SOURCE_MAX_BYTES || (dim && Math.max(dim.width, dim.height) > SOURCE_MAX_SIDE)) {
-      try {
-        const alpha = ext === ".png" || ext === ".webp";
-        const small = join(tmpdir(), `simi-image-src-${process.pid}-${Date.now()}${alpha ? ".png" : ".jpg"}`);
-        const wide = !dim || dim.width >= dim.height;
-        await imageRetouch({ source_path: src, output_path: small, ops: [{ op: "resize", [wide ? "width" : "height"]: Math.min(2048, dim ? Math.max(dim.width, dim.height) : 2048) }] });
-        const smallBytes = await readFile(small);
-        await unlink(small).catch(() => {});
-        if (smallBytes.length > 1000 && smallBytes.length < srcBytes.length) { srcBytes = smallBytes; srcMime = alpha ? "image/png" : "image/jpeg"; dim = imageSize(srcBytes) || dim; }
-      } catch { /* không thu nhỏ được → gửi ảnh gốc */ }
+    const loaded = await loadImageSource(src);
+    source = loaded.url; const dim = loaded.dim;
+    for (const ref of (Array.isArray(args.ref_paths) ? args.ref_paths : []).slice(0, 3)) {
+      const refPath = String(ref || "").trim();
+      if (!refPath || !existsSync(refPath)) throw new Error(`Không thấy ảnh tham chiếu: ${refPath}`);
+      refs.push((await loadImageSource(refPath)).url);
     }
-    source = `data:${srcMime};base64,${srcBytes.toString("base64")}`;
     if (!args.size && dim) autoSize = sizeForRatio(dim.width, dim.height);
   }
   const size = args.size || autoSize;
@@ -993,25 +1029,51 @@ async function imageGenerate(args = {}) {
   order = [...order.filter((id) => !bad[id]), ...order.filter((id) => bad[id])];
   if (mode === "edit") {
     // kiểm tra khả năng sửa ảnh của nhiều model CÙNG LÚC (trước đây hỏi lần lượt, mỗi model chờ tới 20 giây)
-    const checked = await Promise.all(order.slice(0, 6).map(async (id) => {
+    const checked = await Promise.all(order.slice(0, 10).map(async (id) => {
       const caps = await imageCaps(id);
       return caps === null ? (EDIT_HINT.test(id) ? id : null) : caps.includes("edit") ? id : null;
     }));
     order = checked.filter(Boolean);
-    if (!order.length) {
+    if (!order.length && !(imageFamily(chat) === "gpt" && chat)) {
       return { ok: false, error: "Model ảnh hiện có chưa sửa được ảnh này.", advice: "Chỉnh chi tiết nhỏ thì dùng image_retouch; còn lại báo người dùng đổi model chat (vd GPT / Gemini) rồi thử lại. Không tự chuyển sang Muse – Muse chỉ dùng khi người dùng chọn skill Muse." };
     }
   }
   await mkdir(dirname(outPath), { recursive: true });
   const startedAt = Date.now();
-  const tried = []; const errors = [];
+  const tried = []; const errors = []; const skipPrefix = new Set();
   const controllers = new Map();
+  // Ứng viên: tối đa 2 model mỗi nhà cung cấp (3 model đầu thường cùng 1 tài khoản – tài khoản lỗi là hỏng cả 3),
+  // chat GPT thì thêm đường "model chat tự tạo ảnh", rồi mới tới model tốt nhất của hãng khác.
+  const prefixOf = (id) => (id.includes("/") ? id.split("/")[0] + "/" : id);
+  const perPrefix = new Map(); const picked = [];
+  for (const id of order) {
+    const n = perPrefix.get(prefixOf(id)) || 0;
+    if (n >= 2) continue;
+    perPrefix.set(prefixOf(id), n + 1); picked.push(id);
+  }
+  const family = imageFamily(chat);
+  const nativeId = family === "gpt" && chat && !(args.model && ids.includes(args.model)) ? NATIVE + chat : "";
+  // model ảnh GPT còn tốt → model chat tự tạo ảnh → model hãng khác / model GPT vừa bị đánh dấu lỗi
+  const own = nativeId ? picked.filter((id) => FAMILY_IMAGE.gpt.test(id) && !bad[id]) : [];
+  const candidates = nativeId ? [...own, nativeId, ...picked.filter((id) => !own.includes(id))].slice(0, 5) : picked.slice(0, 4);
   const attempt = async (model) => {
+    // tài khoản của nhà cung cấp này vừa báo không dùng được → bỏ qua model cùng tài khoản, khỏi chờ thêm
+    if (!model.startsWith(NATIVE) && skipPrefix.has(prefixOf(model))) throw Object.assign(new Error("bỏ qua (cùng tài khoản vừa lỗi)"), { status: 409 });
     tried.push(model);
     const ac = new AbortController(); controllers.set(model, ac);
+    if (model.startsWith(NATIVE)) {
+      try { return { model: `${chat} (model chat tự tạo ảnh)`, bytes: await nativeGptImage(chat, { prompt, source, size, quality, signal: ac.signal }) }; } catch (error) {
+        if (error.status === -1) throw error;
+        errors.push({ model, error: String(error.message).slice(0, 200) });
+        throw error;
+      }
+    }
     // gpt-image: chất lượng cao như giao diện gốc của ChatGPT; sửa ảnh thêm input_fidelity để giữ đúng mặt người / logo / chữ của ảnh gốc
     const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}) } : {};
-    const base = { model, prompt, n: 1, ...(size ? { size } : {}), ...(source ? { image: source } : {}) };
+    // 9Router: gpt-image qua tài khoản ChatGPT (cx/) tạo ảnh MỚI nhanh và ổn định nhất bằng đường Images gốc, nhưng chỉ khi
+    // không kèm size (kèm size là rơi về đường vòng qua model chat nền – chậm, hay lỗi) → đưa tỉ lệ khung vào prompt
+    const viaNative = !source && size && /^cx\//i.test(model);
+    const base = { model, prompt: viaNative ? `${prompt}\n\nOutput aspect ratio: ${SIZE_HINT[size] || size}.` : prompt, n: 1, ...(size && !viaNative ? { size } : {}), ...(source ? { image: source } : {}), ...(refs.length ? { images: refs } : {}) };
     try {
       let payload;
       try {
@@ -1036,6 +1098,7 @@ async function imageGenerate(args = {}) {
       if (error.status >= 400 && error.status < 500) {
         bad[model] = Math.floor(Date.now() / 1000);
         if (/not supported|unsupported|account|quota|reset after/i.test(error.message)) {
+          skipPrefix.add(prefixOf(model));
           const prefix = model.split("/")[0] + "/";
           for (const id of ids) if (id.startsWith(prefix)) bad[id] = bad[model];
         }
@@ -1046,7 +1109,7 @@ async function imageGenerate(args = {}) {
   };
   try {
     // model đầu chưa xong sau IMAGE_HEDGE_MS thì chạy luôn model kế tiếp song song, lấy ảnh nào xong trước
-    const { model, bytes } = await hedged(order.slice(0, 3), async (id) => {
+    const { model, bytes } = await hedged(candidates, async (id) => {
       try { return await attempt(id); } catch (error) {
         // không kết nối được Gateway (mạng chập chờn) → thử lại model đó 1 lần sau 3 giây
         if (error.status !== 0 || /không trả lời/.test(error.message)) throw error;
@@ -1067,7 +1130,7 @@ async function imageGenerate(args = {}) {
     return {
       ok: false, error: "Các model ảnh đều lỗi", tried, errors,
       next: "",
-      advice: "Báo người dùng đúng lý do lấy từ errors (ghi tên model + câu lỗi, đừng nói chung chung 'lỗi kết nối') và gợi ý thử lại sau ít phút hoặc đổi model chat; không tự viết script / thử tiếp nhiều cách khác, không tự chuyển sang Muse."
+      advice: "Báo người dùng thật ngắn: 1 câu lý do chính lấy từ errors (đừng liệt kê từng model) và gợi ý thử lại sau ít phút hoặc đổi model chat; không tự viết script / thử tiếp nhiều cách khác, không tự chuyển sang Muse."
     };
   }
 }
