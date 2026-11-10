@@ -50,7 +50,8 @@ test("image_generate: chọn model ảnh tốt nhất trước, gpt-image xin ch
     assert.equal(r.ok, true);
     const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
     assert.equal(gen[0].body.model, "cx/gpt-image-2", "model ảnh mạnh nhất trước, không phải bản mini / schnell");
-    assert.equal(gen[0].body.quality, "medium");
+    assert.equal(gen[0].body.quality, "high", "mặc định chất lượng cao như giao diện gốc");
+    assert.match(r.reply, /1–2 câu/);
   } finally { t.stop(); }
 });
 
@@ -220,5 +221,65 @@ test("image_generate: lỗi 5xx / mất kết nối không đánh dấu model h�
     const second = JSON.parse(t.text(await t.call("image_generate", { prompt: "rồng con dễ thương", output_path: join(t.home, "o", "b.png") })));
     assert.equal(second.ok, true, "mọi model đều bị đánh dấu thì vẫn thử, không báo hết model");
     assert.equal(t.seen.find((s) => s.url === "/v1/images/generations").body.model, "cx/gpt-image-2");
+  } finally { t.stop(); }
+});
+
+// PNG thật 300x200 (ngang) / WebP tối thiểu: chỉ cần phần đầu file đúng chuẩn
+function pngOf(width, height) {
+  const head = Buffer.alloc(24); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head);
+  head.writeUInt32BE(13, 8); head.write("IHDR", 12, "latin1"); head.writeUInt32BE(width, 16); head.writeUInt32BE(height, 20);
+  return Buffer.concat([head, Buffer.alloc(4000, 7)]);
+}
+function webpOf(width, height) {
+  const head = Buffer.alloc(30); head.write("RIFF", 0, "latin1"); head.write("WEBP", 8, "latin1"); head.write("VP8X", 12, "latin1");
+  head.writeUIntLE(width - 1, 24, 3); head.writeUIntLE(height - 1, 27, 3);
+  return Buffer.concat([head, Buffer.alloc(4000, 7)]);
+}
+
+test("image_generate sửa ảnh: giữ tỉ lệ ảnh gốc, xin giữ chi tiết (input_fidelity); provider không nhận tham số thì bỏ tham số gọi lại; lưu đúng đuôi file", async () => {
+  let calls = 0;
+  const t = await start(({ url, body }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2" }] });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["generate", "edit"] });
+    if (url === "/v1/images/generations") {
+      calls += 1;
+      if (body.input_fidelity) return send(400, { error: { message: "Unknown parameter: 'input_fidelity'." } });
+      return send(200, { data: [{ b64_json: webpOf(1536, 1024).toString("base64") }] });
+    }
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const src = join(t.home, "banner.png"); writeFileSync(src, pngOf(300, 200));
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "Remove the watermark, keep everything else", mode: "edit", source_path: src, output_path: join(t.home, "out", "banner-sach.png") })));
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
+    assert.equal(calls, 2, "bị từ chối tham số → gọi lại 1 lần, không báo model hỏng");
+    assert.equal(gen[0].body.size, "1536x1024", "ảnh gốc ngang → ảnh sửa cũng ngang");
+    assert.equal(gen[0].body.input_fidelity, "high");
+    assert.equal(gen[1].body.input_fidelity, undefined);
+    assert.equal(gen[1].body.quality, undefined);
+    assert.equal(gen[1].body.size, "1536x1024");
+    assert.match(r.path, /banner-sach\.webp$/, "model trả WebP → lưu .webp");
+    assert.deepEqual([r.width, r.height], [1536, 1024]);
+    assert.ok(existsSync(r.path));
+  } finally { t.stop(); }
+});
+
+test("image_generate: quality medium khi cần bản nháp nhanh; ảnh gốc dọc → khổ dọc; ảnh gốc lạ thì để model tự chọn khổ", async () => {
+  const t = await start(({ url }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: [{ id: "cx/gpt-image-2" }] });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: ["generate", "edit"] });
+    if (url === "/v1/images/generations") return send(200, { data: [{ b64_json: pngOf(1024, 1536).toString("base64") }] });
+    send(404, {});
+  }, "cx/gpt-6.1-sol");
+  try {
+    const doc = join(t.home, "doc.png"); writeFileSync(doc, pngOf(1080, 1920));
+    const la = join(t.home, "la.png"); writeFileSync(la, Buffer.alloc(3000, 1));
+    await t.call("image_generate", { prompt: "Brighten", mode: "edit", source_path: doc, quality: "medium", output_path: join(t.home, "out", "a.png") });
+    await t.call("image_generate", { prompt: "Brighten", mode: "edit", source_path: la, output_path: join(t.home, "out", "b.png") });
+    const gen = t.seen.filter((s) => s.url === "/v1/images/generations");
+    assert.equal(gen[0].body.size, "1024x1536");
+    assert.equal(gen[0].body.quality, "medium");
+    assert.equal(gen[1].body.size, undefined);
   } finally { t.stop(); }
 });

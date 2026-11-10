@@ -44,6 +44,11 @@ description: Tạo hoặc chỉnh ảnh (xóa chữ, retouch, đổi màu, đổ
   đang dùng. Công cụ tự chọn model ảnh **theo model chat người dùng đang chọn**
   (GPT → gpt-image, Gemini → Gemini/Imagen; Claude và model khác → model ảnh tốt
   nhất), tự dự phòng, lưu file – không cần quyền mạng của sandbox.
+- Công cụ mặc định tạo ảnh **chất lượng cao** (`quality` bỏ trống). Chỉ đặt
+  `quality: "medium"` khi người dùng cần bản nháp / cần gấp.
+- Sửa ảnh: bỏ trống `size` – công cụ tự lấy khổ theo tỉ lệ ảnh gốc và yêu cầu model
+  giữ đúng chi tiết ảnh gốc (mặt người, logo, chữ). Chỉ điền `size` khi người dùng
+  muốn đổi khổ.
 - **Không bao giờ tự dùng Muse** (`muse_image`, skill `muse-tao-anh`): chỉ khi người
   dùng chọn skill Muse hoặc ghi đích danh "Muse". Ảnh lỗi thì báo người dùng, không chuyển sang Muse.
 - Gọi **một lần** cho mỗi yêu cầu. Kết quả `ok:true` → hiển thị ảnh bằng giá trị
@@ -268,7 +273,7 @@ PY
 
 | Kết quả | Việc làm |
 |---|---|
-| `"ok":true` | Mở ảnh ở `path` xem nhanh, hiển thị bằng `![mô tả](<path>)`, nêu model đã dùng, hỏi user cần chỉnh gì rồi **kết thúc lượt** |
+| `"ok":true` | Hiển thị ảnh bằng `![mô tả](<path>)` (hoặc giá trị `show`), viết **1–2 câu** (đã làm gì; sửa ảnh thì nêu điểm khác ảnh gốc nếu có) rồi **kết thúc lượt**. Không kể prompt, model, tham số, từng bước đã làm |
 | `"next":"muse-tao-anh"` | Chưa có model sửa ảnh dùng được: chuyển ngay sang skill `muse-tao-anh` (lệnh `ltn-muse --ref "<Src>"`) với cùng prompt, đúng một lần |
 | `no_working_model` khi tạo ảnh mới | Báo user các model ảnh đang lỗi phía provider, thử lại sau; dừng |
 | `status` 401 | Lỗi key: báo user, không tự đổi key |

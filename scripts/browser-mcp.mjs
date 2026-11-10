@@ -50,7 +50,7 @@ const GATEWAY_TOOLS = [
   },
   {
     name: "image_generate",
-    description: "Tạo ảnh mới hoặc sửa ảnh (xoá chữ, đổi màu, đổi nền, outpaint, ghép) bằng model ảnh qua SIMI Gateway, tự chọn model và dự phòng, lưu file ảnh về máy. Gọi MỘT lần cho mỗi yêu cầu; ok:true thì hiển thị ảnh bằng ![](đường dẫn) và kết thúc, không tạo lại.",
+    description: "Tạo ảnh mới hoặc sửa ảnh (xoá chữ, đổi màu, đổi nền, outpaint, ghép) bằng model ảnh qua SIMI Gateway, tự chọn model và dự phòng, lưu file ảnh về máy. Chất lượng cao theo mặc định; sửa ảnh tự giữ đúng tỉ lệ khung và chi tiết ảnh gốc. Gọi MỘT lần cho mỗi yêu cầu; ok:true thì hiển thị ảnh bằng giá trị show và trả lời 1–2 câu rồi kết thúc – không tạo lại, không kể prompt / model / tham số.",
     annotations: { readOnlyHint: false, openWorldHint: true, title: "Tạo ảnh" },
     inputSchema: {
       type: "object",
@@ -59,7 +59,8 @@ const GATEWAY_TOOLS = [
         mode: { type: "string", enum: ["generate", "edit"], default: "generate" },
         source_path: { type: "string", description: "edit: đường dẫn ảnh gốc cần sửa." },
         output_path: { type: "string", description: "Nơi lưu ảnh: đường dẫn tuyệt đối trong thư mục làm việc của đoạn chat, ví dụ <thư mục làm việc>/outputs/banner-tet.png. Tên mới cho mỗi lần, không ghi đè." },
-        size: { type: "string", enum: ["1024x1024", "1024x1536", "1536x1024"], description: "Vuông / dọc / ngang. Bỏ trống để model tự chọn." },
+        size: { type: "string", enum: ["1024x1024", "1024x1536", "1536x1024"], description: "Vuông / dọc / ngang theo mục đích (bài đăng vuông, poster / story dọc, banner / slide ngang). Sửa ảnh: bỏ trống – tự lấy theo tỉ lệ ảnh gốc." },
+        quality: { type: "string", enum: ["high", "medium"], description: "Bỏ trống = high (đẹp, chi tiết – dùng cho ảnh giao người dùng). medium: nhanh hơn, chỉ khi người dùng cần bản nháp / cần gấp." },
         chat_model: { type: "string", description: "ID model chat đang dùng (để chọn model ảnh cùng hãng)." },
         model: { type: "string", description: "Model ảnh người dùng chỉ định đích danh (thường bỏ trống)." }
       },
@@ -887,6 +888,40 @@ export function rankImageModels(ids, chat = "", wanted = "") {
     .sort((a, b) => b.score - a.score || a.index - b.index).map((item) => item.id);
 }
 
+// kích thước ảnh từ phần đầu file (PNG / JPEG / WebP) – không cần thư viện; không đọc được thì null
+export function imageSize(buf) {
+  try {
+    if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20), type: "png" };
+    if (buf[0] === 0xff && buf[1] === 0xd8) {
+      let at = 2;
+      while (at + 9 < buf.length) {
+        if (buf[at] !== 0xff) { at += 1; continue; }
+        const marker = buf[at + 1];
+        if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) return { width: buf.readUInt16BE(at + 7), height: buf.readUInt16BE(at + 5), type: "jpg" };
+        at += 2 + buf.readUInt16BE(at + 2);
+      }
+      return { width: 0, height: 0, type: "jpg" };
+    }
+    if (buf.length > 30 && buf.toString("latin1", 0, 4) === "RIFF" && buf.toString("latin1", 8, 12) === "WEBP") {
+      const kind = buf.toString("latin1", 12, 16);
+      if (kind === "VP8X") return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3), type: "webp" };
+      if (kind === "VP8 ") return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff, type: "webp" };
+      if (kind === "VP8L") { const bits = buf.readUInt32LE(21); return { width: 1 + (bits & 0x3fff), height: 1 + ((bits >> 14) & 0x3fff), type: "webp" }; }
+      return { width: 0, height: 0, type: "webp" };
+    }
+  } catch { /* file lạ */ }
+  return null;
+}
+// khổ ảnh gần nhất với tỉ lệ ảnh gốc → ảnh sửa xong không bị đổi khung (vuông hoá ảnh ngang, cắt mất 2 bên…)
+export function sizeForRatio(width, height) {
+  if (!width || !height) return "";
+  const ratio = width / height;
+  return ratio > 1.2 ? "1536x1024" : ratio < 0.83 ? "1024x1536" : "1024x1024";
+}
+const IMAGE_QUALITY = /^(high|medium|low|auto)$/.test(process.env.LTN_IMAGE_QUALITY || "") ? process.env.LTN_IMAGE_QUALITY : "high";
+// provider không nhận tham số chất lượng → bỏ tham số rồi gọi lại, không coi là model hỏng
+const PARAM_REJECTED = /quality|input_fidelity|unknown param|unrecognized|unexpected (field|param)|invalid.{0,20}param|additional propert/i;
+
 async function imageGenerate(args = {}) {
   const prompt = String(args.prompt || "").trim();
   if (!prompt) throw new Error("Thiếu mô tả ảnh (prompt).");
@@ -895,14 +930,19 @@ async function imageGenerate(args = {}) {
   if (!output) throw new Error("Thiếu output_path (nơi lưu ảnh).");
   let outPath = isAbsolute(output) ? output : resolvePath(process.cwd(), output);
   if (!/\.(png|jpe?g|webp)$/i.test(outPath)) outPath += ".png";
-  let source = null;
+  let source = null; let autoSize = "";
   if (mode === "edit") {
     const src = String(args.source_path || "").trim();
     if (!src || !existsSync(src)) throw new Error("Sửa ảnh cần source_path là ảnh có trên máy.");
     const ext = extname(src).toLowerCase();
     const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
-    source = `data:${mime};base64,${(await readFile(src)).toString("base64")}`;
+    const srcBytes = await readFile(src);
+    source = `data:${mime};base64,${srcBytes.toString("base64")}`;
+    const dim = imageSize(srcBytes);
+    if (!args.size && dim) autoSize = sizeForRatio(dim.width, dim.height);
   }
+  const size = args.size || autoSize;
+  const quality = /^(high|medium)$/.test(args.quality || "") ? args.quality : IMAGE_QUALITY;
   const ids = (await discover("/models/image")).map((item) => item.id);
   if (!ids.length) throw new Error("Gateway chưa có model ảnh nào cho tài khoản này.");
   const chat = String(chatModelFromApp() || args.chat_model || chatModelFromConfig());
@@ -931,10 +971,17 @@ async function imageGenerate(args = {}) {
   const attempt = async (model) => {
     tried.push(model);
     const ac = new AbortController(); controllers.set(model, ac);
-    // gpt-image: chất lượng "medium" – đẹp gần bằng "high" mà nhanh hơn nhiều
-    const body = { model, prompt, n: 1, ...(args.size ? { size: args.size } : {}), ...(source ? { image: source } : {}), ...(/gpt-image/i.test(model) ? { quality: "medium" } : {}) };
+    // gpt-image: chất lượng cao như giao diện gốc của ChatGPT; sửa ảnh thêm input_fidelity để giữ đúng mặt người / logo / chữ của ảnh gốc
+    const extras = /gpt-image/i.test(model) ? { quality, ...(source ? { input_fidelity: "high" } : {}) } : {};
+    const base = { model, prompt, n: 1, ...(size ? { size } : {}), ...(source ? { image: source } : {}) };
     try {
-      const payload = await gatewayCall("/images/generations", { method: "POST", body, timeoutMs: 180_000, signal: ac.signal });
+      let payload;
+      try {
+        payload = await gatewayCall("/images/generations", { method: "POST", body: { ...base, ...extras }, timeoutMs: 180_000, signal: ac.signal });
+      } catch (error) {
+        if (!(error.status === 400 && Object.keys(extras).length && PARAM_REJECTED.test(error.message))) throw error;
+        payload = await gatewayCall("/images/generations", { method: "POST", body: base, timeoutMs: 180_000, signal: ac.signal });
+      }
       const item = [...(payload?.data || [])].reverse().find((entry) => entry?.b64_json || entry?.url) || {};
       let bytes = item.b64_json ? Buffer.from(String(item.b64_json).replace(/^data:[^,]+,/, ""), "base64") : null;
       if (!bytes && item.url) {
@@ -970,11 +1017,13 @@ async function imageGenerate(args = {}) {
       }
     }, IMAGE_HEDGE_MS);
     for (const [other, ac] of controllers) if (other !== model) ac.abort();
+    // đuôi file đúng với dữ liệu thật (model trả JPEG / WebP mà lưu .png thì nhiều app không mở được)
+    const made = imageSize(bytes);
     let finalPath = outPath;
-    if (bytes[0] === 0xff && bytes[1] === 0xd8) finalPath = outPath.replace(/\.(png|webp)$/i, ".jpg");
+    if (made && !new RegExp(`\\.${made.type === "jpg" ? "jpe?g" : made.type}$`, "i").test(outPath)) finalPath = outPath.replace(/\.\w+$/, `.${made.type}`);
     for (let n = 2; existsSync(finalPath); n += 1) finalPath = finalPath.replace(/(?:-\d+)?(\.\w+)$/, `-${n}$1`);
     await writeFile(finalPath, bytes);
-    return { __content: [{ type: "text", text: JSON.stringify({ ok: true, path: finalPath, model, seconds: Math.round((Date.now() - startedAt) / 1000), show: `![](${finalPath.replace(/\\/g, "/")})` }) }] };
+    return { __content: [{ type: "text", text: JSON.stringify({ ok: true, path: finalPath, model, ...(made?.width ? { width: made.width, height: made.height } : {}), seconds: Math.round((Date.now() - startedAt) / 1000), show: `![](${finalPath.replace(/\\/g, "/")})`, reply: "Hiển thị ảnh bằng show, viết 1–2 câu (đã làm gì; sửa ảnh thì nêu điểm khác ảnh gốc nếu có). Không tạo lại, không kể prompt / model / tham số." }) }] };
   } catch (error) {
     if (error.fatal) return { ok: false, status: error.status, error: error.message };
     return {
@@ -985,7 +1034,8 @@ async function imageGenerate(args = {}) {
   }
 }
 
-const IMAGE_HEDGE_MS = Number(process.env.LTN_IMAGE_HEDGE_MS) || 45_000;
+// chất lượng cao cần lâu hơn: chờ model tốt nhất 60 giây rồi mới chạy thêm model dự phòng song song
+const IMAGE_HEDGE_MS = Number(process.env.LTN_IMAGE_HEDGE_MS) || 60_000;
 const EDIT_HINT = /gpt-image|gemini[\w.-]*image|nano-?banana|kontext|seedream|qwen[\w.-]*edit|flux-?2/i;
 const capsCache = new Map();
 // khả năng của model ảnh (generate / edit) – hỏi 1 lần, nhớ 1 giờ; null = không biết
