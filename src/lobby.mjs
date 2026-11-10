@@ -12,7 +12,7 @@ import { Cinema } from "./lobby-cinema.mjs";
 import { LobbyFiles } from "./lobby-files.mjs";
 import { LobbySettings, PERMS, isAdmin, hhmm } from "./lobby-admin.mjs";
 import { LobbyCat } from "./lobby-cat.mjs";
-import { NpcStore, NpcLog, npcCandidates, askNpc, cleanGuides, npcConfig } from "./lobby-npc.mjs";
+import { NpcStore, NpcLog, npcCandidates, askNpc, cleanGuides, npcConfig, npcModelsFor, npcModelHealth } from "./lobby-npc.mjs";
 import { LobbyGames } from "./lobby-games.mjs";
 import { LobbyIdeas } from "./lobby-ideas.mjs";
 
@@ -718,12 +718,13 @@ class Lobby {
     const custom = this.npcStore.data.guides;
     const guideText = custom ? custom.map((g) => `## ${g.title}\n${g.steps.map((s2, i) => `${i + 1}. ${s2.text}`).join("\n")}`).join("\n\n") : cleanText(body.guide, 24_000);
     const t0 = Date.now(); const by = this.profileOf(ident).name;
-    let answer;
-    try { answer = await askNpc({ npcId: n.id, question, history: body.history, guideText, notes: this.npcStore.data.notes, askerName: by, selfUrl }); }
+    let r;
+    try { r = await askNpc({ npcId: n.id, question, history: body.history, guideText, notes: this.npcStore.data.notes, askerName: by, selfUrl, models: n.models }); }
     catch (e) { this.npcLog.add({ byId: ident.id, by, q: question.slice(0, 300), ok: false, err: String(e.message || e).slice(0, 240), ms: Date.now() - t0, test: !!body.test || undefined }); throw e; }
-    const entry = this.npcLog.add({ byId: ident.id, by, q: question.slice(0, 300), ok: true, a: answer.slice(0, 300), ms: Date.now() - t0, test: !!body.test || undefined });
-    jsonLog("lobby_npc_ask", { member: ident.id, chars: question.length });
-    return { answer, id: entry.id };
+    const answer = r.text;
+    const entry = this.npcLog.add({ byId: ident.id, by, q: question.slice(0, 300), ok: true, a: answer.slice(0, 300), model: r.model, ms: Date.now() - t0, test: !!body.test || undefined });
+    jsonLog("lobby_npc_ask", { member: ident.id, chars: question.length, model: r.model });
+    return { answer, id: entry.id, model: r.model };
   }
 
   // { to, kind[, style] } mời / làm ngay · { id, accept } trả lời lời mời
@@ -884,10 +885,19 @@ class Lobby {
       const id = body.id ? String(body.id) : null;
       if (id && !MEMBER_ID.test(id)) throw httpError(400, "Mã tài khoản không hợp lệ");
       if (id && !(await npcCandidates()).some((c) => c.id === id)) throw httpError(404, "Không tìm thấy tài khoản này trong users.json", "not_found_error");
-      this.settings.s.npc = id ? { id, by: me.name, ts: Date.now() } : null;
+      // đổi tài khoản thì bỏ danh sách model cũ (tài khoản khác có Combo / model khác)
+      const prev = this.settings.s.npc;
+      this.settings.s.npc = id ? { id, by: me.name, ts: Date.now(), ...(prev && prev.id === id && prev.models ? { models: prev.models } : {}) } : null;
       await this.settings.save();
       this.broadcast("npc", { npc: await this.npcPublic() });
       await this.settings.audit(me, "npc", { target: id });
+    } else if (action === "npc-models") {
+      // model Trợ lý dùng, theo thứ tự ưu tiên (lỗi thì tự chuyển model kế tiếp); [] = tự động
+      if (!this.settings.s.npc) throw httpError(400, "Chọn tài khoản Trợ lý trước");
+      const list = (Array.isArray(body.models) ? body.models : []).map((m) => String(m || "").trim()).filter((m) => /^[\w.:/@[\]+-]{1,120}$/.test(m));
+      this.settings.s.npc = { ...this.settings.s.npc, models: [...new Set(list)].slice(0, 6) };
+      await this.settings.save();
+      await this.settings.audit(me, "npc-models", { models: this.settings.s.npc.models.join(", ") || "tự động" });
     } else if (action === "npc-guides") {
       const patch = {};
       if (body.guides !== undefined) patch.guides = cleanGuides(body.guides);
@@ -981,6 +991,17 @@ async function routeLobby(req, res, principal, url) {
       const b = await json();
       if (!L.npcLog.rate(String(b.id || ""), ident.id, !!b.good)) throw httpError(404, "Không tìm thấy câu trả lời này", "not_found_error");
       return sendJson(res, 200, { ok: true });
+    }
+    case "GET /v1/lobby/admin/npc-models": {
+      // admin chọn model cho Trợ lý: model tài khoản NPC được dùng + tình trạng gần đây
+      if (!isAdmin(ident)) throw httpError(403, "Chỉ admin mới xem được", "permission_error");
+      const n = L.settings.s.npc;
+      if (!n) return sendJson(res, 200, { models: [], selected: [], health: {} });
+      const local = String(req.socket.localAddress || "127.0.0.1").replace(/^::ffff:/, "");
+      const host = local === "::" || local === "0.0.0.0" || local === "::1" ? "127.0.0.1" : local.includes(":") ? `[${local}]` : local;
+      let info = { models: [], mode: "", combos: [] }; let error = "";
+      try { info = await npcModelsFor({ npcId: n.id, selfUrl: `http://${host}:${req.socket.localPort}` }); } catch (e) { error = String(e.message || e); }
+      return sendJson(res, 200, { ...info, selected: n.models || [], health: npcModelHealth(), error });
     }
     case "POST /v1/lobby/npc/ask": {
       const local = String(req.socket.localAddress || "127.0.0.1").replace(/^::ffff:/, "");

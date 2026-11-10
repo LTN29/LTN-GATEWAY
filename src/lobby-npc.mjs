@@ -130,8 +130,42 @@ async function modelList(selfUrl, key, clientId, fresh) {
 // model vừa trả lời được thì lần sau thử trước
 function rememberModel(key, model) { const c = modelCache.get(key); if (c && c.list[0] !== model) c.list = [model, ...c.list.filter((m) => m !== model)]; }
 
-// hỏi AI: đi vòng qua chính Gateway (/v1/responses) bằng key của tài khoản NPC
-export async function askNpc({ npcId, question, history, guideText, notes, askerName, selfUrl }) {
+// tình trạng từng model (bộ nhớ): lỗi thì tạm nghỉ (theo "reset after 2m" của máy chủ AI, mặc định 2 phút) → câu sau thử model khác ngay
+const health = new Map(); // model → { ok, err, at, until }
+function coolDown(model, err) {
+  const m = /reset (?:after|in)\s*(\d+)\s*(s|m|h)/i.exec(String(err));
+  const ms = m ? Number(m[1]) * { s: 1000, m: 60_000, h: 3600_000 }[m[2].toLowerCase()] : 120_000;
+  health.set(model, { ok: false, err: String(err).slice(0, 200), at: Date.now(), until: Date.now() + Math.min(Math.max(ms, 15_000), 3600_000) });
+}
+export function npcModelHealth() {
+  const now = Date.now();
+  return Object.fromEntries([...health].map(([m, h]) => [m, { ok: h.ok, err: h.err || "", at: h.at, cooling: h.until > now ? h.until : 0 }]));
+}
+
+// model tài khoản NPC được dùng (cho admin chọn) – đọc mới từ Gateway.
+// mode "combo_members": Gateway gửi đúng model được chọn → chọn model + tự chuyển model khác khi lỗi có tác dụng.
+// mode "combo": Gateway tự định tuyến theo Combo của tài khoản (bỏ qua tên model) → chọn model không đổi được gì.
+export async function npcModelsFor({ npcId, selfUrl }) {
+  const { key } = await npcKey(npcId);
+  const cid = sha(`npc:${npcId}`);
+  const clientId = `${cid.slice(0, 8)}-${cid.slice(8, 12)}-4${cid.slice(13, 16)}-8${cid.slice(17, 20)}-${cid.slice(20, 32)}`;
+  let mode = "combo_members"; let combos = null;
+  try {
+    const r = await fetch(`${selfUrl}/v1/codex/installer-config`, { headers: { authorization: `Bearer ${key}`, "x-ltn-client-id": clientId }, signal: AbortSignal.timeout(15_000) });
+    if (r.ok) {
+      const lines = (await r.text()).split(/\r?\n/);
+      if (lines[1] && lines[1] !== "combo_members") { mode = "combo"; combos = { routing: lines[1], list: lines.slice(2, 5).filter(Boolean) }; }
+    }
+  } catch { /* không đọc được: coi như chọn model được */ }
+  const list = npcConfig.model === "auto" ? await modelList(selfUrl, key, clientId, true) : [npcConfig.model];
+  return { mode, combos, models: list.filter((m) => m !== "auto") };
+}
+
+const MAX_TRIES = 5;
+
+// hỏi AI: đi vòng qua chính Gateway (/v1/responses) bằng key của tài khoản NPC.
+// models: danh sách admin chọn (ưu tiên theo thứ tự) – lỗi thì tự chuyển model kế tiếp, hết thì thử model tự động còn lại.
+export async function askNpc({ npcId, question, history, guideText, notes, askerName, selfUrl, models }) {
   const { key, user } = await npcKey(npcId);
   const instructions = [
     `Bạn là "${user.displayName || "Trợ lý SIMI"}", NPC hướng dẫn trong app Văn Phòng AI của công ty.`,
@@ -156,38 +190,44 @@ export async function askNpc({ npcId, question, history, guideText, notes, asker
   // Gọi dạng stream (giống tab Chat của app): các combo Codex phía sau chỉ nhận stream = true.
   // Lỗi trả về mã 503 (không dùng 502/504: Cloudflare thay trang lỗi đó bằng trang HTML của nó, app mất thông báo thật).
   const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), npcConfig.timeoutMs);
-  let res, raw = "";
   const call = async (model) => {
-    res = await fetch(`${selfUrl}/v1/responses`, {
+    const res = await fetch(`${selfUrl}/v1/responses`, {
       method: "POST", signal: ac.signal,
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "text/event-stream", "x-ltn-client-id": clientId },
       body: JSON.stringify({ model, instructions, input, stream: true, store: false })
     });
-    raw = await res.text();
+    return { status: res.status, ok: res.ok, raw: await res.text() };
   };
+  const errors = [];
   try {
-    // combo_members: tài khoản chỉ được dùng model trong Combo đang tới lượt → model nào bị từ chối (403) thì thử model kế tiếp
-    let list = await modelList(selfUrl, key, clientId);
-    for (let i = 0, refreshed = false; i < Math.min(list.length, 4); i++) {
-      await call(list[i]);
-      if (res.status !== 403 || npcConfig.model !== "auto") { if (res.ok) rememberModel(key, list[i]); break; }
-      if (i === Math.min(list.length, 4) - 1 && !refreshed) { refreshed = true; list = await modelList(selfUrl, key, clientId, true); i = -1; }
+    const chosen = (Array.isArray(models) ? models : []).filter((m) => typeof m === "string" && m);
+    const auto = await modelList(selfUrl, key, clientId);
+    const all = [...new Set([...chosen, ...auto])];
+    // model đang tạm nghỉ vì lỗi xếp xuống cuối (vẫn thử nếu không còn model nào khác)
+    const now = Date.now();
+    const order = [...all.filter((m) => !(health.get(m)?.until > now)), ...all.filter((m) => health.get(m)?.until > now)];
+    for (const model of order.slice(0, MAX_TRIES)) {
+      const r = await call(model);
+      const { text, error } = parseResponsesBody(r.raw);
+      if (r.ok && !error && text.trim()) {
+        health.set(model, { ok: true, at: Date.now(), until: 0 });
+        rememberModel(key, model);
+        return { text: text.trim().slice(0, 8000), model };
+      }
+      const detail = error || (r.ok ? "câu trả lời trống" : `mã ${r.status}`);
+      errors.push({ model, status: r.status, detail: String(detail).slice(0, 240) });
+      jsonLog("lobby_npc_error", { npc: npcId, stage: "upstream", model, status: r.status, error: String(detail).slice(0, 300) });
+      if (r.status === 401) break; // key NPC sai: model khác cũng vậy
+      if (model !== "auto") coolDown(model, detail);
     }
   } catch (e) {
     jsonLog("lobby_npc_error", { npc: npcId, stage: "fetch", error: e.name === "AbortError" ? "timeout" : String(e.message || e).slice(0, 200) });
     throw httpError(503, e.name === "AbortError" ? "Trợ lý suy nghĩ lâu quá – hỏi lại ngắn hơn nhé" : "Không gọi được AI cho Trợ lý – báo admin kiểm tra Gateway", "server_error");
   } finally { clearTimeout(timer); }
-  const { text, error } = parseResponsesBody(raw);
-  if (!res.ok || error) {
-    const detail = error || `mã ${res.status}`;
-    jsonLog("lobby_npc_error", { npc: npcId, stage: "upstream", status: res.status, error: String(detail).slice(0, 300) });
-    throw httpError(res.status === 429 ? 429 : 503, `Trợ lý chưa trả lời được: ${String(detail).slice(0, 300)}`, res.status === 429 ? "rate_limit_error" : "server_error");
-  }
-  if (!text.trim()) {
-    jsonLog("lobby_npc_error", { npc: npcId, stage: "empty", status: res.status, sample: raw.slice(0, 200) });
-    throw httpError(503, "Trợ lý chưa trả lời được – thử lại nhé", "server_error");
-  }
-  return text.trim().slice(0, 8000);
+  const last = errors.at(-1) || { detail: "không có model nào", status: 503 };
+  const tried = errors.length > 1 ? ` (đã thử ${errors.length} model: ${errors.map((x) => x.model).join(", ")})` : "";
+  throw Object.assign(httpError(errors.length && errors.every((x) => x.status === 429) ? 429 : 503,
+    `Trợ lý chưa trả lời được: ${last.detail}${tried}`, errors.every((x) => x.status === 429) ? "rate_limit_error" : "server_error"), { tried: errors });
 }
 
 // đọc câu trả lời /v1/responses: SSE (response.output_text.delta / response.completed / error) hoặc JSON thường
