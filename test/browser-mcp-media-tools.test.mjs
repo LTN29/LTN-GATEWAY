@@ -411,3 +411,21 @@ test("sửa ảnh: gpt-image 2.6 đi trước 2.5; mọi model ảnh GPT báo \"
     assert.match(g.model, /^cx\/gpt-image/, "tạo ảnh mới vẫn dùng gpt-image");
   } finally { t.stop(); }
 });
+
+test("chat Gemini: sửa ảnh bằng model ảnh Gemini dù 9Router chỉ khai textToImage; gửi tỉ lệ khung theo ảnh gốc", async () => {
+  const t = await start(({ url }, send) => {
+    if (url === "/v1/models/image") return send(200, { data: ["cx/gpt-image-2.5", "ag/gemini-3.1-flash-image"].map((id) => ({ id })) });
+    if (url.startsWith("/v1/models/info")) return send(200, { capabilities: url.includes("gemini") ? ["textToImage"] : ["text2img", "edit"] });
+    if (url === "/v1/images/generations") return send(200, { data: [{ b64_json: PNG.toString("base64") }] });
+    send(404, {});
+  }, "ag/gemini-3-pro");
+  try {
+    const src = join(t.home, "doc.png"); writeFileSync(src, pngOf(900, 1600));
+    const r = JSON.parse(t.text(await t.call("image_generate", { prompt: "Replace the background", mode: "edit", source_path: src, output_path: join(t.home, "out", "g.png") })));
+    assert.equal(r.model, "ag/gemini-3.1-flash-image");
+    const body = t.seen.find((s) => s.url === "/v1/images/generations").body;
+    assert.equal(body.aspect_ratio, "2:3");
+    assert.match(body.prompt, /Output aspect ratio: portrait/);
+    assert.match(body.image, /^data:image\/png/);
+  } finally { t.stop(); }
+});

@@ -1049,7 +1049,9 @@ async function imageGenerate(args = {}) {
     // kiểm tra khả năng sửa ảnh của nhiều model CÙNG LÚC (trước đây hỏi lần lượt, mỗi model chờ tới 20 giây)
     const checked = await Promise.all(order.slice(0, 10).map(async (id) => {
       const caps = await imageCaps(id);
-      return caps === null ? (EDIT_HINT.test(id) ? id : null) : caps.includes("edit") ? id : null;
+      // model ảnh Gemini (Nano Banana) luôn nhận ảnh gốc để sửa, nhưng 9Router chỉ khai "textToImage" cho bản qua Antigravity
+      // → trước đây bị loại khỏi sửa ảnh, GPT lỗi là hết đường
+      return caps === null ? (EDIT_HINT.test(id) ? id : null) : (caps.includes("edit") || GEMINI_IMAGE.test(id)) ? id : null;
     }));
     order = checked.filter(Boolean);
     const broken = await readEditBroken();
@@ -1096,7 +1098,10 @@ async function imageGenerate(args = {}) {
     // 9Router: gpt-image qua tài khoản ChatGPT (cx/) tạo ảnh MỚI nhanh và ổn định nhất bằng đường Images gốc, nhưng chỉ khi
     // không kèm size (kèm size là rơi về đường vòng qua model chat nền – chậm, hay lỗi) → đưa tỉ lệ khung vào prompt
     const viaNative = !source && size && /^cx\//i.test(model);
-    const base = { model, prompt: viaNative ? `${prompt}\n\nOutput aspect ratio: ${SIZE_HINT[size] || size}.` : prompt, n: 1, ...(size && !viaNative ? { size } : {}), ...(source ? { image: source } : {}), ...(refs.length ? { images: refs } : {}) };
+    // Gemini: khổ ảnh chọn bằng tỉ lệ (aspect_ratio – bản qua Antigravity nhận), bản qua API key bỏ qua size → ghi thêm vào prompt
+    const gemini = GEMINI_IMAGE.test(model);
+    const hint = size && (viaNative || gemini) ? `\n\nOutput aspect ratio: ${SIZE_HINT[size] || size}.` : "";
+    const base = { model, prompt: prompt + hint, n: 1, ...(size && !viaNative ? { size } : {}), ...(gemini && ASPECT[size] ? { aspect_ratio: ASPECT[size] } : {}), ...(source ? { image: source } : {}), ...(refs.length ? { images: refs } : {}) };
     try {
       let payload;
       try {
@@ -1167,6 +1172,8 @@ async function imageGenerate(args = {}) {
 
 // chất lượng cao cần lâu hơn: chờ model tốt nhất 60 giây rồi mới chạy thêm model dự phòng song song
 const IMAGE_HEDGE_MS = Number(process.env.LTN_IMAGE_HEDGE_MS) || 60_000;
+const GEMINI_IMAGE = /gemini[\w.-]*image|nano-?banana/i;
+const ASPECT = { "1024x1024": "1:1", "1024x1536": "2:3", "1536x1024": "3:2" };
 const EDIT_HINT = /gpt-image|gemini[\w.-]*image|nano-?banana|kontext|seedream|qwen[\w.-]*edit|flux-?2/i;
 const capsCache = new Map();
 // khả năng của model ảnh (generate / edit) – hỏi 1 lần, nhớ 1 giờ; null = không biết
