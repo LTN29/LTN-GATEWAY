@@ -1494,6 +1494,11 @@ verify_codex_managed_runtime_config() {
   echo "Codex runtime config: provider ltn_gateway + MCP simi_browser OK"
 }
 
+# Văn Phòng AI chạy bộ cài ẩn: in mốc "[SIMI-STEP] <bước>" để app hiện đúng bước (chạy bằng lệnh thì không in)
+simi_step() {
+  if [ "${LTN_FROM_APP:-}" = "1" ]; then echo "[SIMI-STEP] $1"; fi
+}
+
 install_common_codex_plugins() {
   # Only use marketplace entries exposed by this installation; do not invent sources.
   if ! "${RUNTIME_NODE_CMD:-node}" - "${CODEX_CMD_PATH}" <<'PLUGINJS'
@@ -1638,7 +1643,9 @@ install_or_repair() {
   ensure_dirs
   detect_arch
   require_basic_dependencies
+  simi_step codex
   ensure_codex_cli_healthy
+  simi_step tools
   ensure_runtime_dependencies
   echo "[6/7] Cau hinh SIMI Gateway..."
   read_team_key
@@ -1646,6 +1653,7 @@ install_or_repair() {
   client_id="$(get_or_create_client_id)"
   store_credential
   merge_config "${client_id}"
+  simi_step skills
   echo "[7/7] Cai full skill 9Router..."
   install_managed_9router_skills
   install_browser_bridge
@@ -1653,8 +1661,15 @@ install_or_repair() {
   install_linux_browser_autostart
   install_local_tools
   install_simi_auto_update
+  simi_step config
   verify_codex_managed_runtime_config
-  install_common_codex_plugins
+  if [ "${LTN_FROM_APP:-}" = "1" ]; then
+    # cài từ Văn Phòng AI: plugin Codex Desktop chạy nền (tách khỏi luồng ra của bộ cài), không bắt người dùng chờ
+    (install_common_codex_plugins </dev/null >/dev/null 2>&1 &)
+    echo "  Plugin Codex Desktop: dang cai nen."
+  else
+    install_common_codex_plugins
+  fi
   diagnose_codex_cli >/dev/null 2>&1 || die_code 21 "Codex CLI bi loi sau khi cau hinh. Vui long lien he IT."
   echo ""
   echo "Cài đặt LTN Codex hoàn tất."

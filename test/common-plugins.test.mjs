@@ -35,8 +35,9 @@ test("missing CLI support and failed plugin downloads do not abort setup", () =>
   assert.ok(result.warnings.some(message => message.includes("Could not install plugin 'pdf'")));
 });
 test("both installers invoke common plugin installation and share defaults", () => {
-  assert.match(windows, /Install-CommonCodexPlugins\r?\n\r?\n\$installedCodexStatus/);
-  assert.match(unix, /verify_codex_managed_runtime_config\n  install_common_codex_plugins/);
+  // chạy bằng lệnh: cài ngay; chạy từ Văn Phòng AI (LTN_FROM_APP=1): cài nền, không bắt chờ
+  assert.match(windows, /\{ Start-CommonCodexPluginsInBackground \} else \{ Install-CommonCodexPlugins \}\r?\n\r?\n\$installedCodexStatus/);
+  assert.match(unix, /verify_codex_managed_runtime_config\n  if \[ "\$\{LTN_FROM_APP:-\}" = "1" \]; then[\s\S]*?else\n    install_common_codex_plugins\n  fi/);
   for (const name of ["documents", "pdf", "spreadsheets", "presentations", "template-creator", "visualize", "computer-use"]) {
     assert.ok(windows.includes('"' + name + '"'));
     assert.ok(code.includes('"' + name + '"'));

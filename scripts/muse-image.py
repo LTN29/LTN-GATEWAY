@@ -221,6 +221,12 @@ def _post_stream_text(url: str, body: dict, headers: dict, timeout: float) -> st
             detail = json.loads(detail).get("error", {}).get("message", detail)
         except (ValueError, AttributeError):
             pass
+        if exc.code == 413:
+            raise RuntimeError("Gateway từ chối vì ảnh tham chiếu quá lớn (HTTP 413). "
+                               "Hãy dùng ảnh nhỏ hơn rồi thử lại.") from None
+        if exc.code == 524:
+            raise RuntimeError("Muse xử lý quá lâu nên Cloudflare ngắt kết nối (HTTP 524). "
+                               "Ảnh có thể vẫn đang được tạo; đừng gọi lại ngay.") from None
         raise RuntimeError(f"Gateway trả HTTP {exc.code}: {detail}") from None
     return "".join(parts).strip()
 
@@ -324,10 +330,12 @@ def run(args: argparse.Namespace) -> dict:
     if cid:
         headers["x-ltn-client-id"] = cid
 
-    body = {"model": args.model, "stream": False,
+    # Stream, like video: ai.simi.vn sits behind Cloudflare, which cuts any response
+    # that has not started within 100 s (HTTP 524). Muse often needs longer, so a
+    # non-streaming request failed even when the image was being created.
+    body = {"model": args.model, "stream": True,
             "messages": [{"role": "user", "content": content}]}
-    resp = _post_json(_base_url() + "/chat/completions", body, headers, args.timeout)
-    text = (((resp.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    text = _post_stream_text(_base_url() + "/chat/completions", body, headers, args.timeout)
     urls = IMG_MD.findall(text)
     if not urls:
         msg = text if text.startswith(ERROR_PREFIX) else (text[:300] or "Muse không trả về ảnh.")

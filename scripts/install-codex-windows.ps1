@@ -171,6 +171,30 @@ function Get-OrCreateClientId {
   return $clientId
 }
 
+# Văn Phòng AI chạy bộ cài ẩn: in mốc "[SIMI-STEP] <bước>" để app hiện đúng bước đang làm (chạy bằng lệnh thì không in)
+function Write-SimiStep {
+  param([string]$Id)
+  if ($env:LTN_FROM_APP -eq "1") { Write-Host "[SIMI-STEP] $Id" }
+}
+
+# Cài từ app: plugin Codex Desktop (documents, pdf…) tải từ marketplace khá lâu và không cần cho Văn Phòng AI
+# → chạy nền ẩn sau khi bộ cài xong, người dùng không phải chờ.
+function Start-CommonCodexPluginsInBackground {
+  try {
+    $script = "`$ErrorActionPreference = 'Continue'`n`$ProgressPreference = 'SilentlyContinue'`n" +
+      "function Get-ObjectPropertyValue {`n${function:Get-ObjectPropertyValue}`n}`n" +
+      "function Install-CommonCodexPlugins {`n${function:Install-CommonCodexPlugins}`n}`n" +
+      "Install-CommonCodexPlugins *> `$null`nRemove-Item -LiteralPath `$PSCommandPath -Force -ErrorAction SilentlyContinue`n"
+    $path = Join-Path $env:TEMP ("simi-plugins-" + [guid]::NewGuid().ToString("N") + ".ps1")
+    [IO.File]::WriteAllText($path, $script, [Text.UTF8Encoding]::new($true))
+    $shell = (Get-Process -Id $PID).Path
+    Start-Process -FilePath $shell -WindowStyle Hidden -ArgumentList @("-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$path`"") | Out-Null
+    Write-Host "  Plugin Codex Desktop: đang cài nền."
+  } catch {
+    Install-CommonCodexPlugins
+  }
+}
+
 function Install-CommonCodexPlugins {
   $defaults = @("documents", "pdf", "spreadsheets", "presentations", "template-creator", "visualize", "computer-use")
   try {
@@ -1397,6 +1421,7 @@ if ([string]::IsNullOrWhiteSpace($TeamApiKey)) {
 
 $TeamApiKey = Confirm-TeamApiKey $TeamApiKey
 
+Write-SimiStep "get"
 Write-Host "Đang xác minh Combo SIMI AI qua Gateway..."
 $headers = @{ Authorization = "Bearer $TeamApiKey" }
 try {
@@ -1447,6 +1472,7 @@ if ($missing.Count -gt 0) {
   throw "Thiếu Combo trên 9Router: $($missing -join ', '). Hãy tạo tại 9Router Dashboard -> Combos rồi chạy lại installer."
 }
 
+Write-SimiStep "codex"
 if (-not $SkipCodexInstall) {
   $preInstallCodexStatus = Get-CodexCommandStatus
   if (-not $preInstallCodexStatus.Healthy) {
@@ -1456,17 +1482,20 @@ if (-not $SkipCodexInstall) {
 
 New-Item -ItemType Directory -Force -Path $codexHome, $binDir | Out-Null
 $browserBridgeToken = Get-OrCreateBrowserBridgeToken
+Write-SimiStep "tools"
 $nodeRuntimeReady = Ensure-NodeRuntime
 # runtime Word/Excel/PDF là phần phụ: lỗi gì cũng không được làm dừng cả bộ cài SIMI
 $pdfRuntimeReady = $false
 try { $pdfRuntimeReady = [bool](Ensure-PdfRuntime -CodexHome $codexHome | Select-Object -Last 1) } catch {
   Write-Warning "Chưa tạo được Python runtime cho Word/Excel/PDF: $($_.Exception.Message). Chạy Repair sau để thử lại."
 }
+Write-SimiStep "skills"
 Install-Managed9RouterSkills -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
 Install-BrowserBridge -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -BridgeToken $browserBridgeToken
 Install-SimiChromeShortcut -CodexHome $codexHome
 Install-LocalTools -CodexHome $codexHome -BinDir $binDir -GatewayBaseUrl $GatewayBaseUrl -PdfRuntimeReady $pdfRuntimeReady
 Install-SimiAutoUpdate -CodexHome $codexHome -GatewayBaseUrl $GatewayBaseUrl
+Write-SimiStep "config"
 
 $existingConfig = ""
 if (Test-Path $configPath) {
@@ -1603,7 +1632,7 @@ if ($runtimeConfigStatus.Supported) {
   Write-Warning "Chưa thể gọi Codex để kiểm tra config; installer đã ghi config.toml và MCP simi_browser."
 }
 
-Install-CommonCodexPlugins
+if ($env:LTN_FROM_APP -eq "1") { Start-CommonCodexPluginsInBackground } else { Install-CommonCodexPlugins }
 
 $installedCodexStatus = Get-CodexCommandStatus
 Write-Host ""

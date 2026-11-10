@@ -271,3 +271,15 @@ test("Windows installer: lỗi ensurepip / pip không làm dừng cả bộ cài
   // gọi trong try: runtime Word/Excel/PDF là phần phụ
   assert.match(windows, /try \{ \$pdfRuntimeReady = \[bool\]\(Ensure-PdfRuntime -CodexHome \$codexHome/);
 });
+
+test("Bộ cài: chạy từ Văn Phòng AI in mốc từng bước và cài plugin Codex Desktop chạy nền", async () => {
+  const windows = await readFile(installerUrl, "utf8");
+  const order = ["get", "codex", "tools", "skills", "config"].map((id) => windows.indexOf(`Write-SimiStep "${id}"`));
+  assert.ok(order.every((i) => i > 0), "đủ 5 mốc");
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "mốc đúng thứ tự chạy");
+  assert.match(windows, /if \(\$env:LTN_FROM_APP -eq "1"\) \{ Write-Host "\[SIMI-STEP\] \$Id" \}/, "chạy bằng lệnh thì không in mốc");
+  assert.match(windows, /if \(\$env:LTN_FROM_APP -eq "1"\) \{ Start-CommonCodexPluginsInBackground \} else \{ Install-CommonCodexPlugins \}/);
+  const unix = await readFile(new URL("../scripts/install-codex-unix.sh", import.meta.url), "utf8");
+  assert.match(unix, /simi_step codex[\s\S]*simi_step tools[\s\S]*simi_step skills[\s\S]*simi_step config/);
+  assert.match(unix, /\(install_common_codex_plugins <\/dev\/null >\/dev\/null 2>&1 &\)/, "plugin nền không giữ luồng ra của bộ cài");
+});
