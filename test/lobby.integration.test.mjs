@@ -171,10 +171,12 @@ test("Sảnh: online, trạng thái, nhân vật, nhắn tin theo phòng và quy
 
     // ẩn trạng thái: người khác thấy như đã rời Sảnh, roster cũng không còn
     await post("bao", "profile", { hidden: true });
+    const hiddenAt = Date.now();
     await ngoc.next("leave", (d) => d.id === "u:it-bao");
     const list = (await (await fetch(`${base}/members`, { headers: auth("ngoc") })).json()).members;
     assert.ok(!list.some((m) => m.id === "u:it-bao"));
-    const r1 = await ngoc.next("roster", () => true, 3000); const r2 = await ngoc.next("roster", (d) => d.at > r1.at, 3000);
+    // roster gửi sau lúc ẩn (next() tìm cả các sự kiện cũ nên phải lọc theo thời điểm)
+    const r2 = await ngoc.next("roster", (d) => d.at > hiddenAt, 3000);
     assert.ok(!r2.ids.includes("u:it-bao"), "người đang ẩn không có trong roster");
 
     // key chung của team cần client id, đặt được tên riêng

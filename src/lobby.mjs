@@ -31,6 +31,8 @@ const EVERYONE_PER_HOUR = 3;
 const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "react", "ideas"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
+const MOVE_BATCH_MS = Math.max(0, Number(process.env.LOBBY_MOVE_BATCH_MS ?? 80));
+const MEMBER_BATCH_MS = Math.max(0, Number(process.env.LOBBY_MEMBER_BATCH_MS ?? 250));
 const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands", "twerk"]);
 const ASK_MS = 30_000;
 const ACTIVITIES = new Set(["idle", "chat", "work", "image", "video", "web", "doc", "away"]);
@@ -391,6 +393,27 @@ class Lobby {
     }
   }
 
+  // Đông người: gộp các cập nhật dồn dập của cùng một người trước khi gửi cho cả Sảnh (chỉ gửi bản mới nhất)
+  // – vị trí ~12 lần/giây, trạng thái AI ~4 lần/giây. 100 người × 100 người không còn là hàng chục nghìn gói tin mỗi giây.
+  queueBroadcast(kind, id) {
+    const q = this.pendingOut || (this.pendingOut = { move: new Set(), member: new Set(), tm: null, tmb: null });
+    q[kind].add(id);
+    if (kind === "move" && !q.tm) q.tm = setTimeout(() => this.flushPending("move"), MOVE_BATCH_MS);
+    if (kind === "member" && !q.tmb) q.tmb = setTimeout(() => this.flushPending("member"), MEMBER_BATCH_MS);
+  }
+
+  flushPending(kind) {
+    const q = this.pendingOut; if (!q) return;
+    if (kind === "move") q.tm = null; else q.tmb = null;
+    const ids = [...q[kind]]; q[kind].clear();
+    for (const id of ids) {
+      const m = this.members.get(id);
+      if (!m || this.store.profiles[id]?.hidden) continue;
+      if (kind === "move") this.broadcast("move", { id, ...m.pos }, (x) => x.id !== id);
+      else if (m.conns.size) this.broadcastMember(id);
+    }
+  }
+
   broadcastMember(id) {
     const pm = this.publicMember(id);
     if (!pm) return;
@@ -509,12 +532,12 @@ class Lobby {
     if (!this.allow(m, "state")) throw httpError(429, "Gửi quá nhanh, chậm lại một chút", "rate_limit_error");
     const hidden = this.profileOf(ident).hidden;
     const status = cleanStatus(body.status);
-    if (status) { m.status = status; if (!hidden) this.broadcastMember(ident.id); }
+    if (status) { m.status = status; if (!hidden) this.queueBroadcast("member", ident.id); }
     if (body.pos && Number.isFinite(body.pos.x) && Number.isFinite(body.pos.z)) {
       // seat: mã chỗ ngồi trong Sảnh (ghế quầy bar, bàn ăn, sofa…) – để người khác thấy mình đang ngồi
       const seat = typeof body.pos.seat === "string" && SEAT.test(body.pos.seat) ? body.pos.seat : null;
       m.pos = { x: clamp(body.pos.x, -30, 30), z: clamp(body.pos.z, -30, 30), seat };
-      if (!hidden) this.broadcast("move", { id: ident.id, ...m.pos }, (x) => x.id !== ident.id);
+      if (!hidden) this.queueBroadcast("move", ident.id);
     }
     // nhảy liên tục tới khi tự dừng / đi chỗ khác (null = dừng)
     if (body.dance !== undefined) {
