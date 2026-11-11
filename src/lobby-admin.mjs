@@ -22,7 +22,7 @@ export function adminIds() {
 
 export const isAdmin = (ident) => !!ident && !ident.shared && adminIds().has(ident.id);
 
-const blank = () => ({ perms: { default: {}, teams: {}, users: {} }, mutes: {}, kicks: {}, cinemaLocked: false, pinned: null, npc: null });
+const blank = () => ({ perms: { default: {}, teams: {}, users: {} }, mutes: {}, kicks: {}, cinemaLocked: false, soundOff: false, pinned: null, npc: null });
 
 export class LobbySettings {
   constructor() { this.dir = null; this.s = blank(); }

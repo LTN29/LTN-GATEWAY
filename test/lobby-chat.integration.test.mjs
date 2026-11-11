@@ -185,6 +185,12 @@ test("Sảnh: gửi ảnh, @tag, trả lời, thu hồi, quyền admin", async (
     assert.equal((await post("ngoc", "cinema", { action: "add", url: "https://youtu.be/dQw4w9WgXcQ" })).status, 403);
     assert.equal((await post("ltn", "cinema", { action: "add", url: "https://youtu.be/dQw4w9WgXcQ" })).status, 200, "admin vẫn thêm được");
     await post("ltn", "admin", { action: "cinema", op: "unlock" });
+    // tắt tiếng cả Sảnh: mọi người nhận soundOff (app tắt nhạc nền + tiếng màn chiếu); người thường không tự bật lại được
+    await post("ltn", "admin", { action: "cinema", op: "mute" });
+    assert.equal((await ngoc.next("cinema", (d) => d.soundOff)).soundOff, true);
+    assert.equal((await post("ngoc", "admin", { action: "cinema", op: "unmute" })).status, 403);
+    await post("ltn", "admin", { action: "cinema", op: "unmute" });
+    assert.equal((await ngoc.next("cinema", (d) => d.soundOff === false)).soundOff, false);
 
     // thông báo ghim
     await post("ltn", "admin", { action: "announce", text: "Chiều nay 3h họp toàn công ty", pin: true });

@@ -31,7 +31,7 @@ const EVERYONE_PER_HOUR = 3;
 const FEATURES = ["images", "mentions", "reply", "delete", "admin", "cat", "interact", "dance", "npc", "games", "react", "ideas"];
 // tương tác giữa 2 nhân vật; ôm + mời nhảy cần người kia đồng ý
 const INTERACTIONS = { highfive: false, cheers: false, coffee: false, hug: true, dance: true };
-const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands"]);
+const DANCES = new Set(["groove", "disco", "robot", "shuffle", "spin", "hands", "twerk"]);
 const ASK_MS = 30_000;
 const ACTIVITIES = new Set(["idle", "chat", "work", "image", "video", "web", "doc", "away"]);
 const AVATAR_COLORS = ["hair", "skin", "shirt", "pants", "shoes", "accent"];
@@ -248,7 +248,7 @@ class Lobby {
     this.rosterTimer.unref?.();
     // màn hình chiếu YouTube chung của cả quán
     this.cinema = new Cinema({
-      broadcast: (ev, data) => this.broadcast(ev, ev === "cinema" ? { ...data, locked: !!this.settings.s.cinemaLocked } : data),
+      broadcast: (ev, data) => this.broadcast(ev, ev === "cinema" ? { ...data, locked: !!this.settings.s.cinemaLocked, soundOff: !!this.settings.s.soundOff } : data),
       onlineCount: () => [...this.members.values()].filter((m) => m.conns.size && !this.profileOf(m.ident).hidden).length
     });
   }
@@ -435,7 +435,8 @@ class Lobby {
     }
   }
 
-  cinemaState() { return { ...this.cinema.state(), locked: !!this.settings.s.cinemaLocked }; }
+  // soundOff: admin tắt tiếng cả Sảnh (màn chiếu + nhạc nền) – không ai nghe tiếng
+  cinemaState() { return { ...this.cinema.state(), locked: !!this.settings.s.cinemaLocked, soundOff: !!this.settings.s.soundOff }; }
 
   knownIdent(id) {
     const m = this.members.get(id);
@@ -820,7 +821,7 @@ class Lobby {
       people: [...people.values()].sort((a, b) => a.name.localeCompare(b.name, "vi")),
       teams: [...teams.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => String(a.name).localeCompare(String(b.name), "vi")),
       permsDef: Object.fromEntries(Object.entries(PERMS).map(([k, v]) => [k, v])),
-      perms: s.perms, mutes, kicks, cinemaLocked: !!s.cinemaLocked, pinned: s.pinned, npc: s.npc,
+      perms: s.perms, mutes, kicks, cinemaLocked: !!s.cinemaLocked, soundOff: !!s.soundOff, pinned: s.pinned, npc: s.npc,
       npcCandidates: await npcCandidates().catch(() => []), npcGuides: this.npcStore.data.guides, npcNotes: this.npcStore.data.notes, npcKeysHint: "LOBBY_NPC_KEYS",
       npcLog: this.npcLog.recent(40).map(({ byId, ...x }) => x),
       cinema: this.cinemaState(), games: this.games.list(),
@@ -868,8 +869,9 @@ class Lobby {
       if (op === "skip") { if (this.cinema.current) this.cinema.next("skip_admin"); }
       else if (op === "clear") { this.cinema.queue = []; this.cinema.emit(); }
       else if (op === "lock" || op === "unlock") { this.settings.s.cinemaLocked = op === "lock"; await this.settings.save(); }
-      else throw httpError(400, "op phải là skip | clear | lock | unlock");
-      if (op === "lock" || op === "unlock") this.cinema.emit();
+      else if (op === "mute" || op === "unmute") { this.settings.s.soundOff = op === "mute"; await this.settings.save(); }
+      else throw httpError(400, "op phải là skip | clear | lock | unlock | mute | unmute");
+      if (["lock", "unlock", "mute", "unmute"].includes(op)) this.cinema.emit();
       await this.settings.audit(me, "cinema-" + op);
     } else if (action === "announce") {
       const text = cleanText(body.text, 300);
