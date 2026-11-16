@@ -1,3 +1,4 @@
+import { config } from "./config.mjs";
 import { isOutsideControlPrincipal } from "./principal-control.mjs";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
@@ -42,8 +43,17 @@ export function applyReasoningPolicy(payload, principal, format = "responses") {
   const requested = format === "chat"
     ? payload.reasoning_effort ?? reasoning.effort ?? payload.output_config?.effort
     : reasoning.effort ?? payload.reasoning_effort ?? payload.output_config?.effort;
-  let effort = cappedReasoningEffort(requested, principal);
   const adaptiveClaude = isAdaptiveClaudeModel(payload.model);
+  const missing = typeof requested !== "string" || !requested.trim();
+  // App không gửi mức suy nghĩ: REASONING_DEFAULT_EFFORT quyết định (mặc định "medium" như cũ; "auto" = để model tự quyết).
+  if (missing && config.reasoningDefaultEffort === "auto") {
+    const result = format === "messages" ? { ...payload } : clearNativeThinkingOverrides(payload);
+    if (adaptiveClaude) {
+      result.thinking = { type: "adaptive", ...(payload.thinking?.display ? { display: payload.thinking.display } : {}) };
+    }
+    return result;
+  }
+  let effort = cappedReasoningEffort(missing ? config.reasoningDefaultEffort : requested, principal);
   if (adaptiveClaude && ["none", "minimal"].includes(effort)) effort = "low";
   // On OpenAI routes, express intent once; 9Router converts it to provider fields.
   // Native toggles and token budgets otherwise conflict with that intent.

@@ -82,9 +82,14 @@ test("Responses: body lớn, bộ nhớ cố định theo hội thoại, nhiều
     assert.equal((await ask("conv-memory-0001")).status, 200);
     const first = seen.at(-1).instructions;
     assert.match(first, /Team fact version one/);
+    assert.equal((await ask("conv-memory-0001")).status, 200);
+    assert.equal(seen.at(-1).instructions, first, "cùng hội thoại, trí nhớ không đổi: instructions giữ nguyên từng byte");
     await writeFile(join(memoryDir, "SALES.md"), "# SALES\nTeam fact version two");
     assert.equal((await ask("conv-memory-0001")).status, 200);
-    assert.equal(seen.at(-1).instructions, first, "cùng hội thoại: instructions giữ nguyên từng byte");
+    const refreshed = seen.at(-1).instructions;
+    assert.match(refreshed, /Team fact version two/, "trí nhớ team vừa đổi: cùng hội thoại cũng làm mới (MEMORY_SNAPSHOT_REFRESH_ON_CHANGE)");
+    assert.equal((await ask("conv-memory-0001")).status, 200);
+    assert.equal(seen.at(-1).instructions, refreshed, "sau khi làm mới lại giữ nguyên từng byte");
     assert.equal((await ask("conv-memory-0002")).status, 200);
     assert.match(seen.at(-1).instructions, /Team fact version two/, "hội thoại mới đọc bộ nhớ mới");
     // không có prompt_cache_key → luôn đọc bộ nhớ mới nhất như cũ
@@ -103,7 +108,7 @@ test("Responses: body lớn, bộ nhớ cố định theo hội thoại, nhiều
       usage = JSON.parse(await readFile(join(root, "codex-usage.json"), "utf8"));
       total = Object.values(usage.codex_daily_usage).reduce((n, r) => n + r.successful_request_count, 0);
     }
-    assert.equal(total, 35, "sổ lượt dùng ghi đủ mọi request (5 + 30)");
+    assert.equal(total, 37, "sổ lượt dùng ghi đủ mọi request (7 + 30)");
     assert.ok(Object.values(usage.codex_daily_usage).every((r) => r.reservations.length === 0), "không còn chỗ giữ treo");
   } finally {
     await close(gateway);

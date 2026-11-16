@@ -1,6 +1,7 @@
 import { config } from "./config.mjs";
 
 const OMITTED_IMAGE = "[Ảnh cũ đã được lược bỏ để giữ hội thoại trong giới hạn ngữ cảnh.]";
+const HOISTED = "_ltnHoistedToolImages";
 const BASE64_RUN = /(?:data:[\w.+-]+\/[\w.+-]+;base64,)?[A-Za-z0-9+/]{4096,}={0,2}/g;
 
 function isImagePart(part) {
@@ -60,16 +61,35 @@ function hoistToolImages(input, stats) {
       ...item,
       output: [text, `[Tool trả về ${images.length} ảnh; ảnh được đính kèm ngay sau kết quả này.]`].filter(Boolean).join("\n")
     });
-    result.push({ type: "message", role: "user", content: images });
+    result.push({ type: "message", role: "user", content: images, [HOISTED]: true });
   }
   return result;
 }
 
-function limitImages(input, stats) {
-  let remaining = config.responsesMaxImages;
-  const result = new Array(input.length);
+// Ảnh người dùng vừa đính kèm (tin nhắn user thật mới nhất) được giữ tới RESPONSES_MAX_CURRENT_IMAGES;
+// ảnh cũ hơn và ảnh chụp từ công cụ chia phần còn lại, ưu tiên ảnh mới nhất như trước.
+function currentUserImageCount(input) {
   for (let index = input.length - 1; index >= 0; index -= 1) {
     const item = input[index];
+    if (item?.role !== "user" || item[HOISTED]) continue;
+    return Array.isArray(item.content) ? item.content.filter(isImagePart).length : 0;
+  }
+  return 0;
+}
+
+function limitImages(input, stats) {
+  let remaining = Math.max(
+    config.responsesMaxImages,
+    Math.min(currentUserImageCount(input), config.responsesMaxCurrentImages)
+  );
+  const result = new Array(input.length);
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const original = input[index];
+    if (!original || typeof original !== "object") {
+      result[index] = original;
+      continue;
+    }
+    const { [HOISTED]: _hoisted, ...item } = original;
     if (!Array.isArray(item?.content)) {
       result[index] = item;
       continue;

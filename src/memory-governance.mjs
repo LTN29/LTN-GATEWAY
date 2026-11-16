@@ -441,7 +441,12 @@ function keyedLine(markdown, normalizedKey) {
   return markdown.match(new RegExp(`<!-- ltn:key=${escapedKey} -->\\n- (.*)`, "m"))?.[1] || null;
 }
 
+// "Ngữ cảnh gần đây" là của riêng từng người: không bao giờ coi là xung đột với trí nhớ team / công ty.
+// (5 file team đang có sẵn 1 dòng khoá này → 948/969 lần lưu ngữ cảnh gần đây trong 7 ngày bị đẩy vào hàng chờ duyệt.)
+const USER_ONLY_KEYS = new Set(["recent-work-context"]);
+
 async function detectUserConflict(candidate, principal) {
+  if (USER_ONLY_KEYS.has(candidate.normalizedKey)) return null;
   const files = ["COMPANY.md", principal?.team?.memoryFile].filter(Boolean);
   for (const file of files) {
     try {
@@ -511,15 +516,23 @@ async function readQueue() {
   }
 }
 
+// Trước đây mỗi lần ghi hàng chờ (kể cả chỉ tăng sourceCount) đều chép nguyên file ra 1 bản sao lưu:
+// tới 16/11 đã có 11.101 bản ≈ 4,4 GB. Giờ sao lưu tối đa 1 lần / MEMORY_REVIEW_QUEUE_BACKUP_INTERVAL_MS (0 = như cũ).
+let lastQueueBackupAt = 0;
+
 async function writeQueue(items) {
   await mkdir(dirname(config.memoryReviewQueueFile), { recursive: true });
-  try {
-    await copyFile(
-      config.memoryReviewQueueFile,
-      `${config.memoryReviewQueueFile}.backup-${timestampId()}`
-    );
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+  const now = Date.now();
+  if (!lastQueueBackupAt || now - lastQueueBackupAt >= config.memoryReviewQueueBackupIntervalMs) {
+    try {
+      await copyFile(
+        config.memoryReviewQueueFile,
+        `${config.memoryReviewQueueFile}.backup-${timestampId()}`
+      );
+      lastQueueBackupAt = now;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
   }
   const tmp = `${config.memoryReviewQueueFile}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(tmp, items.map((item) => JSON.stringify(item)).join("\n") + "\n", "utf8");
@@ -651,6 +664,14 @@ export async function processValidatedCandidate(candidate, principal) {
     }
     await enqueueReviewCandidate(candidate, principal, "user_not_auto_eligible");
     return { action: "queued" };
+  }
+  if ((candidate.scope === "TEAM" || candidate.scope === "COMPANY") && USER_ONLY_KEYS.has(candidate.normalizedKey)) {
+    jsonLog("memory_candidate_rejected_invalid", {
+      scope: candidate.scope,
+      normalizedKey: candidate.normalizedKey,
+      error: "user-only key cannot be written to TEAM/COMPANY memory"
+    });
+    return { action: "invalid_target" };
   }
   if (candidate.scope === "TEAM" || candidate.scope === "COMPANY") {
     const enabled = candidate.scope === "TEAM"

@@ -155,8 +155,18 @@ export const config = {
   responsesMaxBodyBytes: Math.max(4_000_000, number(process.env.RESPONSES_MAX_BODY_BYTES || 96_000_000, 96_000_000)),
   // giữ nguyên ngữ cảnh bộ nhớ trong suốt 1 cuộc hội thoại Codex (prompt_cache_key) để 9Router/nhà cung cấp dùng lại cache
   memorySnapshotTtlMs: Math.max(60_000, number(process.env.MEMORY_SNAPSHOT_TTL_MS || 6 * 60 * 60 * 1000, 6 * 60 * 60 * 1000)),
+  // Làm mới bản trí nhớ đã đóng băng khi trí nhớ công ty / team / chính người đó thật sự đổi (bỏ qua "ngữ cảnh gần đây").
+  memorySnapshotRefreshOnChange: bool(process.env.MEMORY_SNAPSHOT_REFRESH_ON_CHANGE, true),
   maxContextChars: Number(process.env.MAX_CONTEXT_CHARS || 24_000),
   responsesMaxImages: Math.max(0, number(process.env.RESPONSES_MAX_IMAGES || 4, 4)),
+  // Ảnh người dùng đính kèm trong tin nhắn mới nhất được giữ tới mức này (app gửi tối đa 10 ảnh); ảnh cũ / ảnh chụp từ công cụ
+  // vẫn theo RESPONSES_MAX_IMAGES. Tổng số ảnh gửi lên = max(RESPONSES_MAX_IMAGES, số ảnh tin mới nhất (tối đa mức này)).
+  responsesMaxCurrentImages: Math.max(0, number(process.env.RESPONSES_MAX_CURRENT_IMAGES || 12, 12)),
+  // Mức suy nghĩ khi app KHÔNG gửi reasoning: "medium" (như cũ) | "low" | ... | "auto" (không gửi mức, để model tự quyết).
+  // Giới hạn trên theo người dùng vẫn giữ nguyên.
+  reasoningDefaultEffort: String(process.env.REASONING_DEFAULT_EFFORT || "medium").trim().toLowerCase(),
+  // Hàng chờ duyệt trí nhớ: sao lưu toàn bộ file tối đa 1 lần / khoảng này (trước đây mỗi lần ghi 1 bản sao).
+  memoryReviewQueueBackupIntervalMs: Math.max(0, number(process.env.MEMORY_REVIEW_QUEUE_BACKUP_INTERVAL_MS || 60 * 60 * 1000, 60 * 60 * 1000)),
   responsesMaxTextChars: Math.max(20_000, number(process.env.RESPONSES_MAX_TEXT_CHARS || 200_000, 200_000)),
   maxCaptureBytes: Number(process.env.MAX_CAPTURE_BYTES || 8_000_000),
   browserPageMaxChars: Math.max(

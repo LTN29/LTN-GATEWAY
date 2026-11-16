@@ -144,6 +144,17 @@ export function memoryExtractionPaused() {
   return Date.now() < extractionPausedUntil;
 }
 
+// 9Router báo hết lượt / quá giới hạn kèm "reset after 1m 18s" → tạm dừng đúng khoảng đó (tối thiểu 30 giây, tối đa 30 phút)
+// thay vì gọi tiếp và lỗi 429 ở mọi lượt (7 ngày tới 16/11: 1.033/1.033 lượt trích xuất lỗi như vậy).
+const RATE_LIMITED = /rate.?limit|too many requests|quota|reset after|exhausted/i;
+
+export function rateLimitPauseMs(status, text) {
+  if (status !== 429 && !RATE_LIMITED.test(String(text || ""))) return 0;
+  const match = String(text || "").match(/reset after\s*(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?/i);
+  const parsed = match ? ((Number(match[1] || 0) * 60 + Number(match[2] || 0)) * 60 + Number(match[3] || 0)) * 1000 : 0;
+  return Math.min(30 * 60 * 1000, Math.max(30 * 1000, parsed || 2 * 60 * 1000));
+}
+
 async function runExtraction({ team, principal, rawKey, originalMessages, assistantText, requestId }) {
   const conversation = latestConversation(originalMessages, assistantText);
   if (!conversation.trim()) return;
@@ -177,7 +188,17 @@ async function runExtraction({ team, principal, rawKey, originalMessages, assist
 
     const text = await response.text();
     if (!response.ok) {
-      if ([400, 404, 422].includes(response.status) && MODEL_BROKEN.test(text)) {
+      const rateLimitMs = rateLimitPauseMs(response.status, text);
+      if (rateLimitMs) {
+        extractionPausedUntil = Date.now() + rateLimitMs;
+        jsonLog("memory_extraction_paused", {
+          requestId,
+          model: config.memoryExtractionModel,
+          seconds: Math.round(rateLimitMs / 1000),
+          reason: "rate_limited",
+          hint: "Model trích xuất hay bị giới hạn lượt: đổi MEMORY_EXTRACTION_MODEL sang model / Combo còn dư lượt."
+        });
+      } else if ([400, 404, 422].includes(response.status) && MODEL_BROKEN.test(text)) {
         extractionPausedUntil = Date.now() + EXTRACTION_PAUSE_MS;
         jsonLog("memory_extraction_paused", {
           requestId,
@@ -262,7 +283,13 @@ export function scheduleMemoryExtraction({
 }) {
   if (!config.memoryUpdateEnabled || !config.memoryExtractionEnabled) return;
   if (!assistantText || !String(assistantText).trim()) return;
-  if (memoryExtractionPaused()) return;
+  if (memoryExtractionPaused()) {
+    // Model trích xuất tạm nghỉ vẫn phải lưu "ngữ cảnh gần đây" (không cần gọi model) để hội thoại mới nối tiếp được.
+    if (principal?.principalType === "user") {
+      enqueueTeamMemoryUpdate(team, () => persistRecentUserContext(principal, originalMessages, requestId))?.catch(() => undefined);
+    }
+    return;
+  }
   if (scheduledExtractions >= config.memoryExtractionQueueLimit) {
     jsonLog("memory_extraction_dropped_global_queue_full", {
       team: team.code,

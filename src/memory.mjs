@@ -1,5 +1,6 @@
 import { resolve, relative, dirname } from "node:path";
 import { mkdir, chmod, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { config } from "./config.mjs";
 import { atomicWrite, redactSecrets, stripCodeFence, jsonLog } from "./utils.mjs";
 import { syncMemoryFile } from "./onedrive.mjs";
@@ -39,9 +40,10 @@ async function readMemoryFile(path, fallback = null) {
 
   const pending = readFile(path, "utf8")
     .then((data) => {
-      const limited = data.slice(0, config.maxContextChars);
-      setMemoryCache(path, { fingerprint, data: limited, pending: null });
-      return limited;
+      // Giữ nguyên cả file (đã giới hạn bởi MEMORY_MAX_FILE_BYTES); cắt theo mục ở loadMemoryContext.
+      // Trước đây cắt slice(0, MAX_CONTEXT_CHARS) ngay khi đọc → mục MỚI ở cuối file bị bỏ trước.
+      setMemoryCache(path, { fingerprint, data, pending: null });
+      return data;
     })
     .catch((error) => {
       memoryReadCache.delete(path);
@@ -126,7 +128,7 @@ export async function loadUserMemory(principal) {
   if (process.platform !== "win32") {
     await chmod(path, 0o600);
   }
-  return fallback.slice(0, config.maxContextChars);
+  return fallback;
 }
 
 export function buildMemorySystemContent(
@@ -164,6 +166,59 @@ export function buildMemorySystemContent(
   return sections.join("\n");
 }
 
+const KEY_COMMENT = /^<!-- ltn:key=[^>]*-->$/;
+const HEADING = /^#{1,6}\s/;
+
+// Cắt trí nhớ THEO MỤC thay vì cắt ngang: giữ mọi tiêu đề, mỗi mục (dòng khoá + dòng "- ...") giữ nguyên hoặc bỏ cả mục.
+// Mục mới được ghi ở cuối mỗi phần (upsertCandidateIntoMarkdown), nên bỏ mục CŨ NHẤT của phần đang dài nhất trước;
+// phần ngắn (hồ sơ, quy tắc) không bị dồn mất vì một phần dài (ngữ cảnh gần đây, lịch sử).
+export function fitMemory(text, budget) {
+  const value = String(text || "");
+  if (value.length <= budget) return value;
+  if (budget <= 0) return "";
+  const lines = value.split("\n");
+  const blocks = [];
+  let section = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (HEADING.test(line)) {
+      section += 1;
+      blocks.push({ text: line, keep: true, section });
+    } else if (KEY_COMMENT.test(line.trim()) && index + 1 < lines.length && !HEADING.test(lines[index + 1])) {
+      blocks.push({ text: `${line}\n${lines[index + 1]}`, keep: false, section });
+      index += 1;
+    } else {
+      // Dòng thường (không có khoá) không biết cũ / mới → không tự bỏ; nếu vẫn vượt thì cắt phần cuối như cũ.
+      blocks.push({ text: line, keep: true, section });
+    }
+  }
+  const sectionSize = new Map();
+  for (const block of blocks) {
+    if (!block.keep) sectionSize.set(block.section, (sectionSize.get(block.section) || 0) + block.text.length + 1);
+  }
+  let total = value.length;
+  let removed = 0;
+  const marker = (count) => `\n[Đã lược bớt ${count} mục cũ để vừa giới hạn ngữ cảnh.]`;
+  while (total + marker(removed + 1).length > budget) {
+    let target = null;
+    for (const [id, size] of sectionSize) if (size > 0 && (target === null || size > sectionSize.get(target))) target = id;
+    if (target === null) break;
+    const block = blocks.find((item) => !item.keep && !item.removed && item.section === target);
+    block.removed = true;
+    sectionSize.set(target, sectionSize.get(target) - block.text.length - 1);
+    total -= block.text.length + 1;
+    removed += 1;
+  }
+  const result = blocks.filter((block) => !block.removed).map((block) => block.text).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trimEnd();
+  const withMarker = removed ? `${result}${marker(removed)}` : result;
+  if (withMarker.length <= budget) return withMarker;
+  // Hết mục có khoá mà vẫn vượt (file viết tay, không có khoá): giữ phần ĐẦU như cũ, ưu tiên cắt ở cuối dòng.
+  const head = withMarker.slice(0, budget);
+  const lineEnd = head.lastIndexOf("\n");
+  return lineEnd >= budget * 0.5 ? head.slice(0, lineEnd) : head;
+}
+
 export async function loadMemoryContext(team, principal = null) {
   const [rawCompanyMemory, rawTeamMemory, rawUserMemory] = await Promise.all([
     loadCompanyMemory(),
@@ -172,13 +227,13 @@ export async function loadMemoryContext(team, principal = null) {
   ]);
   const companyBudget = Math.floor(config.maxContextChars * 0.4);
   const userBudget = rawUserMemory ? Math.floor(config.maxContextChars * 0.3) : 0;
-  const companyMemory = rawCompanyMemory.slice(0, companyBudget);
-  const teamMemory = rawTeamMemory.slice(
-    0,
+  const companyMemory = fitMemory(rawCompanyMemory, companyBudget);
+  const teamMemory = fitMemory(
+    rawTeamMemory,
     Math.max(0, config.maxContextChars - companyMemory.length - userBudget)
   );
-  const userMemory = rawUserMemory.slice(
-    0,
+  const userMemory = fitMemory(
+    rawUserMemory,
     Math.max(0, config.maxContextChars - companyMemory.length - teamMemory.length)
   );
 
@@ -186,6 +241,7 @@ export async function loadMemoryContext(team, principal = null) {
     companyMemory,
     teamMemory,
     userMemory,
+    signature: memorySignature(rawCompanyMemory, rawTeamMemory, rawUserMemory),
     systemContent: buildMemorySystemContent(
       team,
       companyMemory,
@@ -194,6 +250,18 @@ export async function loadMemoryContext(team, principal = null) {
       principal
     )
   };
+}
+
+// "Ngữ cảnh gần đây" được ghi lại sau gần như mọi lượt; trong cùng hội thoại nó đã có sẵn trong lịch sử chat nên không
+// tính là "trí nhớ thay đổi" (nếu tính, cache prompt sẽ mất mỗi lượt). Mọi thay đổi khác của công ty / team / cá nhân thì tính.
+const RECENT_CONTEXT_BLOCK = /<!-- ltn:key=recent-work-context -->\n- [^\n]*\n?/g;
+
+export function memorySignature(company, team, user) {
+  return createHash("sha1")
+    .update(String(company || "")).update("\u0000")
+    .update(String(team || "")).update("\u0000")
+    .update(String(user || "").replace(RECENT_CONTEXT_BLOCK, ""))
+    .digest("hex");
 }
 
 // Ngữ cảnh bộ nhớ "đóng băng" theo từng hội thoại Codex: bộ nhớ team thay đổi liên tục (cả team cùng ghi) mà nằm ngay đầu
@@ -212,7 +280,17 @@ export async function memoryForConversation(team, principal, key) {
   const id = `${team?.code}|${principal?.principalType || ""}|${principal?.userId || ""}|${principal?.memoryMode || ""}|${key}`;
   const now = Date.now();
   const hit = memorySnapshots.get(id);
-  if (hit && now - hit.at < config.memorySnapshotTtlMs) return hit.ctx;
+  if (hit && now - hit.at < config.memorySnapshotTtlMs) {
+    if (!config.memorySnapshotRefreshOnChange) return hit.ctx;
+    // Đọc lại (có cache theo mtime/size nên gần như không tốn) để biết trí nhớ đã thật sự đổi chưa.
+    const [company, teamText, user] = await Promise.all([
+      loadCompanyMemory(),
+      loadTeamMemory(team),
+      principal?.principalType === "user" ? loadUserMemory(principal) : ""
+    ]);
+    if (memorySignature(company, teamText, user) === hit.ctx.signature) return hit.ctx;
+    jsonLog("memory_snapshot_refreshed", { team: team?.code, userId: principal?.userId || null, ageMs: now - hit.at });
+  }
   const ctx = await loadMemoryContext(team, principal);
   memorySnapshots.delete(id);
   memorySnapshots.set(id, { at: now, ctx });
