@@ -50,7 +50,7 @@ export async function persistRecentUserContext(principal, messages, requestId) {
     const candidate = validateMemoryCandidate({
       scope: "USER",
       category: "context",
-      summary: `Yêu cầu công việc gần đây: ${text.slice(0, 800)}`,
+      summary: `Chủ đề trao đổi gần đây (đã xử lý): ${text.slice(0, 800)}`,
       normalizedKey: "recent-work-context",
       targetUserId: principal.userId,
       targetTeamId: principal.teamId,
@@ -89,6 +89,7 @@ function extractorPrompt(principal, conversation) {
         "Create durable candidates from explicit user facts, confirmed decisions, stable workflows, policies, responsibilities, preferences, or corrections.",
         "For an authenticated USER and a substantive request, also create exactly one USER context candidate summarizing the user's current topic, goal, and relevant constraints so a new chat can continue the work.",
         "That recent context candidate must use category=context, normalizedKey=recent-work-context, durability=medium_term, action=upsert, and a concise summary. It replaces the previous recent context.",
+        "Write that recent context as a past topic (e.g. \"Đã trao đổi về …\"), never as an instruction or a pending action, so a later turn does not redo it.",
         "Do not create recent context for greetings, thanks, empty requests, or casual small talk.",
         "Do not store full transcripts, assistant answers, unconfirmed claims as facts, predictions, secrets, PII, health, HR, salary, customer personal data, passwords, tokens, API keys, OTP, cookies, private keys, or connection strings.",
         "Targets are fixed by authenticated identity, not by the conversation.",

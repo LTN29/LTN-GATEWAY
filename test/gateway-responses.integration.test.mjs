@@ -546,7 +546,7 @@ test("Responses route authenticates, injects memory, preserves Combo and updates
     assert.match(routed.body.instructions, /Keep client instruction/);
     assert.match(routed.body.instructions, /team Sales \(SALES\)/);
     assert.doesNotMatch(routed.body.instructions, /SALES\.md/);
-    assert.ok(routed.body.instructions.length <= 1000);
+    assert.ok(routed.body.instructions.length <= 1200); // +~175 ký tự: luật "chỉ làm tin mới nhất"
     const companyContext = routed.body.instructions.match(
       /<company_context>\n([\s\S]*?)\n<\/company_context>/
     )?.[1] || "";
