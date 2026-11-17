@@ -37,7 +37,7 @@ function clearNativeThinkingOverrides(payload) {
   return result;
 }
 
-export function applyReasoningPolicy(payload, principal, format = "responses") {
+export function applyReasoningPolicy(payload, principal, format = "responses", { toolStep = false } = {}) {
   const reasoning = payload.reasoning && typeof payload.reasoning === "object" &&
     !Array.isArray(payload.reasoning) ? payload.reasoning : {};
   const requested = format === "chat"
@@ -54,6 +54,10 @@ export function applyReasoningPolicy(payload, principal, format = "responses") {
     return result;
   }
   let effort = cappedReasoningEffort(missing ? config.reasoningDefaultEffort : requested, principal);
+  // Lượt tiếp sau kết quả công cụ (bước giữa của skill): TOOL_STEP_REASONING_EFFORT (mặc định tắt) hạ mức suy nghĩ
+  // để mỗi bước trả lời nhanh hơn; không bao giờ nâng mức.
+  const stepCap = config.toolStepReasoningEffort;
+  if (toolStep && stepCap && EFFORTS.includes(stepCap) && EFFORTS.indexOf(effort) > EFFORTS.indexOf(stepCap)) effort = stepCap;
   if (adaptiveClaude && ["none", "minimal"].includes(effort)) effort = "low";
   // On OpenAI routes, express intent once; 9Router converts it to provider fields.
   // Native toggles and token budgets otherwise conflict with that intent.

@@ -797,39 +797,65 @@ async function webModels(kind) {
   return matched.map((item) => item.id);
 }
 
+// Tìm / đọc web: KHÔNG chờ hết 45–60 giây cho model đầu rồi mới thử model sau. Model đầu chưa xong sau WEB_HEDGE_MS
+// (hoặc vừa lỗi) thì chạy song song model kế tiếp; model nào xong trước thì lấy, huỷ các model còn lại.
+const WEB_SEARCH_HEDGE_MS = Math.max(1_000, Number(process.env.LTN_WEB_SEARCH_HEDGE_MS) || 6_000);
+const WEB_FETCH_HEDGE_MS = Math.max(1_000, Number(process.env.LTN_WEB_FETCH_HEDGE_MS) || 10_000);
+
+async function hedgedWeb(models, hedgeMs, attempt) {
+  const errors = [];
+  const controllers = [];
+  try {
+    return await hedged(models, async (model) => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      try {
+        return await attempt(model, controller.signal);
+      } catch (error) {
+        if ([401, 403, 429].includes(error.status)) error.fatal = true;
+        else if (error.status !== -1) errors.push(`${model}: ${error.message}`);
+        throw error;
+      }
+    }, hedgeMs);
+  } catch (error) {
+    if (error.fatal) throw error;
+    const failure = new Error(errors.join(" | ") || error.message);
+    throw failure;
+  } finally {
+    for (const controller of controllers) controller.abort();
+  }
+}
+
 async function webSearch(args = {}) {
   const query = String(args.query || "").trim();
   if (!query) throw new Error("Thiếu câu tìm kiếm (query).");
   const max = Math.max(1, Math.min(20, Number(args.max_results) || 6));
-  const errors = [];
-  for (const model of (await webModels("search")).slice(0, 3)) {
-    try {
-      const payload = await gatewayCall("/search", { method: "POST", body: { model, query, max_results: max }, timeoutMs: 45_000 });
+  try {
+    return await hedgedWeb((await webModels("search")).slice(0, 3), WEB_SEARCH_HEDGE_MS, async (model, signal) => {
+      const payload = await gatewayCall("/search", { method: "POST", body: { model, query, max_results: max }, timeoutMs: 45_000, signal });
       const results = (payload?.results || payload?.data || []).slice(0, max);
-      if (!results.length) { errors.push(`${model}: không có kết quả`); continue; }
+      if (!results.length) throw new Error("không có kết quả");
       const lines = results.map((item, index) => [
         `${index + 1}. ${item.title || "(không tiêu đề)"}`,
         `   ${item.url || item.link || ""}${item.published_at || item.date ? ` · ${item.published_at || item.date}` : ""}`,
         item.snippet || item.content || item.description ? `   ${String(item.snippet || item.content || item.description).replace(/\s+/g, " ").slice(0, 400)}` : ""
       ].filter(Boolean).join("\n"));
       return { __content: [{ type: "text", text: `Kết quả tìm "${query}" (${model}):\n\n${lines.join("\n\n")}\n\nĐoạn trích chưa phải toàn bài – cần chắc chắn thì gọi web_fetch nguồn đó.` }] };
-    } catch (error) {
-      if ([401, 403, 429].includes(error.status)) throw error;
-      errors.push(`${model}: ${error.message}`);
-    }
+    });
+  } catch (error) {
+    if (error.fatal) throw error;
+    throw new Error(`Tìm kiếm không thành công: ${error.message}`);
   }
-  throw new Error(`Tìm kiếm không thành công: ${errors.join(" | ")}`);
 }
 
 async function webFetch(args = {}) {
   const [url] = validUrls([args.url]);
   const max = Math.max(1_000, Math.min(200_000, Number(args.max_characters) || 20_000));
-  const errors = [];
-  for (const model of (await webModels("fetch")).slice(0, 3)) {
-    try {
-      const payload = await gatewayCall("/web/fetch", { method: "POST", body: { model, url, format: "markdown", max_characters: max }, timeoutMs: 60_000 });
+  try {
+    return await hedgedWeb((await webModels("fetch")).slice(0, 3), WEB_FETCH_HEDGE_MS, async (model, signal) => {
+      const payload = await gatewayCall("/web/fetch", { method: "POST", body: { model, url, format: "markdown", max_characters: max }, timeoutMs: 60_000, signal });
       const text = String(payload?.content?.text ?? payload?.text ?? payload?.content ?? "").trim();
-      if (!text) { errors.push(`${model}: trang rỗng`); continue; }
+      if (!text) throw new Error("trang rỗng");
       const blocked = /captcha|verify you are human|access denied|đăng nhập để|sign in to continue|enable javascript/i.test(text.slice(0, 2000));
       return { __content: [{ type: "text", text: [
         `${payload?.title || ""}`.trim() ? `# ${payload.title}` : "",
@@ -838,12 +864,11 @@ async function webFetch(args = {}) {
         "",
         text.slice(0, max)
       ].filter((line, index) => line || index === 3).join("\n") }] };
-    } catch (error) {
-      if ([401, 403, 429].includes(error.status)) throw error;
-      errors.push(`${model}: ${error.message}`);
-    }
+    });
+  } catch (error) {
+    if (error.fatal) throw error;
+    throw new Error(`Không đọc được trang: ${error.message}. Thử browser_read_pages.`);
   }
-  throw new Error(`Không đọc được trang: ${errors.join(" | ")}. Thử browser_read_pages.`);
 }
 
 // ---------- tạo / sửa ảnh ----------

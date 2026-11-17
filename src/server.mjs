@@ -39,6 +39,7 @@ import { applyReasoningPolicy } from "./reasoning-policy.mjs";
 import { budgetChanged, budgetResponsesPayload } from "./request-budget.mjs";
 import { createSseNamespaceRestorer, flattenNamespaceTools, restoreNamespaceCalls } from "./tool-namespaces.mjs";
 import { sanitizeToolSchemas } from "./tool-schema-policy.mjs";
+import { modelListSummary, requestToolSummary, responseToolCalls, trailingToolResults } from "./tool-telemetry.mjs";
 import { normalizeUpdateReport, recordUpdateReport } from "./device-update-store.mjs";
 import {
   browserPageScope,
@@ -639,6 +640,7 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
     });
   }
 
+  const listing = upstream.ok && /^\/v1\/models\/(?!info)/.test(upstreamPath) ? modelListSummary(captured) : null;
   jsonLog("capability_completed", {
     requestId: id,
     team: principal.team.code,
@@ -646,7 +648,8 @@ async function proxyCapability(req, res, rawKey, principal, id, upstreamPath) {
     userId: principal.userId,
     path: upstreamPath.split("?")[0],
     status: upstream.status,
-    latencyMs: Date.now() - startedAt
+    latencyMs: Date.now() - startedAt,
+    ...(listing ? listing : {})
   });
 }
 
@@ -748,6 +751,9 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   }
 
   const originalMessages = responseInputMessages(payload.input);
+  // lượt "tiếp sau công cụ" (input kết thúc bằng kết quả công cụ) + số liệu công cụ để đo skill nào chậm
+  const toolResults = trailingToolResults(payload.input);
+  const toolSummary = requestToolSummary(payload.tools);
   const outsideControl = isOutsideControlPrincipal(principal);
   const memoryDisabled = outsideControl || principal.memoryMode === "none";
   const { systemContent } = memoryDisabled
@@ -759,7 +765,7 @@ async function proxyResponses(req, res, rawKey, principal, id) {
   if (budgetChanged(budgeted.stats)) {
     jsonLog("responses_context_budgeted", { requestId: id, ...budgeted.stats });
   }
-  const schemaFixed = sanitizeToolSchemas(applyReasoningPolicy(budgeted.payload, principal), "responses");
+  const schemaFixed = sanitizeToolSchemas(applyReasoningPolicy(budgeted.payload, principal, "responses", { toolStep: toolResults.length > 0 }), "responses");
   if (schemaFixed.changed.length) {
     jsonLog("tool_schema_normalized", { requestId: id, format: "responses", tools: schemaFixed.changed });
   }
@@ -911,7 +917,12 @@ async function proxyResponses(req, res, rawKey, principal, id) {
       firstTokenMs,
       requestBytes: raw.length,
       upstreamBytes: upstreamBody.length,
-      images: (upstreamBody.match(/"input_image"/g) || []).length
+      images: (upstreamBody.match(/"input_image"/g) || []).length,
+      toolStep: toolResults.length > 0,
+      ...(toolResults.length ? { toolResults } : {}),
+      toolCalls: upstream.ok ? responseToolCalls(captured, payload.stream === true) : [],
+      toolsDefined: toolSummary.toolsDefined,
+      ...(toolSummary.hostedTools.length ? { hostedTools: toolSummary.hostedTools } : {})
     });
   } catch (error) {
     // 9Router không phản hồi / đứt giữa chừng cũng tính là lỗi của model đó

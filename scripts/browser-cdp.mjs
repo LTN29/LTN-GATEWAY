@@ -1215,7 +1215,11 @@ export async function actOnTab({ host = "127.0.0.1", port = 9222, targetId, acti
     await connection.command("Page.bringToFront").catch(() => {});
     for (const [index, step] of actions.entries()) {
       const kind = String(step?.action || "").toLowerCase();
-      const beforeUrl = await evaluateValue(connection, "location.href").catch(() => "");
+      // Chỉ bấm / nhấn phím / gõ + Enter mới có thể chuyển trang → mới cần chờ trang ổn định. Gõ / chọn / cuộn thì
+      // trang không tải lại: chỉ nghỉ ngắn cho script trên trang kịp chạy (trước đây chờ ≥ 250 ms + 1–2 lượt hỏi trang mỗi bước).
+      const mayNavigate = kind === "click" || kind === "double_click" || kind === "press" ||
+        ((kind === "type" || kind === "fill") && step?.submit === true);
+      const beforeUrl = mayNavigate ? await evaluateValue(connection, "location.href").catch(() => "") : "";
       try {
         if (kind === "click" || kind === "double_click") {
           const info = await locate(connection, step.ref);
@@ -1279,7 +1283,8 @@ export async function actOnTab({ host = "127.0.0.1", port = 9222, targetId, acti
       } catch (error) {
         return { ok: false, done, failedAt: index, error: error?.message || String(error) };
       }
-      await settle(connection, beforeUrl, 5_000);
+      if (mayNavigate) await settle(connection, beforeUrl, 5_000);
+      else if (kind !== "wait") await new Promise((resolve) => setTimeout(resolve, 80));
     }
     return { ok: true, done };
   } finally {

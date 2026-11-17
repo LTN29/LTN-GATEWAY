@@ -165,6 +165,8 @@ export const config = {
   // Mức suy nghĩ khi app KHÔNG gửi reasoning: "medium" (như cũ) | "low" | ... | "auto" (không gửi mức, để model tự quyết).
   // Giới hạn trên theo người dùng vẫn giữ nguyên.
   reasoningDefaultEffort: String(process.env.REASONING_DEFAULT_EFFORT || "medium").trim().toLowerCase(),
+  // Mức suy nghĩ tối đa cho lượt tiếp sau kết quả công cụ (bước giữa của skill). Trống = không đổi (như cũ).
+  toolStepReasoningEffort: String(process.env.TOOL_STEP_REASONING_EFFORT || "").trim().toLowerCase(),
   // Hàng chờ duyệt trí nhớ: sao lưu toàn bộ file tối đa 1 lần / khoảng này (trước đây mỗi lần ghi 1 bản sao).
   memoryReviewQueueBackupIntervalMs: Math.max(0, number(process.env.MEMORY_REVIEW_QUEUE_BACKUP_INTERVAL_MS || 60 * 60 * 1000, 60 * 60 * 1000)),
   responsesMaxTextChars: Math.max(20_000, number(process.env.RESPONSES_MAX_TEXT_CHARS || 200_000, 200_000)),

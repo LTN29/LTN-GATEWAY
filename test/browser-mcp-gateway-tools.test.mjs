@@ -75,3 +75,50 @@ test("web_search, web_fetch, image_generate gọi Gateway 1 lần, có dự phò
     mcp.kill(); gateway.close();
   }
 });
+
+test("web_search không chờ model chậm: quá thời gian chờ thì chạy song song model kế tiếp", async () => {
+  const seen = [];
+  const gateway = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const json = body ? JSON.parse(body) : null;
+    const send = (status, payload) => { if (!res.writableEnded) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(payload)); } };
+    if (req.url === "/v1/models/web") return send(200, { data: [{ id: "slow-combo", kind: "webSearch" }, { id: "fast/search", kind: "webSearch" }, { id: "slow/fetch", kind: "webFetch" }, { id: "fast/fetch", kind: "webFetch" }] });
+    seen.push({ url: req.url, model: json?.model, at: Date.now() });
+    if (/^slow/.test(json?.model)) { await new Promise((resolve) => setTimeout(resolve, 8_000)); return send(200, { results: [{ title: "chậm", url: "https://slow.vn" }] }); }
+    if (req.url === "/v1/search") return send(200, { results: [{ title: "Kết quả nhanh", url: "https://fast.vn", snippet: "ok" }] });
+    if (req.url === "/v1/web/fetch") return send(200, { title: "Nhanh", url: json.url, content: { text: "Nội dung nhanh" } });
+    send(404, {});
+  });
+  await new Promise((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+  const home = mkdtempSync(join(tmpdir(), "simi-gw-hedge-"));
+  writeFileSync(join(home, "config.toml"), 'model = "cc/claude-opus-5-5"\n');
+  const mcp = spawn(process.execPath, [join(import.meta.dirname, "..", "scripts", "browser-mcp.mjs")], {
+    env: { ...process.env, CODEX_HOME: home, LTN_GATEWAY_BASE_URL: `http://127.0.0.1:${gateway.address().port}/v1`, LTN_TEAM_API_KEY: "k-test", LTN_WEB_SEARCH_HEDGE_MS: "1000", LTN_WEB_FETCH_HEDGE_MS: "1000", TMPDIR: home, TEMP: home, TMP: home },
+    stdio: ["pipe", "pipe", "inherit"]
+  });
+  let buf = ""; const waiting = new Map(); let seq = 0;
+  mcp.stdout.on("data", (chunk) => {
+    buf += chunk; let index;
+    while ((index = buf.indexOf("\n")) >= 0) { const line = buf.slice(0, index); buf = buf.slice(index + 1); try { const msg = JSON.parse(line); waiting.get(msg.id)?.(msg.result); } catch {} }
+  });
+  const rpc = (method, params) => new Promise((resolve) => { const id = ++seq; waiting.set(id, resolve); mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+  const text = (result) => result.content.map((part) => part.text || "").join("\n");
+  try {
+    await rpc("tools/list", {});
+    let started = Date.now();
+    const found = await rpc("tools/call", { name: "web_search", arguments: { query: "tin mới" } });
+    const searchMs = Date.now() - started;
+    assert.ok(!found.isError, text(found));
+    assert.match(text(found), /Kết quả nhanh/);
+    assert.ok(searchMs < 4_000, `tìm mất ${searchMs} ms – phải dùng model nhanh sau ~1 giây, không chờ model chậm 8 giây`);
+    started = Date.now();
+    const page = await rpc("tools/call", { name: "web_fetch", arguments: { url: "https://vd.vn/a" } });
+    const fetchMs = Date.now() - started;
+    assert.match(text(page), /Nội dung nhanh/);
+    assert.ok(fetchMs < 4_000, `đọc mất ${fetchMs} ms`);
+    assert.deepEqual(seen.filter((s) => s.url === "/v1/search").map((s) => s.model), ["slow-combo", "fast/search"]);
+  } finally {
+    mcp.kill(); gateway.closeAllConnections?.(); gateway.close();
+  }
+});
